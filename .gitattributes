@@ -1,0 +1,11 @@
+# Normalize line endings to LF across platforms. The repo is authored on macOS
+# (case-insensitive FS) but CI and any future contributors may run Linux
+# (case-sensitive). LF-only avoids spurious diffs.
+* text=auto eol=lf
+
+# Treat these as binary (no EOL munging, no diff noise).
+*.parquet binary
+*.duckdb binary
+*.png binary
+*.jpg binary
+*.ico binary

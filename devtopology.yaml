@@ -1,0 +1,48 @@
+# DevTopology configuration — TickerTide
+# Parsed by engine/index.py with a minimal YAML reader (flat keys + simple lists).
+# Keep it flat: no nested maps, no inline JSON. Comments (#) and blank lines are ignored.
+
+# File-contracts ledger (tracked in git). One entry per source file.
+ledger: docs/runtime/File-Contracts.json
+
+# Generated index artifacts (gitignored).
+index_dir: .index
+
+# Glob/prefix patterns excluded from indexing and gates.
+# Product data artifacts never enter the ledger: they are derived, large, and regenerated nightly.
+exclude:
+  - "vendor/"
+  - "node_modules/"
+  - ".cache/"
+  - "dist/"
+  - "build/"
+  - "data/"
+  - "web/dist/"
+  - "web/node_modules/"
+  - "web/.svelte-kit/"
+  - ".worktrees/"
+
+# Branches task-open refuses to use as a working branch.
+protected_branches:
+  - main
+  - master
+
+# Worktree root for task isolation (relative to repo root).
+worktree_root: ../.worktrees
+
+# Default base branch for task operations.
+base_branch: origin/main
+
+# Stages enforce-fill accepts for changed files. TickerTide is pre-M0 for the
+# product modules, so planned/scaffolded are allowed alongside the mature stages.
+fill_allowed_stages:
+  - scaffolded
+  - baseline
+  - planned
+  - implemented
+  - verified
+  - done
+
+# Paths exempt from fill-scope enforcement.
+fill_exempt:
+  - "docs/runtime/File-Contracts.json"

@@ -1,0 +1,380 @@
+{
+  "version": 1,
+  "updated_at": "2026-06-04T16:26:59.182828+00:00",
+  "policy": {
+    "stage_values": [
+      "scaffolded",
+      "baseline",
+      "planned",
+      "implemented",
+      "verified",
+      "done",
+      "deprecated"
+    ],
+    "replan_rule": "When repo structure changes, run `make writeback-apply WRITE=1` before continuing."
+  },
+  "entries": [
+    {
+      "path": ".gitattributes",
+      "kind": "config",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "统一跨平台换行为 LF 并标记二进制文件，避免大小写不敏感 macOS 与大小写敏感 Linux 间的伪 diff",
+        "invariants": "文本一律 eol=lf；*.parquet/*.duckdb 标记为 binary",
+        "verification": "git check-attr 对源文件返回 text；Linux CI checkout 后无 EOL 噪音 diff"
+      },
+      "notes": ""
+    },
+    {
+      "path": ".github/workflows/gate.yml",
+      "kind": "config",
+      "module": ".github",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "advisory CI：每次 push/PR 在 Linux runner 跑 make verify + make health",
+        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；其价值是 PR 上留客观健康记录并验证小写路径",
+        "verification": "push 后 GitHub Actions 出现 verify/health 日志；gate 输出可见"
+      },
+      "notes": ""
+    },
+    {
+      "path": ".gitignore",
+      "kind": "config",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "排除生成物、产品数据产物与凭证文件，使版本库只跟踪源与规格",
+        "invariants": "必须含 .index/、__pycache__/、data/、*.duckdb、*.parquet、secrets/、*.env；保留 *.env.example 与 docs/runtime 的 .example 模板",
+        "verification": "git status 不出现生成物/数据/密钥；clone 后无被忽略文件被跟踪"
+      },
+      "notes": ""
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "doc",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "跨 agent 入口（agents.md 开放标准），供 Codex/Cursor/Copilot/Gemini",
+        "invariants": "薄入口不承载滚动状态；合同格式示例与账本 schema 一致；命令须为真 make target",
+        "verification": "所列命令均为有效 make target；合同示例字段与 File-Contracts.json 匹配"
+      },
+      "notes": ""
+    },
+    {
+      "path": "CLAUDE.md",
+      "kind": "doc",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Claude Code 项目入口：脊柱约束 + 导航 + 工作流规则 + 关键命令",
+        "invariants": "薄入口不承载滚动状态；命令须为有效 make target；约束与 PRD §7/§16 同步",
+        "verification": "列出命令均为真 target；已定死清单与 PRD §16 一致"
+      },
+      "notes": ""
+    },
+    {
+      "path": "Makefile",
+      "kind": "script",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "编排层：devtopology 结构/合同 gate + 工作流路由 + 数据管道占位 target",
+        "invariants": "所有 target 名与 CLAUDE.md/AGENTS.md/SKILL 引用一致；数据管道 target 在对应 milestone 前为占位提示，不报错",
+        "verification": "make help 列全命令；make verify / route / atlas 可跑"
+      },
+      "notes": ""
+    },
+    {
+      "path": "README.md",
+      "kind": "doc",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "人类可读的项目介绍、架构图、仓库结构与工作流速查",
+        "invariants": "文档链接有效；架构与里程碑与 PRD 同步；命令为真",
+        "verification": "README 内链接可达；命令为有效 make target"
+      },
+      "notes": ""
+    },
+    {
+      "path": "compute/README.md",
+      "kind": "doc",
+      "module": "compute",
+      "stage": "planned",
+      "contract": {
+        "purpose": "DuckDB 计算引擎模块规划：derived_daily + composite + valuation + RS-Ratio",
+        "invariants": "所有 surface 共用单一 per-stock 数据（C9）；买 robustness 不买 alpha 不回测优化权重",
+        "verification": "计算内容与 PRD §4/§10 一致；输出表对齐 §12"
+      },
+      "notes": ""
+    },
+    {
+      "path": "devtopology.yaml",
+      "kind": "config",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "devtopology 引擎配置：ledger 路径、exclude、保护分支、worktree、fill 阶段",
+        "invariants": "必须是引擎简易 yaml 可解析的扁平 key + 列表；exclude 含产品数据产物；ledger 指向 docs/runtime/File-Contracts.json",
+        "verification": "make atlas/verify 正确读取配置；exclude 的数据产物不进 mirror"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/BUILD-PLAN.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "verified",
+      "contract": {
+        "purpose": "构建计划 + 数学规格原件（kickoff prompt），PRD 的来源文档",
+        "invariants": "为 PRD 的出处；与 PRD 冲突时以 PRD §16 已定死为准；不承载实现状态",
+        "verification": "PRD 各节可追溯回本文对应章节"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/PRD.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "产品需求权威规格（SoT）：范围、原则、架构、UX、数学、FR/NFR、里程碑、验收",
+        "invariants": "FR/NFR 可追溯；与 equity-monitor-v2.jsx UX 与 §10 数学一致；活文档，需求/边界变化先回写本文",
+        "verification": "FR 覆盖五 surface + 引擎；不可妥协约束与 §7 一致；配色表与 UX 合同一致"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/agent-state/README.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "三层状态协议入口：L1 Git / L2 运行时 / L3 任务态",
+        "invariants": "是协议/索引非日志；保持简短；用 live readback 命令读真值不复制会过期状态",
+        "verification": "每层给出的命令可跑；指针指向真实文件"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/equity-monitor-v2.jsx",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "verified",
+      "contract": {
+        "purpose": "UX 合同 mock，锁定 layout/interaction/hierarchy/color",
+        "invariants": "是视觉契约非实现；用合成数据；code 不得照抄其造数逻辑；冲突以 PRD §16 为准",
+        "verification": "PRD §9 与附录 C 的布局/字段/配色与本文件一致"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/runtime/Credentials-Management.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "凭证平面模型与生命周期（advisory）：平面边界、轮换、incoming-staging 流程",
+        "invariants": "names-only；每个 runtime secret 属唯一平面、平面有硬边界；runtime secrets 不入仓库",
+        "verification": "Env-Registry 与 Secrets-Inventory 模板引用本模型的平面标签"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/runtime/Env-Registry.example.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "names-only env 登记表模板",
+        "invariants": "只记 env_key/source/consumer 等名称，绝不记值；真实 Env-Registry.md 走 gitignore",
+        "verification": "模板内无任何值；真实文件被 .gitignore 忽略"
+      },
+      "notes": ""
+    },
+    {
+      "notes": "",
+      "path": "docs/runtime/File-Contracts.json",
+      "kind": "config",
+      "module": "docs",
+      "stage": "verified",
+      "contract": {
+        "purpose": "文件合同账本：每个源文件一条 purpose/invariants/verification 合同，是 devtopology gate 的单一真源",
+        "invariants": "每个非排除仓库文件有且仅有一条 entry；stage 取合法值；自身在 fill_exempt 中故不被 semantic gate 检查占位；增删文件后须 make writeback-apply WRITE=1 同步",
+        "verification": "make verify 的 structure_contract_coverage 报 missing=0 stale=0"
+      }
+    },
+    {
+      "path": "docs/runtime/Manifest-Contract-System.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "文件合同系统参考：合同字段、stage 体系与 gate 语义",
+        "invariants": "与 engine/index.py 实际行为及 stage 取值一致",
+        "verification": "stage_values 与 engine POLICY_STAGE_VALUES 一致；字段与账本 schema 匹配"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/runtime/Secrets-Inventory.example.yaml",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "运营资产 + 凭证清单模板（含轮换时间戳占位）",
+        "invariants": "仅为模板；真实 Secrets-Inventory.yaml 存于 git 外并被 gitignore",
+        "verification": "真实 inventory 文件被 .gitignore 忽略；模板不含真实凭证"
+      },
+      "notes": ""
+    },
+    {
+      "path": "docs/workflow/WORKFLOW.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "工作流 policy：权威顺序、merge 边界、结构门禁、验收标准、自动合并、decision gate",
+        "invariants": "PR 为唯一合并边界；acceptance comment 为验收 SoT；薄 policy 指向 SKILL recipe；命令与 Makefile 一致",
+        "verification": "所列命令与 Makefile 一致；与 CLAUDE.md/AGENTS.md 不矛盾"
+      },
+      "notes": ""
+    },
+    {
+      "path": "engine/index.py",
+      "kind": "script",
+      "module": "engine",
+      "stage": "verified",
+      "contract": {
+        "purpose": "devtopology 核心引擎：mirror/atlas/contracts/writeback/gates 流水线",
+        "invariants": "Python stdlib only 零外部依赖；gate 输出统一 GATE_PASS/FAIL 结构化行；不耦合任何业务域",
+        "verification": "make verify/mirror/atlas 可跑且无外部 import；占位常量与文档一致"
+      },
+      "notes": ""
+    },
+    {
+      "path": "export/README.md",
+      "kind": "doc",
+      "module": "export",
+      "stage": "planned",
+      "contract": {
+        "purpose": "静态分发分片模块规划：snapshot → Parquet/JSON shards",
+        "invariants": "导出物不含任何 key；依赖 membership 的 point-in-time 正确性；分片粒度为实现级决策",
+        "verification": "输入/输出与 PRD §5、§12 一致"
+      },
+      "notes": ""
+    },
+    {
+      "path": "gate/report.sh",
+      "kind": "script",
+      "module": "gate",
+      "stage": "verified",
+      "contract": {
+        "purpose": "standalone bash gate 日志解析器，将 GATE_PASS/FAIL 行解析为结构化结果",
+        "invariants": "纯 bash 无外部依赖；只读日志不改状态",
+        "verification": "对 .index/health 的 verify 日志能解析出 gate 结果"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/README.md",
+      "kind": "doc",
+      "module": "ingest",
+      "stage": "planned",
+      "contract": {
+        "purpose": "数据拉取模块规划：Stooq + Nasdaq screener + SEC EDGAR (+yfinance fallback)",
+        "invariants": "US-only 过滤；个人不分发的 licensing 前提；输出表 schema 对齐 PRD §12",
+        "verification": "职责/源/输出与 PRD §6、§12 一致；未来文件清单明确"
+      },
+      "notes": ""
+    },
+    {
+      "path": "scripts/render_acceptance_comment.py",
+      "kind": "script",
+      "module": "scripts",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "渲染标准验收摘要，把 head_sha 绑定到验证证据",
+        "invariants": "names-only/counts-only 不含 secrets/endpoints；自动补 head_sha 与 changed_files；无 commit 时优雅降级",
+        "verification": "make accept GOAL=... 输出含 head_sha、changed_files 与 verify/health 字段"
+      },
+      "notes": ""
+    },
+    {
+      "path": "scripts/task_router.py",
+      "kind": "script",
+      "module": "scripts",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "只读任务 lane 路由：判定 docs-only/workflow-only/structure-trigger 并给分支建议",
+        "invariants": "绝不修改 repo 状态；输出 DOCS_ONLY/WORKFLOW_ONLY/STRUCTURE_TRIGGER/WARNINGS；路径为 tickertide 原生无 vpn-ops 耦合",
+        "verification": "make route 输出上述键且格式可解析；--structural/--planning/--gate 可强制触发"
+      },
+      "notes": ""
+    },
+    {
+      "path": "scripts/worktree.sh",
+      "kind": "script",
+      "module": "scripts",
+      "stage": "verified",
+      "contract": {
+        "purpose": "git worktree 任务隔离：open/check/status/close",
+        "invariants": "拒绝在保护分支上开工作分支；一个 worktree 一个 merge intent；check 在脏工作区失败",
+        "verification": "make task-open/status/close 可跑并产出预期状态"
+      },
+      "notes": ""
+    },
+    {
+      "path": "skills/devtopology/SKILL.md",
+      "kind": "doc",
+      "module": "skills",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "devtopology skill：合同/gate/drift/scope 的操作 recipe",
+        "invariants": "命令与 Makefile target 一致；引用真实仓库路径；不留占位",
+        "verification": "所列命令均为真 target；Key files 表与实际文件对应"
+      },
+      "notes": ""
+    },
+    {
+      "path": "skills/workflow-system/SKILL.md",
+      "kind": "doc",
+      "module": "skills",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "workflow-system skill：PR/任务路由、结构门禁、验收摘要的操作 recipe",
+        "invariants": "适配 tickertide 路径无 workrepo/.codex 残留；指向 docs/workflow/WORKFLOW.md policy；命令为真",
+        "verification": "无 vpn-ops 专属路径；所列命令均为有效 make target"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/README.md",
+      "kind": "doc",
+      "module": "themes",
+      "stage": "planned",
+      "contract": {
+        "purpose": "语义主题分类模块规划：LLM + EDGAR 营收锚定 membership",
+        "invariants": "point-in-time membership 硬要求；主题指数非市值加权；LLM 为候选生成器+抽取器，human-in-loop 审批",
+        "verification": "方法与约束与 PRD §8、§7 一致；输出表对齐 §12"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/README.md",
+      "kind": "doc",
+      "module": "web",
+      "stage": "planned",
+      "contract": {
+        "purpose": "静态客户端模块规划：canvas + duckdb-wasm 渲染五个 surface",
+        "invariants": "UX 合同 = equity-monitor-v2.jsx；trail 仅 pinned 且 Ocean 无 autoplay；所有 surface 数据从单一引擎派生",
+        "verification": "五 surface 行为与 PRD §9 一致；全局原语（旋钮/scope）符合 §9.1"
+      },
+      "notes": ""
+    }
+  ],
+  "retired_entries": [],
+  "last_structure_digest": "73713c321a7d33fdbfd4f934cc0fde2d67ef79494c64a63ea91554d271a32013"
+}

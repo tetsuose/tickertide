@@ -1,0 +1,38 @@
+# DevTopology generated artifacts
+.index/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+.cache/
+
+# JS / web client build outputs
+node_modules/
+web/node_modules/
+web/dist/
+web/.svelte-kit/
+dist/
+build/
+
+# Product data — derived nightly, never committed (Stooq/Nasdaq/EDGAR pulls,
+# DuckDB working files, exported Parquet/JSON shards). See docs/PRD.md.
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Task isolation worktrees
+.worktrees/
+
+# Credential-bearing paths. The .example templates under docs/runtime/ stay in git;
+# real env files, real inventories, mirrors, and incoming-staging files do not.
+# See docs/runtime/Credentials-Management.md.
+**/secrets/
+**/*.env
+!**/*.env.example
+!**/.env.example
+docs/runtime/Env-Registry.md
+docs/runtime/Secrets-Inventory.yaml

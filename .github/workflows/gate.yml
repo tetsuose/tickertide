@@ -1,0 +1,31 @@
+name: gates
+
+# Advisory CI: runs the devtopology gates on every push / PR.
+# This repo is GitHub free + private with no required status checks, so a red
+# result does NOT block merge — its value is an objective health record on the PR.
+# The task policy requires running `make verify` + `make health` locally before
+# push; this job backstops environment differences (and validates lowercase
+# paths on a case-sensitive Linux runner).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: structure + semantic gates
+        run: make verify
+      - name: health summary
+        run: make health
