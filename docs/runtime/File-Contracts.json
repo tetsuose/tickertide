@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T08:37:49.085428+00:00",
+  "updated_at": "2026-06-05T09:02:08.311956+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -147,6 +147,7 @@
       }
     },
     {
+      "notes": "M1.2–M1.5 web 任务与 CI offline-pipeline job 的共用离线前置；非 nightly pipeline；data/ 与 web/public/data/board.json 走 gitignore 不入库。见 export/board.py 合同与 memory m1-web-export-verification。",
       "path": "compute/fixture.py",
       "kind": "script",
       "module": "compute",
@@ -155,8 +156,7 @@
         "purpose": "合成 DuckDB fixture：确定性造 universe/daily_bars/spx_daily/fundamentals_q，供无网络环境（CI/sandbox，真实 ingest 依赖 api.nasdaq.com + Yahoo 常不可达）离线验证 compute/export/web —— 经 compute/db.py 真实 upsert 落库后喂真实引擎，验证的是生产读路径而非造数",
         "invariants": "只写四张源表(universe/daily_bars/spx_daily/fundamentals_q)、绝不写 derived_daily/valuation_daily(那是引擎的活，须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；内建边缘票 eps<0(P/E n.m.→P/S)·ebitda<0(EV/EBITDA n.m.→EV/S)·stale/overdue 申报(as-of freshness 分档)·无基本面票(valuation 覆盖缺口)，默认 30 票×320 日(≥25×≥260 暖 MA200/252d高/126d收益)；属产品代码用 venv 依赖(numpy/duckdb，非 engine stdlib-only 范畴)；是 dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)保证只含合成数据",
         "verification": "make fixture 产出四源表非空且计数=tickers×days；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py 顶层 composite_recon_max_drift≈0(C9)；抽查 board.json：loss 票 pe=null 且 ps 非空、deep_loss ev_ebitda=null、stale/overdue/无基本面三类各现、rank 无缝 1..N、composite 降序、无 NaN/Infinity；同 seed 两次重建 board.json sha256 一致"
-      },
-      "notes": "M1.2–M1.5 web 任务与 CI offline-pipeline job 的共用离线前置；非 nightly pipeline；data/ 与 web/public/data/board.json 走 gitignore 不入库。见 export/board.py 合同与 memory m1-web-export-verification。"
+      }
     },
     {
       "notes": "",
@@ -589,8 +589,116 @@
         "invariants": "UX 合同 = equity-monitor-v2.jsx；trail 仅 pinned 且 Ocean 无 autoplay；所有 surface 数据从单一引擎派生",
         "verification": "五 surface 行为与 PRD §9 一致；全局原语（旋钮/scope）符合 §9.1"
       }
+    },
+    {
+      "path": "web/index.html",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Vite 入口 HTML：挂载点 #root + 加载 src/main.tsx",
+        "invariants": "暗色 color-scheme；单一 #root 挂载；模块脚本入口 /src/main.tsx；charset/viewport/title 就位",
+        "verification": "vite build 产出 dist/index.html 含打包后脚本/样式引用"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/package-lock.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "锁定 web 依赖精确版本树（npm 生成）以复现构建",
+        "invariants": "与 package.json 同步、不手改；入库供 npm ci 还原确定的 node_modules（web/node_modules 走 gitignore）",
+        "verification": "npm ci 据此还原；npm install 不再产生 lockfile diff"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/package.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "web client 依赖与脚本清单（Vite + React + TypeScript）：dev / build / preview / typecheck",
+        "invariants": "type=module(ESM)；React 19 + Vite 6 + TS 5；build = tsc 类型检查 + vite 产静态 dist；不引入后端/运行时网络依赖（零后端静态分发）",
+        "verification": "npm install 成功；npm run build 通过（tsc 无错 + vite 产出 dist/assets）"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/src/App.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "应用 shell：固定顶部控制栏（5 tab + early⟷reliable 旋钮 + scope chip）+ 中央 surface 面板",
+        "invariants": "5 surface 固定顺序(Ocean·Discovery·Rotation·Valuation·Stock)、默认 Discovery；scope 单一真源、跨 tab 粘滞、≠all 才显 chip、可一键清(C8/C10)；旋钮为骨架(k state)，权重重算 + 分量条归 M1.4 composite.ts(C9)；M1.2 各 surface 为 milestone 占位、不取数",
+        "verification": "npm run build 通过；产物含 5 tab 标签 + 标题 + RELIABLE/EARLY；切 tab 改 active 态"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/src/main.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "React 根渲染入口：StrictMode 挂载 App + 注入全局 theme.css",
+        "invariants": "createRoot 挂到 #root；引入 theme.css（配色 SoT）；仅做挂载、不含业务逻辑",
+        "verification": "构建后页面挂载 App；shell 渲染无运行时控制台错误"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/src/theme.css",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "暗色主题与配色 SoT：附录C 全调色板(core + 11 sector + 8 theme + MA + freshness + composite) CSS 变量 + shell 组件类",
+        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同，组件只引 var() 不写裸 hex；选中 tab 高亮绿 --accent；字体 Saira(disp) / IBM Plex Mono(mono)",
+        "verification": "构建后 CSS 含附录C 关键 hex(080b11/2ec07a/ff5d57/e0a02e/5197ff/4d9bff…)；视觉对 UX 合同"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/src/types.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "board.json 的 TS 类型镜像（M1.1 export 契约）+ SurfaceId / Scope，前端数据桥",
+        "invariants": "结构与 export/board.py 输出逐字段对齐；引擎可空处置 null；components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎",
+        "verification": "tsc 通过；M1.4 fetch board.json 按此类型消费无类型错"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/tsconfig.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "TypeScript 编译配置（bundler 模式、strict、noEmit 仅类型检查）",
+        "invariants": "strict 全开 + noUnusedLocals/Parameters；jsx=react-jsx；moduleResolution=bundler；noEmit（打包交给 Vite）；include 仅 src",
+        "verification": "tsc 通过即类型契约成立；npm run build 的 tsc 段无错"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/vite.config.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Vite 构建配置：React 插件 + base 相对路径（静态分发任意子路径可用）",
+        "invariants": "base='./' 保证 file:// / Cloudflare Pages 子路径可用；输出 web/dist(gitignore)；运行时数据从 public/data 加载、构建不内联数据",
+        "verification": "vite build 成功且资源为相对路径；dist/index.html 引用 ./assets/*"
+      },
+      "notes": ""
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "b3aba99ce5127fa0017bbae751108d071a3a913f47285d8751bde2c4b94e7eb0"
+  "last_structure_digest": "58a33ce3d845bb6277150c84cd86f25b4a9b7be41fc75e14d9c531d05ece6990"
 }
