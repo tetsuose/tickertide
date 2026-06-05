@@ -106,3 +106,27 @@ def read_spx(con: duckdb.DuckDBPyConnection):
 
 def clear_derived(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("DELETE FROM derived_daily")
+
+
+# --- M0.2 fundamentals (EDGAR) ---
+
+def upsert_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str, rows: Sequence[Sequence]) -> int:
+    """INSERT OR REPLACE fundamentals_q. Each row =
+    (period_end, filed_date, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm)."""
+    if not rows:
+        return 0
+    payload = [(ticker, *r) for r in rows]
+    con.executemany(
+        "INSERT OR REPLACE INTO fundamentals_q VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        payload,
+    )
+    return len(payload)
+
+
+def read_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str):
+    """Return a ticker's trailing-4Q fundamentals as a pandas DataFrame, oldest first."""
+    return con.execute(
+        "SELECT period_end, filed_date, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm "
+        "FROM fundamentals_q WHERE ticker = ? ORDER BY period_end",
+        [ticker],
+    ).df()

@@ -61,3 +61,31 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   rank_in_universe  INTEGER,   -- dense rank by composite per date (1 = strongest)
   PRIMARY KEY (ticker, date)
 );
+
+-- fundamentals_q: trailing-4Q financials per reporting period (M0.2). Spec: PRD §12.
+-- point-in-time: filed_date is the as-of (anti-lookahead). revenue/eps/ebitda are
+-- trailing-4Q (4 single quarters; Q4 derived from annual − sum(Q1..Q3) when needed;
+-- annual-only filers fall back to yearly points). Balance-sheet items are instant.
+CREATE TABLE IF NOT EXISTS fundamentals_q (
+  ticker       VARCHAR,
+  period_end   DATE,
+  filed_date   DATE,
+  revenue_ttm  DOUBLE,
+  shares       DOUBLE,
+  total_debt   DOUBLE,
+  cash         DOUBLE,
+  ebitda_ttm   DOUBLE,
+  eps_ttm      DOUBLE,
+  PRIMARY KEY (ticker, period_end)
+);
+
+-- segment_revenue: theme revenue anchoring (PRD §8.3, §12). Table created in M0.2
+-- but NOT populated here — companyfacts does not expose XBRL segment dimensions;
+-- segment extraction is M4 (10-K/10-Q segment footnote + LLM, human-in-loop).
+CREATE TABLE IF NOT EXISTS segment_revenue (
+  ticker      VARCHAR,
+  period_end  DATE,
+  segment     VARCHAR,
+  revenue     DOUBLE,
+  PRIMARY KEY (ticker, period_end, segment)
+);
