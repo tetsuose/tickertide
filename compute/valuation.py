@@ -78,23 +78,44 @@ def compute_valuation(con) -> dict:
     }
 
 
-def latest_common_vintage(con, metric: str = "ps", fresh_days: int = 95):
-    """Common-vintage percentile of `metric` on the latest date.
+# Valuation columns eligible for common-vintage ranking. Guards the metric name,
+# which is interpolated into the SQL below (callers pass one of these, not raw input).
+VINTAGE_METRICS = ("pe", "ps", "evs", "ev_ebitda", "peg", "growth", "margin", "rule40")
 
-    Returns (latest_date, {ticker: percentile}, n_fresh, n_stale). Stale rows
-    (as-of age > fresh_days) are excluded from the cohort — never ranked.
+
+def common_vintage(con, metric: str = "ps", on_date=None, fresh_days: int = 95):
+    """Common-vintage cross-sectional percentile of `metric` on one trading day.
+
+    This is the SINGLE definition of the valuation percentile (PRD §10.5): rank
+    only within the fresh cohort (as-of age <= fresh_days); stale rows are excluded
+    ("vint"), never ranked against fresh. Ascending sort → percentile 0 = cheapest,
+    100 = most expensive (Ocean y-axis bottom=cheap). M2 (Ocean weekly snapshots)
+    and M5 (Valuation screener) both call THIS function so the口径 never forks (C9).
+
+    `on_date=None` → the latest date in valuation_daily. Returns
+    (on_date, {ticker: percentile_float}, n_fresh, n_stale).
     """
-    latest = con.execute("SELECT max(date) FROM valuation_daily").fetchone()[0]
+    if metric not in VINTAGE_METRICS:
+        raise ValueError(f"metric {metric!r} not in {VINTAGE_METRICS}")
+    if on_date is None:
+        on_date = con.execute("SELECT max(date) FROM valuation_daily").fetchone()[0]
     rows = con.execute(
         f"SELECT ticker, {metric}, datediff('day', as_of_period_end, date) AS age "
         f"FROM valuation_daily WHERE date = ? AND {metric} IS NOT NULL",
-        [latest],
+        [on_date],
     ).fetchall()
     fresh = sorted([(t, v) for t, v, age in rows if age is not None and age <= fresh_days], key=lambda x: x[1])
     n_stale = sum(1 for _, _, age in rows if age is None or age > fresh_days)
     n = len(fresh)
-    pct = {t: (round(100 * i / (n - 1)) if n > 1 else 50) for i, (t, _) in enumerate(fresh)}
-    return latest, pct, n, n_stale
+    pct = {t: (100.0 * i / (n - 1) if n > 1 else 50.0) for i, (t, _) in enumerate(fresh)}
+    return on_date, pct, n, n_stale
+
+
+def latest_common_vintage(con, metric: str = "ps", fresh_days: int = 95):
+    """Latest-date common-vintage percentile, rounded to int. Thin wrapper over
+    `common_vintage` for callers that want the snapshot ranking directly."""
+    on_date, pct, n, n_stale = common_vintage(con, metric, None, fresh_days)
+    return on_date, {t: round(v) for t, v in pct.items()}, n, n_stale
 
 
 def main(argv: list[str] | None = None) -> int:
