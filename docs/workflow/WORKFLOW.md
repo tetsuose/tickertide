@@ -38,10 +38,10 @@ scope: repo
 - `B` 弱相关、可独立 review → 拆新 branch/PR。
 - `C` 历史残留/上下文不清 → 转独立修复流。
 
-路由（`make route` 自动判定）：
-- **docs-only**：全部变更落在 `docs/`（不含 `docs/runtime/File-Contracts.json`）→ `docs/<date>-...` 分支。
-- **workflow-only**：全部落在 `engine/ gate/ scripts/ skills/ .github/ docs/workflow/ docs/agent-state/` 或顶层入口/配置 → `chore/workflow-...` 分支。
-- **product**：落在 `ingest/ compute/ export/ web/ themes/` → `feat/<module>-...` 分支。
+路由（`make route` 自动判定）。统一分支形态 **`<prefix>/<date>-<descriptor>`（date-first）**，`make task-open`(worktree.sh) 与 `make route`(task_router.py) 共用同一套前缀规则——前者 descriptor 取 query slug，后者取模块名：
+- **docs-only**：全部变更落在 `docs/`（不含 `docs/runtime/File-Contracts.json`）→ `docs/<date>-<descriptor>`。
+- **workflow-only**：全部落在 `engine/ gate/ scripts/ skills/ .github/ docs/workflow/ docs/agent-state/` 或顶层入口/配置 → `chore/workflow-<date>-<descriptor>`。
+- **product**：落在 `ingest/ compute/ export/ web/ themes/` → `feat/<date>-<descriptor>`（默认前缀；`make task-open` 不带 `TASK_KIND` 即此）。
 - 混合（plumbing + product）默认视为可能混了两个任务，优先拆。
 
 ## 3) 结构门禁触发（devtopology）
