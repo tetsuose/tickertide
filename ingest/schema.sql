@@ -1,6 +1,7 @@
--- TickerTide DuckDB schema — M0 (price + universe layer).
--- Full schema spec: docs/PRD.md §12. This file covers only the tables M0.1 writes.
--- Idempotent: safe to re-run on every ingest.
+-- TickerTide DuckDB schema — every DuckDB table, created idempotently on each
+-- connect (compute/db.py). Each table notes the milestone/module that writes it.
+-- Full schema spec + field dictionary: docs/PRD.md §12, 附录 B.
+-- Safe to re-run: CREATE TABLE IF NOT EXISTS only adds what's missing.
 
 CREATE TABLE IF NOT EXISTS universe (
   ticker      VARCHAR PRIMARY KEY,
@@ -30,6 +31,22 @@ CREATE TABLE IF NOT EXISTS daily_bars (
 CREATE TABLE IF NOT EXISTS spx_daily (
   date   DATE PRIMARY KEY,
   close  DOUBLE
+);
+
+-- bucket_bars: sector ETF (M3) / theme index (M4) daily closes — the RS-Ratio
+-- numerator (vs spx_daily benchmark; compute/rotation.py resamples weekly, M3.2).
+-- DELIBERATELY ISOLATED from universe daily_bars: ETF/index prices must NEVER enter
+-- the universe cross-section (derived_daily.rs_pct / rank_in_universe), or per-date
+-- percentiles drift (PRD §16, ROADMAP M3 "ETF 不污染横截面"). compute/run.py reads
+-- daily_bars only; rotation reads bucket_bars only. `bucket` is the GICS sector name
+-- (== universe.sector) so league aggregation joins by name; the ETF ticker lives in
+-- ingest/sector_etf_map.txt. `close` is total-return basis (adj_close), like spx_daily.
+CREATE TABLE IF NOT EXISTS bucket_bars (
+  bucket_type  VARCHAR,   -- 'sector' (11 SPDR ETF, M3) | 'theme' (M4 index)
+  bucket       VARCHAR,   -- GICS sector name (== universe.sector) | theme name
+  date         DATE,
+  close        DOUBLE,    -- adj close (total-return basis; matches spx_daily)
+  PRIMARY KEY (bucket_type, bucket, date)
 );
 
 -- derived_daily: per-stock signals + composite (M0.3). Spec: PRD §12, math: §10.
