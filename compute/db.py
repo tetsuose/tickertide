@@ -73,6 +73,20 @@ def upsert_spx(con: duckdb.DuckDBPyConnection, bars: Sequence[Sequence]) -> int:
     return len(payload)
 
 
+def upsert_bucket_bars(
+    con: duckdb.DuckDBPyConnection, bucket_type: str, bucket: str, rows: Sequence[Sequence]
+) -> int:
+    """INSERT OR REPLACE bucket (sector ETF / theme index) closes. Each row = (date, close).
+    Isolated from daily_bars on purpose: bucket prices feed RS-Ratio (compute/rotation.py,
+    M3.2) and must never enter the universe cross-section. `bucket` is the GICS sector
+    name; `close` is total-return basis (adj_close), consistent with upsert_spx."""
+    if not rows:
+        return 0
+    payload = [(bucket_type, bucket, d, c) for (d, c) in rows]
+    con.executemany("INSERT OR REPLACE INTO bucket_bars VALUES (?, ?, ?, ?)", payload)
+    return len(payload)
+
+
 def count(con: duckdb.DuckDBPyConnection, table: str) -> int:
     return con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
 

@@ -1,0 +1,24 @@
+# TickerTide sector → SPDR sector ETF map (M3.1) — the RS-Ratio bucket source.
+#
+# Each line: <GICS sector name>  <ETF ticker>   (ETF = last whitespace token; '#' comments).
+# The 11 fixed GICS sectors (PRD §8.1) ↔ the 11 SPDR Select Sector ETFs.
+#
+# IMPORTANT — the bucket name IS the GICS sector name == universe.sector, so
+# compute/rotation.py (M3.2) joins league aggregates to members by name. These names
+# match compute/fixture.py SECTORS exactly (the offline verification path). The real
+# Nasdaq screener emits its OWN sector names (e.g. "Technology", "Finance"); normalizing
+# those to GICS is a universe-layer follow-up, OUT of M3.1 scope.
+#
+# ETF tickers are Yahoo/yfinance symbols; the Stooq provider appends ".US".
+
+Information Technology    XLK
+Health Care               XLV
+Financials                XLF
+Consumer Discretionary    XLY
+Communication Services    XLC
+Industrials               XLI
+Consumer Staples          XLP
+Energy                    XLE
+Utilities                 XLU
+Real Estate               XLRE
+Materials                 XLB

@@ -11,9 +11,10 @@ tool fabricates a deterministic universe / daily_bars / spx_daily / fundamentals
 ingest uses, so downstream `make compute` + the exporters read the real engine
 code path on reproducible inputs, with no network.
 
-It writes ONLY the four source tables. Run `make compute` (run.py + valuation.py)
-afterwards to fill derived_daily + valuation_daily with the real engine, then any
-exporter (export/board.py …). `make fixture-pipeline` chains fixture -> compute.
+It writes the five source tables (universe / daily_bars / spx_daily / fundamentals_q
++ bucket_bars for M3 rotation). Run `make compute` (run.py + valuation.py) afterwards
+to fill derived_daily + valuation_daily with the real engine, then any exporter
+(export/board.py …). `make fixture-pipeline` chains fixture -> compute.
 
 Edge cases baked in (so verification actually exercises the branchy paths the web
 surfaces care about — see m1-web-export-verification):
@@ -173,8 +174,30 @@ def fundamentals_rows(rng: np.random.Generator, profile: str, end: date,
     return rows
 
 
+def build_bucket_bars(con, rng: np.random.Generator, dates: list[date], days: int) -> int:
+    """Fabricate one synthetic close series per GICS sector into bucket_bars (M3.1).
+
+    Called from build() AFTER all other rng draws, so it never perturbs the universe/
+    bars/spx/fundamentals byte stream (the M1/M2 committed fixtures depend on that).
+    ETF closes are isolated in bucket_bars and must never reach the universe cross
+    section. Sector drifts straddle SPX's drift (0.08) so the downstream RS-Ratio
+    (compute/rotation.py, M3.2) has a real spread around the 100 baseline; ETFs are
+    diversified, hence lower vol than single names. Safe to retune — trailing draws only."""
+    sector_mus = np.linspace(0.28, -0.16, len(SECTORS))  # strong .. weak vs spx mu=0.08
+    rng.shuffle(sector_mus)
+    n = 0
+    for j, sector in enumerate(SECTORS):
+        closes = price_path(
+            rng, days, start=float(rng.uniform(40.0, 150.0)),
+            mu=float(sector_mus[j]), sigma=float(rng.uniform(0.12, 0.22)),
+        )
+        rows = [(dates[t].isoformat(), float(closes[t])) for t in range(days)]
+        n += db.upsert_bucket_bars(con, "sector", sector, rows)
+    return n
+
+
 def build(con, *, tickers: int, days: int, seed: int, end: date) -> dict:
-    """Populate the four source tables on `con`. Returns a summary dict."""
+    """Populate the five source tables on `con` (incl. bucket_bars). Returns a summary dict."""
     rng = np.random.default_rng(seed)
     dates = trading_days(end, days)
 
@@ -227,6 +250,10 @@ def build(con, *, tickers: int, days: int, seed: int, end: date) -> dict:
     db.upsert_spx(con, spx_bars)
     n_funda = sum(db.upsert_fundamentals(con, sym, rows) for sym, rows in funda_by_ticker if rows)
 
+    # M3.1: synthetic sector ETF series -> bucket_bars. Drawn LAST so the four tables
+    # above stay byte-identical; isolated from the universe cross-section (see docstring).
+    n_bucket = build_bucket_bars(con, rng, dates, days)
+
     return {
         "tickers": tickers,
         "days": days,
@@ -234,6 +261,8 @@ def build(con, *, tickers: int, days: int, seed: int, end: date) -> dict:
         "bars": n_bars,
         "spx": len(spx_bars),
         "fundamentals": n_funda,
+        "bucket_bars": n_bucket,
+        "buckets": len(SECTORS),
         "profiles": profile_map,
     }
 
@@ -266,7 +295,8 @@ def main(argv: list[str] | None = None) -> int:
 
     lo, hi = s["date_range"]
     print(f"[fixture] seed={args.seed} tickers={s['tickers']} days={s['days']} ({lo} .. {hi})")
-    print(f"[fixture] rows: daily_bars={s['bars']} spx_daily={s['spx']} fundamentals_q={s['fundamentals']}")
+    print(f"[fixture] rows: daily_bars={s['bars']} spx_daily={s['spx']} "
+          f"fundamentals_q={s['fundamentals']} bucket_bars={s['bucket_bars']} ({s['buckets']} sectors)")
     for prof in ("normal", "loss", "deep_loss", "stale", "overdue", "none"):
         syms = s["profiles"].get(prof, [])
         if syms:
