@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T12:19:05.118163+00:00",
+  "updated_at": "2026-06-05T12:38:53.601984+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -375,6 +375,7 @@
       }
     },
     {
+      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
       "path": "export/ocean.py",
       "kind": "script",
       "module": "export",
@@ -383,8 +384,7 @@
         "purpose": "M2.1 导出：DuckDB 周度快照 → web/public/data/ocean.json（Ocean wide-explore 散点每票 N 周 RS×估值位置序列，供 scrubber + pin trail）",
         "invariants": "每票 pts[] 与 weeks[] 对齐(老→新)：rs=derived_daily.rs_pct(0-100 横截面，与 Discovery/Stock 同列同源、点位可追溯 C9)、val=common-vintage 百分位(0-100，底=便宜，§10.5)、ps=val 背后的原始倍数(供 hover tip §9.2，与位置同周)；val 一律经 compute.valuation.common_vintage 计算(M2 Ocean 与 M5 Valuation 复用同一函数、口径不分叉 C9)；weeks=各 ISO 周最后交易日(date_trunc('week'))、最新周==最新快照(==board.json as_of)故 Ocean 当前位与 Stock 数字一致；入选票=最新周同时有 rs 且 fresh val(有可渲染 (x,y))，stale/n.m./无基本面者无 y 坐标→不导出(符合 §10.5 stale 不进 percentile)，历史周缺 rs/fresh-val 则该 pt=null(不伪造位置)；mktcap 原始 USD(同 board.json)；输出为派生物、gitignore、不含任何 key/secret",
         "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 len(pts)==n_weeks 且最新 pt 非空；val orientation 最便宜 ps 的 val 不高于最贵=底=便宜)；ocean.json rs/val∈[0,100]、ps>0、weeks 老→新且 weeks[-1]==max(derived_daily.date)；none/stale/overdue profile 票缺席；≥500 票 fixture 下 count≥500、size 几百 KB、export<1s"
-      },
-      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5"
+      }
     },
     {
       "notes": "",
@@ -646,8 +646,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "应用 shell：固定顶部控制栏（5 tab + early⟷reliable 旋钮 + 权重条 + scope chip）+ 中央 surface 面板",
-        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条(weights(k) 高度)即时变 + 透传 k 给 Discovery 实时重排；discovery 渲染 <Discovery k>、其余 milestone 占位；scope 单一真源、跨 tab 粘滞、可一键清(C8/C10)；权重曲线来自 composite.ts(C9)",
-        "verification": "npm run build 通过；SSR app chrome 含 wbars/wbfill + RELIABLE/EARLY；旋钮改 k → Discovery 重排"
+        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条(weights(k) 高度)即时变 + 透传 k 给 Discovery 实时重排；discovery 渲染 <Discovery k>、ocean 渲染 <Ocean scope>(respect 全局 scope)、其余 milestone 占位；scope 单一真源、跨 tab 粘滞、可一键清(C8/C10)；权重曲线来自 composite.ts(C9)",
+        "verification": "npm run build 通过；SSR app chrome 含 wbars/wbfill + RELIABLE/EARLY；旋钮改 k → Discovery 重排；ocean tab 渲染 Ocean canvas surface"
       }
     },
     {
@@ -687,6 +687,18 @@
       }
     },
     {
+      "path": "web/src/lib/__fixtures__/ocean.sample.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M2.2 Ocean 渲染测试用样本 ocean.json（export/ocean.py 真实产物，520 票 fixture→517 票×14 周）",
+        "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；每票 pts 与 weeks 对齐、最新周非空(≥500 可渲染点)；rs/val∈[0,100]、val 底=便宜；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)",
+        "verification": "Ocean.test.tsx import 后断言 count≥500、最新周全非空、每票 sector 可识别；再生命令见 Ocean.test.tsx notes"
+      },
+      "notes": "派生自 export/ocean.py(M2.1)；与 board.sample.json 同为提交版测试 fixture"
+    },
+    {
       "notes": "",
       "path": "web/src/lib/composite.test.ts",
       "kind": "code",
@@ -717,10 +729,22 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "载入 nightly Discovery 快照 board.json（export/board.py 产物）",
-        "invariants": "fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'（任意子路径可用）；非 2xx 抛错供上层降级；返回类型 BoardData(types.ts 镜像)；支持 AbortSignal 取消",
-        "verification": "Discovery 运行时按此载入渲染卡流；board.json 缺失时上层显 NO DATA 态"
+        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean)（export/*.py 产物）",
+        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消",
+        "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
       }
+    },
+    {
+      "path": "web/src/lib/ocean-draw.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Ocean canvas 纯绘制库：固定 RS×Val 平面的几何/配色/尺寸 helpers + drawOcean 单次绘制一周快照（PRD §9.2）",
+        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式 sector/theme/quadrant 返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时 getComputedStyle 解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；drawOcean 画象限 tint(右下绿)+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)并返回非淡点屏幕位置供命中测试(M2.3 hover)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
+        "verification": "Ocean.test.tsx：radiusFor clamp/√量级、makeScales sy 底=便宜、quadrantVar 四象限、colorVar 各模式、withAlpha hex→rgba；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 且落 plot 框内 + clear/象限 fillRect/十字线 stroke + scope=sector 仅成员非淡"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -741,9 +765,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "暗色主题与配色 SoT：附录C 全调色板 CSS 变量 + shell 组件类 + evidence-card/Discovery 类 + 权重条/d-d 类",
-        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件只引 var() 不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd) 转写自 UX 合同",
-        "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb* 类；视觉对 UX 合同"
+        "purpose": "暗色主题与配色 SoT：附录C 全调色板 CSS 变量 + shell 组件类 + evidence-card/Discovery/Ocean 类",
+        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad) 转写自 UX 合同",
+        "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb*/.oc* 类；视觉对 UX 合同"
       }
     },
     {
@@ -753,9 +777,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "board.json 的 TS 类型镜像（M1.1 export 契约）+ SurfaceId / Scope，前端数据桥",
-        "invariants": "结构与 export/board.py 输出逐字段对齐；引擎可空处置 null；components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎",
-        "verification": "tsc 通过；M1.4 fetch board.json 按此类型消费无类型错"
+        "purpose": "board.json(M1.1) + ocean.json(M2.1) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜",
+        "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
     {
@@ -781,6 +805,30 @@
         "invariants": "按前端重算 composite(组件,k) 降序——旋钮 k 改即实时重排(C9、绝不重算引擎)；卡片 weights/score 用 composite.ts 在当前 k 算；loading/error/empty 三态；initial 注入便于 SSR/测试",
         "verification": "SSR：k=0 与 k=1 排序不同(28/30 位变)、≥18 卡、top badge=composite(top,k)；build 通过"
       }
+    },
+    {
+      "path": "web/src/views/Ocean.test.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M2.2 提交版回归 gate（vitest）：Ocean 纯绘制库单测 + drawOcean mock-ctx 断言最新周 ≥500 点 + SSR scaffold",
+        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/quadrantVar/colorVar/withAlpha) 直测 + drawOcean 喂 recording mock-ctx 计 arc 数==可渲染票数且≥500、点落 plot 框、scope=sector 仅成员非淡、static 层 clear+象限 fillRect+十字线 stroke；SSR 断言 canvas+三配色切换+轴标+WEEK 标签；fixture=ocean.sample.json",
+        "verification": "npm test / make web-test 全绿（本文件 12 用例）"
+      },
+      "notes": "ocean.sample.json 再生：make fixture-pipeline FIXTURE_ARGS=\"--tickers 520 --seed 7\" && python export/ocean.py --out web/src/lib/__fixtures__/ocean.sample.json"
+    },
+    {
+      "path": "web/src/views/Ocean.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Ocean surface（PRD §9.2）：固定 RS×Val canvas 散点 + sector/theme/quadrant 配色切换 + √市值尺寸，M2.2 渲染最新周静态散点",
+        "invariants": "读 ocean.json(loadOcean) 或 initial 注入(测试免 fetch)；canvas 2x retina(setTransform)；useEffect 调 ocean-draw.drawOcean、色板经 resolvePalette(document.documentElement)；M2.2 固定渲染最新周(n_weeks-1)，scrubber/hover 留 M2.3、pin/trail/lasso 留 M2.4；respect 全局 scope(透传 App 单一真源)；轴/象限标签 overlay 对照 UX 合同；错误/加载态降级 placeholder",
+        "verification": "SSR(renderToStaticMarkup) 含 canvas + sector/theme/quadrant 三切换 + RS/Valuation 轴标 + WEEK n/N 标签；npm run build(tsc+vite) 通过；绘制正确性见 ocean-draw 头测；浏览器视觉/性能 M2.5"
+      },
+      "notes": "themes 数据 M4 前空→theme 配色模式暂全淡、theme 选择器留 M4；Makefile export 接线 + 浏览器性能验证留 M2.5"
     },
     {
       "notes": "",
@@ -820,5 +868,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "0abeaf02db89e5cddd042b1408b51b0afb5e33dd9ff2e552aaf958819ddaefc3"
+  "last_structure_digest": "5234b6de604bc22eda176ae619a641dfa36975d8c3272954419f2c43fae80192"
 }
