@@ -1,0 +1,342 @@
+/* TickerTide theme — dark-only, transcribed from the UX contract
+   (docs/equity-monitor-v2.jsx) and PRD 附录 C. This file is the color SoT for
+   the web client; components reference these CSS variables, never raw hex. */
+@import url('https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* core palette (附录 C) */
+  --bg: #080b11;
+  --bg2: #0c1117;
+  --panel: #0e141d;
+  --line: #1b232e;
+  --line2: #2a3441;
+  --txt: #e9eef5;
+  --dim: #8593a3;
+  --dim2: #56616f;
+  --grn: #2ec07a; /* positive / leading */
+  --red: #ff5d57; /* negative / lagging */
+  --amb: #e0a02e; /* weakening / neutral-weak */
+  --blu: #5197ff; /* improving / MA50 / weight bar */
+  --accent: #2ec07a;
+
+  /* quadrants */
+  --q-lead: #2ec07a;
+  --q-weak: #e0a02e;
+  --q-lag: #ff5d57;
+  --q-impr: #5197ff;
+
+  /* 11 GICS sectors */
+  --sec-tech: #4d9bff;
+  --sec-comm: #7c6bff;
+  --sec-disc: #ff8f3f;
+  --sec-hlth: #2ec0a0;
+  --sec-fin: #3fb950;
+  --sec-indu: #c9a227;
+  --sec-nrg: #e0612e;
+  --sec-stpl: #9aa7b5;
+  --sec-matl: #b06fd0;
+  --sec-util: #5f8fa8;
+  --sec-re: #d08fae;
+
+  /* 8 concept themes */
+  --th-ai: #2ec07a;
+  --th-robo: #ff5d57;
+  --th-space: #5197ff;
+  --th-optic: #e0a02e;
+  --th-semi: #7c6bff;
+  --th-nuke: #2ec0a0;
+  --th-cybr: #ff8f3f;
+  --th-cloud: #9aa7b5;
+
+  /* MA lines + freshness */
+  --ma50: #378add;
+  --ma150: #ba7517;
+  --ma200: #888780;
+  --fresh: #2ec07a;
+  --stale: #e0a02e;
+  --overdue: #ff5d57;
+
+  /* composite score thresholds (>=62 grn / >=47 amb / else dim) */
+  --score-hi: #2ec07a;
+  --score-mid: #e0a02e;
+  --score-lo: #56616f;
+
+  /* fonts */
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --disp: 'Saira Semi Condensed', system-ui, sans-serif;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* full-viewport app shell with the contract's radial accent wash */
+.app {
+  position: relative;
+  min-height: 100vh;
+  padding: 18px 20px 24px;
+  background:
+    radial-gradient(1100px 560px at 82% -12%, rgba(46, 192, 122, 0.07), transparent 60%),
+    radial-gradient(820px 460px at -8% 112%, rgba(81, 151, 255, 0.06), transparent 60%),
+    var(--bg);
+}
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* --- header --- */
+.hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.logo {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  color: var(--accent);
+  font-size: 18px;
+  background: linear-gradient(180deg, rgba(46, 192, 122, 0.12), transparent);
+}
+.title {
+  font-family: var(--disp);
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.07em;
+  line-height: 1;
+}
+.sub {
+  color: var(--dim);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  margin-top: 5px;
+}
+.asof {
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+.asof b {
+  color: var(--txt);
+}
+.asof2 {
+  color: var(--dim2);
+  margin-top: 4px;
+  font-size: 10px;
+}
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--grn);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* --- control bar: tabs + knob + scope --- */
+.ctrl {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0;
+  flex-wrap: wrap;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 4px;
+}
+.tab {
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-size: 12.5px;
+  color: var(--dim);
+  background: none;
+  border: 0;
+  padding: 7px 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.tab:hover {
+  color: var(--txt);
+}
+.tab.on {
+  color: var(--bg);
+  background: var(--accent);
+}
+
+.knobwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 320px;
+  flex: 1;
+  max-width: 420px;
+}
+.knoblabels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  color: var(--dim2);
+}
+.kactive {
+  color: var(--accent);
+}
+.khint {
+  color: var(--dim2);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.knob {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--blu), var(--grn));
+  outline: none;
+  cursor: pointer;
+}
+.knob::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--txt);
+  border: 3px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line2);
+  cursor: grab;
+}
+.knob::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--txt);
+  border: 3px solid var(--bg);
+  cursor: grab;
+}
+
+/* --- scope chip (only rendered when scope != all) --- */
+.scopebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 6px;
+  flex-wrap: wrap;
+}
+.scopechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 20px;
+  padding: 5px 6px 5px 13px;
+  font-size: 12px;
+  font-family: var(--disp);
+  letter-spacing: 0.03em;
+}
+.scopex {
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+  color: var(--dim);
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+.scopehint {
+  color: var(--dim2);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* --- content panel --- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.ptitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-size: 12.5px;
+  color: var(--dim);
+  flex-wrap: wrap;
+}
+.foot {
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--dim2);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+/* surface placeholder (M1.2 scaffold — real surfaces land in later milestones) */
+.placeholder {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  min-height: 320px;
+  padding: 40px 16px;
+  gap: 10px;
+}
+.placeholder .ph-tag {
+  font-family: var(--disp);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: var(--accent);
+}
+.placeholder .ph-msg {
+  color: var(--dim);
+  max-width: 520px;
+}
