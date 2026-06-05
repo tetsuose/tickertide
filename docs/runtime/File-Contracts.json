@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T03:01:10.556776+00:00",
+  "updated_at": "2026-06-05T03:42:35.942842+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -129,12 +129,13 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert + compute 读写（M0）",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 用 INSERT OR REPLACE/ON CONFLICT 幂等；read_bars/read_spx 返回 pandas 供 compute；clear_derived 支持全重算",
-        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；count/distinct_bar_tickers 返回整数"
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert + compute/fundamentals 读写（M0）",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 用 INSERT OR REPLACE/ON CONFLICT 幂等；read_bars/read_spx/read_fundamentals 返回 pandas；clear_derived 支持全重算",
+        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；count 返回整数"
       }
     },
     {
+      "notes": "",
       "path": "compute/run.py",
       "kind": "script",
       "module": "compute",
@@ -143,10 +144,10 @@
         "purpose": "M0.3 compute 编排：daily_bars + spx_daily → derived_daily（横截面 rs_pct + composite）",
         "invariants": "pandas 算 per-stock、DuckDB 算横截面 PERCENT_RANK/rank；分量 c_* 存原始供 client 按任意 k 重配权，composite 仅默认 k 快照；clear+重算幂等",
         "verification": "compute_all 后 derived_daily 非空；5 分量∈[0,1]；composite∈[0,100]；smoke top-by-composite 方向合理"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "compute/signals.py",
       "kind": "script",
       "module": "compute",
@@ -155,8 +156,7 @@
         "purpose": "per-stock 信号数学：EWMAC / KER trend / 双窗 RS / MA / volume + early⟷reliable weights(k)",
         "invariants": "pandas 算时序；composite 分量∈[0,1]；weights 对每个 k 恒 Σ=1 且不删任何分量；math 对齐 PRD §10",
         "verification": "compute_metrics 返回各 metric 列；weights(0)/weights(1) 之和均=1"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -351,6 +351,18 @@
       }
     },
     {
+      "path": "ingest/edgar.py",
+      "kind": "script",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，point-in-time",
+        "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）",
+        "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "ingest/nasdaq.py",
       "kind": "script",
@@ -393,9 +405,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB M0 schema：universe / daily_bars / spx_daily / derived_daily 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量原始值供 client 按 k 重算；PK 防重",
-        "verification": "compute.db.connect 应用后四表存在；重复 connect 不报错"
+        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue 建表 DDL",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量原始值供 client 重配权；fundamentals_q 以 filed_date 为 as-of(point-in-time)；segment_revenue 建表但 M0.2 不填(归 M4)",
+        "verification": "compute.db.connect 应用后六表存在；重复 connect 不报错"
       }
     },
     {
@@ -532,5 +544,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "39d7eec97fe22b12b8c5b69a64787424ddd747848511613af1675f15407339d9"
+  "last_structure_digest": "dabec3e8b82fdb268b7319153847f3e66253a151d45960fded86a1265389f6de"
 }
