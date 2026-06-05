@@ -627,3 +627,67 @@ body {
   color: var(--grn);
   opacity: 0.7;
 }
+
+/* Ocean M2.3: week scrubber + hover tip. */
+.ocscrub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ocrange {
+  width: 180px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.otipwrap {
+  position: absolute;
+  transform: translate(12px, -50%);
+  pointer-events: none;
+  z-index: 5;
+}
+.otip {
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  padding: 8px 10px;
+  min-width: 132px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txt);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.otip-h {
+  margin-bottom: 5px;
+  font-size: 12.5px;
+}
+.otip .dim {
+  color: var(--dim);
+  font-size: 10px;
+}
+.otrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--dim);
+}
+.otrow b {
+  color: var(--txt);
+}
+.otags {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.otags span {
+  font-size: 9.5px;
+  color: var(--dim);
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.ohint {
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--dim2);
+}
