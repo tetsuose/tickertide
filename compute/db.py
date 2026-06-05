@@ -159,3 +159,44 @@ def read_valuation(con: duckdb.DuckDBPyConnection, ticker: str):
         "FROM valuation_daily WHERE ticker = ? ORDER BY date",
         [ticker],
     ).df()
+
+
+# --- M3.2 rotation (bucket_bars source -> bucket_rrg RS-Ratio series) ---
+
+def bucket_names(con: duckdb.DuckDBPyConnection, bucket_type: str = "sector") -> list[str]:
+    """Distinct buckets of a type present in bucket_bars (sector ETF / theme index)."""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT bucket FROM bucket_bars WHERE bucket_type = ? ORDER BY bucket",
+        [bucket_type],
+    ).fetchall()]
+
+
+def read_bucket_bars(con: duckdb.DuckDBPyConnection, bucket_type: str, bucket: str):
+    """Return one bucket's daily (date, close) as a pandas DataFrame, oldest first."""
+    return con.execute(
+        "SELECT date, close FROM bucket_bars WHERE bucket_type = ? AND bucket = ? ORDER BY date",
+        [bucket_type, bucket],
+    ).df()
+
+
+def clear_bucket_rrg(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("DELETE FROM bucket_rrg")
+
+
+def upsert_bucket_rrg(
+    con: duckdb.DuckDBPyConnection, bucket_type: str, bucket: str, rows: Sequence[Sequence]
+) -> int:
+    """INSERT OR REPLACE weekly RS-Ratio rows. Each row = (date, rs, rs_ratio)."""
+    if not rows:
+        return 0
+    payload = [(bucket_type, bucket, d, rs, rr) for (d, rs, rr) in rows]
+    con.executemany("INSERT OR REPLACE INTO bucket_rrg VALUES (?, ?, ?, ?, ?)", payload)
+    return len(payload)
+
+
+def read_bucket_rrg(con: duckdb.DuckDBPyConnection, bucket_type: str = "sector"):
+    """Return all RS-Ratio series of a bucket_type as a pandas DataFrame, oldest first."""
+    return con.execute(
+        "SELECT bucket, date, rs, rs_ratio FROM bucket_rrg WHERE bucket_type = ? ORDER BY bucket, date",
+        [bucket_type],
+    ).df()
