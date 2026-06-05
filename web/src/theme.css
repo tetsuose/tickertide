@@ -696,3 +696,162 @@ body {
   font-size: 9px;
   color: var(--dim2);
 }
+
+/* Rotation (M3.4): RS-Ratio multi-line SVG + league table + N=1 drill drawer. */
+.rot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-size: 13px;
+}
+.rrgsvg {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: block;
+  width: 100%;
+}
+.rrgsvg .axt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  fill: var(--dim);
+}
+.rrgsvg .axl {
+  font-family: var(--disp);
+  font-size: 10px;
+  fill: var(--dim);
+  letter-spacing: 0.04em;
+}
+.seg {
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--dim);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  padding: 5px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.seg:hover {
+  color: var(--txt);
+}
+.seg.on {
+  color: var(--bg);
+  background: var(--accent);
+}
+.orow {
+  display: flex;
+  gap: 6px;
+}
+.rleague {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.rlhead,
+.rlrow {
+  display: grid;
+  grid-template-columns: 34px 1fr 78px 72px 104px 70px 60px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 12px;
+}
+.rlhead {
+  background: var(--bg2);
+  color: var(--dim);
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  border-bottom: 1px solid var(--line);
+}
+.rlrow {
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.rlrow:last-child {
+  border-bottom: 0;
+}
+.rlrow:hover,
+.rlrow.hov {
+  background: var(--bg2);
+}
+.rot .tk {
+  font-weight: 600;
+}
+.rot .mono,
+.rot-summary .mono {
+  font-family: var(--mono);
+}
+.rot .dim,
+.rot-head .dim,
+.rot-summary .dim {
+  color: var(--dim);
+}
+.rot .r {
+  text-align: right;
+}
+.qchip {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 5px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.rot-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 16px;
+  padding: 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 12px;
+}
+.rot-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.rot-memhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--disp);
+  font-weight: 600;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.rot-memhead .tag {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  padding: 2px 6px;
+  border-radius: 5px;
+  margin-left: 8px;
+}

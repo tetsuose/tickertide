@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { SurfaceId, Scope, Components } from './types'
 import Discovery from './views/Discovery'
 import Ocean from './views/Ocean'
+import Rotation from './views/Rotation'
 import { weights } from './lib/composite'
 
 // The five lenses in the contract's fixed order (PRD §9.0). Discovery is the
@@ -47,8 +48,9 @@ export default function App() {
   const [tab, setTab] = useState<SurfaceId>('discovery')
   const [k, setK] = useState(0.5)
   // global scope filter — single source, sticky across tabs (PRD §9.1.2, C8/C10).
-  // M2.4 wires the first writer: Ocean's lasso sets scope='pinned' over `pinned`,
-  // which Ocean + Discovery respect (filter). The chip clears it back to `all`.
+  // Two writers: Ocean's lasso (M2.4) sets scope='pinned'; Rotation's league row/line
+  // click (M3.4) sets scope='sector'. Discovery/Ocean/Rotation all respect it (filter /
+  // drill); the chip clears it back to `all`. (Valuation respects it at M5.)
   const [scope, setScope] = useState<Scope>({ kind: 'all', key: null })
   // pinned ticker set — Ocean click pins (trail); lasso bulk-selects + focuses.
   // Lives in App so scope='pinned' can filter every surface by it.
@@ -149,6 +151,8 @@ export default function App() {
             <Discovery k={k} scope={scope} pinned={pinned} />
           ) : tab === 'ocean' ? (
             <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} />
+          ) : tab === 'rotation' ? (
+            <Rotation scope={scope} setScope={setScope} onJumpTab={setTab} k={k} />
           ) : (
             <>
               <div className="placeholder">

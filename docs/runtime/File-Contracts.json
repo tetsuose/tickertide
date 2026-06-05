@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T15:35:00.068392+00:00",
+  "updated_at": "2026-06-05T15:57:04.194407+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -411,6 +411,7 @@
       }
     },
     {
+      "notes": "",
       "path": "export/rotation.py",
       "kind": "script",
       "module": "export",
@@ -419,8 +420,7 @@
         "purpose": "M3.3 导出：DuckDB → web/public/data/rotation.json（Rotation RS-Ratio 多线序列 + enriched league，每 bucket 一条，供多线图 + league 表 + 钻进）",
         "invariants": "读 bucket_rrg(周线 RS-Ratio 序列)对齐共享 weeks[](最近 N 周 union、缺失补 null，仿 ocean pts)；league 量经 compute.rotation.league_table 取自 derived_daily/valuation_daily 成员(与 Discovery/Ocean/Stock 同源 C9)；members 仅 top-N ticker(成员卡走 board.json scope filter、不重复造 DRY)；etf 从 sector_etf_map.txt 附加(审计)；params 暴露 n1/n2/k(透明 reconstruction 不复刻 StockCharts)；inline self_check(rs_ratio 对齐 weeks、weeks 老→新、末值非空)；输出 gitignored 紧凑 JSON；同 fixture seed 字节级可复现",
         "verification": "make fixture-pipeline 后 python3 export/rotation.py：rotation.json 11 bucket、weeks=52、4 态(LEADING/WEAKENING/IMPROVING/LAGGING)、params 暴露、rs_ratio 对齐 weeks、members 非空、etf 齐；same seed 重导出 byte 一致"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -706,7 +706,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "应用 shell：固定顶部控制栏（5 tab + early⟷reliable 旋钮 + 权重条 + scope chip）+ 中央 surface 面板 + 全局 scope/pinned 单一真源",
-        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条 + 透传 Discovery 实时重排；discovery 渲染 <Discovery k scope pinned>、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余占位；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；权重曲线来自 composite.ts(C9)",
+        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条 + 透传 Discovery 实时重排；discovery 渲染 <Discovery k scope pinned>、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余占位；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；权重曲线来自 composite.ts(C9)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab/k)、Rotation 为第 2 个 scope writer(league 行/线→sector)",
         "verification": "npm run build 通过；SSR app chrome 含 wbars/wbfill + RELIABLE/EARLY；旋钮改 k → Discovery 重排；ocean tab 渲染 Ocean canvas；scope≠all 显 chip + 可清"
       }
     },
@@ -759,6 +759,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/__fixtures__/rotation.sample.json",
       "kind": "config",
       "module": "web",
@@ -767,8 +768,7 @@
         "purpose": "AC-M3 Rotation 渲染测试用样本 rotation.json（export/rotation.py 真实产物，110 票 fixture→11 sector×52 周）",
         "invariants": "export/rotation.py 对 fixture(seed 7、110 票)的真实产物、非手写；含 11 sector RS-Ratio 周序列 + 4 态 league(breadth/at-high/composite 中位/agg EV-S/rel return) + members ticker；供 M3.4 web SSR 测试(react-dom/server 断言 path 数=bucket 数、4 态标签、钻进 N=1)；fixture 确定性 → 提交版字节稳定",
         "verification": "JSON.parse 通过；buckets=11、weeks=52、4 态齐、各 bucket rs_ratio 长度=weeks；与 export/rotation.py 当前产物一致"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -801,8 +801,8 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean)（export/*.py 产物）",
-        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消",
+        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json(Rotation)（export/*.py 产物）",
+        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation 载入 rotation.json(同 BASE_URL fetch 范式)",
         "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
       }
     },
@@ -817,6 +817,18 @@
         "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawOcean 画象限 tint+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)+可选 hover 白环+pinned 装饰(彩色 trail 断 null 段+当前位箭头+ticker 标签)仅当 pinned 数≤TRAIL_CAP(8) 时整画、超过则每只仅留强调点(无 trail/箭头/label)由 scope 淡化承载选择(C2 认知带宽守卫，防 lasso 大区域 trail spaghetti)+lasso 选框，并返回非淡点屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
         "verification": "Ocean.test.tsx：radiusFor/makeScales(底=便宜)/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope(pinned) 纯测；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 落框内 + 静态层 + scope 淡化 + hover ring + pinned trail(多 stroke + ticker fillText) + 大 pinned(>TRAIL_CAP) 不画 N 条 trail(text 空、仅强调点) + lasso rect(多 fillRect+stroke) + 切周点位移动"
       }
+    },
+    {
+      "path": "web/src/lib/rotation-draw.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Rotation 多线 + N=1 SVG 几何纯函数（无 DOM，可 SSR 测）：scale/path/末值排序标签/N=1 短窗斜率分段；颜色复用 ocean-draw SECTOR_VAR(附录 C)",
+        "invariants": "纯函数无副作用无 DOM；MULTI/SOLO geom 取自 UX 合同 viewBox(jsx RSRatioLines/SoloRSLine)；multiScale 夹 100(lo≤98.5/hi≥101.5)、soloScale(lo≤99/hi≥101)；linePath 遇 null 断线不造段；endLabels 末值排序+gap 防重叠；soloSegments 短窗 K=3 斜率 up/down；bucketColorVar 返回 CSS-var 名(SVG 直接 var()，不 resolve hex — 非 canvas)",
+        "verification": "Rotation.test.tsx：multiScale 夹 100、linePath null 断线(2 个 M)、soloSegments 单调全 up、endLabels gap≥13"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -838,7 +850,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "暗色主题与配色 SoT：附录C 全调色板 CSS 变量 + shell 组件类 + evidence-card/Discovery/Ocean 类",
-        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.ocpins/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同",
+        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.ocpins/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同；加 Rotation 组件类(.rot/.rleague/.rlrow/.rot-summary/.rrgsvg/.seg/.qchip 等，复用现有调色板 var)",
         "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb*/.oc*/.otip 类；视觉对 UX 合同"
       }
     },
@@ -849,8 +861,8 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "board.json(M1.1) + ocean.json(M2.1) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜",
+        "purpose": "board.json(M1.1) + ocean.json(M2.1) + rotation.json(M3.3) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
@@ -874,7 +886,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Discovery board（PRD §9.3）：2 列 evidence-card 网格、respect 全局 scope 后按 composite(c_*,k) 降序",
-        "invariants": "先按全局 scope filter(all/sector/theme/pinned 由 App 透传，§9.3 先 filter 再排序 C10)再按前端重算 composite(组件,k) 降序——旋钮 k 改即实时重排(C9、绝不重算引擎)；卡片 weights/score 用 composite.ts 在当前 k 算；loading/error/empty 三态；initial 注入便于 SSR/测试",
+        "invariants": "先按全局 scope filter(all/sector/theme/pinned 由 App 透传，§9.3 先 filter 再排序 C10)再按前端重算 composite(组件,k) 降序——旋钮 k 改即实时重排(C9、绝不重算引擎)；卡片 weights/score 用 composite.ts 在当前 k 算；loading/error/empty 三态；initial 注入便于 SSR/测试；可选 limit prop slice top-N(供 Rotation 钻进成员预览复用、scope=sector，board.json 单源 C9)",
         "verification": "SSR：k=0 与 k=1 排序不同、≥18 卡、top badge=composite(top,k)；scope=sector/pinned 仅留对应卡、scope=all 全显；build 通过"
       }
     },
@@ -901,6 +913,30 @@
         "invariants": "读 ocean.json(loadOcean) 或 initial 注入；canvas 2x retina；useEffect 调 drawOcean、色板 resolvePalette、绘制点位存 pos ref；WEEK scrubber 手动 range(无 autoplay C2)、未拖跟随最新周；hover 经 nearestPoint+Tip overlay(7 字段 §9.2)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect 选中 setPinned + setScope({pinned}))；trail/箭头仅 pinned(C2)；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(in0.72/out0.06 C10)；错误/加载态降级",
         "verification": "SSR 含 canvas+三配色切换+轴标+WEEK n/N+手动周 range+pinned 计数；Tip SSR 7 字段；命中/绘制正确性见 ocean-draw 头测(pin trail/lasso/scope 淡化)；npm build 通过；浏览器交互+性能 M2.5"
       }
+    },
+    {
+      "path": "web/src/views/Rotation.test.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Rotation SSR 渲染 + rotation-draw 纯函数测试（AC-M3）：renderToStaticMarkup 喂 rotation.sample.json",
+        "invariants": "用提交版 rotation.sample.json(export 真实产物)非手写；断言总览 ≥11 path/4 态/league/y=100/params 暴露、钻进 N=1+成员跳转、rotation-draw geometry(夹 100/null 断线/斜率分段/标签防重叠)；SVG SSR 可断言(非 canvas useEffect)",
+        "verification": "npx vitest run：Rotation.test 10 项过、不破坏 Ocean(23)/Discovery(10) 既有"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/src/views/Rotation.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Rotation surface（PRD §9.4）：sector RS-Ratio SVG 多线总览 + enriched league 表 + 钻进 N=1 单线(斜率色)+sector summary+成员预览；GICS↔Theme 切换",
+        "invariants": "读 rotation.json(initial 注入免 fetch 供 SSR/test，仿 Ocean/Discovery)；多线 hover 高亮其余淡、右缘末值排序标签、y=100 基线；点 league 行/线→setScope(sector) 第 2 个 scope writer(C10)+原地 inline drawer 不 auto-jump(§9.1.2)；N=1 线色=短窗斜率(↑绿↓红)=momentum；成员卡复用 Discovery 组件(limit 预览/board.json filter — C9/DRY)不重复造；「看全部」=onJumpTab 切 tab；theme 空到 M4；params 暴露透明 reconstruction 不复刻 StockCharts",
+        "verification": "Rotation.test.tsx SSR 总览 path 数=count(≥11)+4 态+league 每 sector+y=100+params；钻进 N=1+summary+「看全部成员」；npx vitest run + npm run build 通过"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -940,5 +976,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "7e8e538d061764e62d32328938a4f076b69e37e6696fbe9c86a5edfa6361d978"
+  "last_structure_digest": "c771fa30ecb55583db6c71c3fcf1a65160184751d903827b443b933faf369ec6"
 }

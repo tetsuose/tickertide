@@ -126,3 +126,44 @@ export interface OceanData {
   stale_excluded_latest: number
   stocks: OceanStock[]
 }
+
+// --- Rotation (M3.3 export/rotation.py -> public/data/rotation.json) ---
+// Weekly RS-Ratio series per bucket (sector M3 / theme M4) + an enriched league
+// snapshot (PRD §9.4). rs_ratio[] aligns to weeks[] (oldest→newest; null = no point
+// that week). The league member aggregates trace to derived_daily/valuation_daily (C9);
+// members[] is the ticker list only — the client filters board.json by scope=sector for
+// the evidence cards (DRY). RS-Momentum 归一量 is cut (PRD §16); momentum = slope_4w.
+
+export type RotationState = 'LEADING' | 'WEAKENING' | 'IMPROVING' | 'LAGGING'
+
+export interface RotationBucket {
+  bucket_type: string
+  bucket: string
+  etf: string | null
+  rs_ratio: (number | null)[]
+  level: number | null
+  slope_4w: number | null
+  state: RotationState
+  breadth_ma50: number | null
+  breadth_ma200: number | null
+  at_high: number | null
+  member_count: number | null
+  composite_median: number | null
+  agg_evs: number | null
+  rel_ret_1m: number | null
+  rel_ret_3m: number | null
+  rel_ret_6m: number | null
+  members: string[]
+}
+
+export interface RotationData {
+  schema_version: number
+  as_of_date: string
+  benchmark: string
+  bucket_type: string
+  params: { basis: string; n1_ema: number; n2_window: number; k: number }
+  n_weeks: number
+  weeks: string[]
+  count: number
+  buckets: RotationBucket[]
+}
