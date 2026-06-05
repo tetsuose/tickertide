@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T11:32:44.091905+00:00",
+  "updated_at": "2026-06-05T11:42:08.383825+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -93,9 +93,9 @@
       "module": ".",
       "stage": "implemented",
       "contract": {
-        "purpose": "编排层：devtopology 结构/合同 gate + 工作流路由 + M0 数据管道",
-        "invariants": "target 名与 CLAUDE.md/AGENTS.md/SKILL 引用一致；M0 pipeline(ingest→fundamentals→compute→check)跑真命令、export/serve 为 M2 占位；产品 target 用 venv 依赖(requirements.txt)、devtopology 引擎保持 stdlib-only；PIPELINE_ARGS 透传 runner flags；fixture/fixture-pipeline 为离线合成验证 target(无网络喂真实引擎，FIXTURE_ARGS 透传 tickers/days/seed)",
-        "verification": "make help 列全命令(含 fixture/fixture-pipeline)；make verify 可跑；make pipeline 端到端产出 CHECK_OK；make fixture-pipeline 离线端到端、compute/check.py 验为 CHECK_OK"
+        "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json→web/public/data；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1)；fixture-pipeline 离线喂真实引擎；提交前 make verify 两 gate 必过",
+        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test 端到端可跑；make verify GATE_PASS"
       }
     },
     {
@@ -663,18 +663,19 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/__fixtures__/board.sample.json",
       "kind": "config",
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "C9 单测用小样本 board.json（export/board.py 真实产物，6 票）",
-        "invariants": "export/board.py 产物裁剪、含 components c_* + 导出 composite + knob_default_k；固定供回归对拍；非运行时数据(运行时走 public/data、gitignore)",
-        "verification": "composite.test.ts 据此对拍；同 seed 重生成结构稳定"
-      },
-      "notes": ""
+        "purpose": "C9 单测 + AC-M1 渲染测试用样本 board.json（export/board.py 真实产物，30 票）",
+        "invariants": "export/board.py 产物、含 components c_* + 导出 composite + knob_default_k；≥18 票满足 AC-M1「≥18 卡」；固定供回归对拍；非运行时数据(运行时走 public/data、gitignore)",
+        "verification": "composite.test.ts + Discovery.test.tsx 据此对拍/渲染；同 seed 重生成结构稳定"
+      }
     },
     {
+      "notes": "",
       "path": "web/src/lib/composite.test.ts",
       "kind": "code",
       "module": "web",
@@ -683,10 +684,10 @@
         "purpose": "C9 parity 单测(vitest)：前端 composite 移植 vs 引擎导出对拍",
         "invariants": "weights(k) 命中公式(0.20+0.03k…)与 Σ=1；k clamp；对 board.sample.json 每票 recompute@knob_default_k 与导出 composite 漂移<0.02",
         "verification": "npm test(vitest run)全绿"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/lib/composite.ts",
       "kind": "code",
       "module": "web",
@@ -695,8 +696,7 @@
         "purpose": "C9 前端 composite 重算：移植 compute/signals.py 的 weights(k) 系数 + 100·Σwᵢ·cᵢ",
         "invariants": "weights(k) 系数与 compute/signals.py 逐位一致(C9)、k clamp[0,1]、Σ=1 全 k；composite 用导出的 c_* 重算、绝不在前端 re-derive 引擎；前端唯一权重曲线来源",
         "verification": "composite.test.ts(vitest)对拍：weights 曲线 + Σ=1 + recompute@knob_default_k 复现导出 composite(<0.02)；Python signals.weights 交叉对照逐位相等"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -747,6 +747,18 @@
       }
     },
     {
+      "path": "web/src/views/Discovery.test.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M1 渲染 gate（vitest）：从真实导出 fixture SSR 渲染 Discovery/EvidenceCard 断言里程碑可见契约",
+        "invariants": "renderToStaticMarkup 断言 ≥18 卡 / 旋钮 k=0 vs k=1 重排 / badge=composite(top,k)(C9) / 6 字段 / 展开 5 分量+权重+无黑箱 / d-d 箭头 / mini chart svg+MA+52w；无浏览器、用 board.sample.json fixture",
+        "verification": "npm test / make web-test 全绿（本文件 7 用例）"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "web/src/views/Discovery.tsx",
       "kind": "code",
@@ -789,12 +801,12 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Vite 构建 + Vitest 测试配置：React 插件 + base 相对路径 + test(node env, src/**/*.test.ts)",
-        "invariants": "base='./' 子路径可用；输出 web/dist(gitignore)；运行时数据从 public/data 加载、构建不内联；test 段跑 C9 parity 单测",
-        "verification": "vite build 成功且资源相对路径；npm test 跑 composite.test.ts"
+        "purpose": "Vite 构建 + Vitest 测试配置：React 插件 + base 相对路径 + test(node env, src/**/*.test.{ts,tsx})",
+        "invariants": "base='./' 子路径可用；输出 web/dist(gitignore)；运行时数据从 public/data 加载、构建不内联；test 段跑 C9 parity + AC-M1 渲染测试(.ts/.tsx)",
+        "verification": "vite build 成功且资源相对路径；make web-test 跑 composite.test.ts + Discovery.test.tsx"
       }
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "930e28c5ed7556cbdea8a358a9375ba80ab170dc7832932ffc6ee8264c93e35b"
+  "last_structure_digest": "1aaa7d3a51f141abc610c83928660ca95981a9d47cfa850693a6b622778a9202"
 }
