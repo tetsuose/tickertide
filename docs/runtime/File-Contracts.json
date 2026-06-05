@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T15:57:04.194407+00:00",
+  "updated_at": "2026-06-05T16:06:47.734944+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -94,7 +94,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎",
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)、export 含 rotation(rotation.json)、rotation-c9 跑 check_rotation(AC-M3 C9 league↔board)",
         "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9 端到端可跑；make verify GATE_PASS"
       }
     },
@@ -397,6 +397,18 @@
         "invariants": "读同一 DB 导出的 board.json + ocean.json，对最新快照逐票断言：as_of 同日；rs=ocean.pts[-1].rs == board.components.rs×100(同 derived_daily.rs_pct)；ps=ocean.pts[-1].ps == board.valuation.ps(同 valuation_daily.ps)；容差仅取整(rs 0.1/ps 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
         "verification": "make ocean-c9（先 fixture-pipeline + make export 出两份）→ GATE_PASS、shared/rs_checked/ps_checked 计数一致；构造不符可触发 GATE_FAIL"
       }
+    },
+    {
+      "path": "export/check_rotation.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M3.5 C9 跨 surface 校验：rotation.json league 与 board.json 同 sector 成员聚合一致（仿 check_ocean，AC-M3 风险表「league 聚合与 Discovery 数字一致」）",
+        "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 sector 成员数、composite_median==median(board 同 sector composite)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐 rotation/board，已注释标注)",
+        "verification": "make rotation-c9：fixture-pipeline+export 后 GATE_PASS、member_count/composite_median 11 sector 逐一致；mismatch 退非 0"
+      },
+      "notes": ""
     },
     {
       "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
@@ -819,6 +831,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/rotation-draw.ts",
       "kind": "code",
       "module": "web",
@@ -827,8 +840,7 @@
         "purpose": "Rotation 多线 + N=1 SVG 几何纯函数（无 DOM，可 SSR 测）：scale/path/末值排序标签/N=1 短窗斜率分段；颜色复用 ocean-draw SECTOR_VAR(附录 C)",
         "invariants": "纯函数无副作用无 DOM；MULTI/SOLO geom 取自 UX 合同 viewBox(jsx RSRatioLines/SoloRSLine)；multiScale 夹 100(lo≤98.5/hi≥101.5)、soloScale(lo≤99/hi≥101)；linePath 遇 null 断线不造段；endLabels 末值排序+gap 防重叠；soloSegments 短窗 K=3 斜率 up/down；bucketColorVar 返回 CSS-var 名(SVG 直接 var()，不 resolve hex — 非 canvas)",
         "verification": "Rotation.test.tsx：multiScale 夹 100、linePath null 断线(2 个 M)、soloSegments 单调全 up、endLabels gap≥13"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -915,6 +927,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/views/Rotation.test.tsx",
       "kind": "code",
       "module": "web",
@@ -923,10 +936,10 @@
         "purpose": "Rotation SSR 渲染 + rotation-draw 纯函数测试（AC-M3）：renderToStaticMarkup 喂 rotation.sample.json",
         "invariants": "用提交版 rotation.sample.json(export 真实产物)非手写；断言总览 ≥11 path/4 态/league/y=100/params 暴露、钻进 N=1+成员跳转、rotation-draw geometry(夹 100/null 断线/斜率分段/标签防重叠)；SVG SSR 可断言(非 canvas useEffect)",
         "verification": "npx vitest run：Rotation.test 10 项过、不破坏 Ocean(23)/Discovery(10) 既有"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/views/Rotation.tsx",
       "kind": "code",
       "module": "web",
@@ -935,8 +948,7 @@
         "purpose": "Rotation surface（PRD §9.4）：sector RS-Ratio SVG 多线总览 + enriched league 表 + 钻进 N=1 单线(斜率色)+sector summary+成员预览；GICS↔Theme 切换",
         "invariants": "读 rotation.json(initial 注入免 fetch 供 SSR/test，仿 Ocean/Discovery)；多线 hover 高亮其余淡、右缘末值排序标签、y=100 基线；点 league 行/线→setScope(sector) 第 2 个 scope writer(C10)+原地 inline drawer 不 auto-jump(§9.1.2)；N=1 线色=短窗斜率(↑绿↓红)=momentum；成员卡复用 Discovery 组件(limit 预览/board.json filter — C9/DRY)不重复造；「看全部」=onJumpTab 切 tab；theme 空到 M4；params 暴露透明 reconstruction 不复刻 StockCharts",
         "verification": "Rotation.test.tsx SSR 总览 path 数=count(≥11)+4 态+league 每 sector+y=100+params；钻进 N=1+summary+「看全部成员」；npx vitest run + npm run build 通过"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -976,5 +988,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "c771fa30ecb55583db6c71c3fcf1a65160184751d903827b443b933faf369ec6"
+  "last_structure_digest": "85d80d89d704db202f7357fcf3803e7f8432393a43187b05057c12b99bd5f909"
 }
