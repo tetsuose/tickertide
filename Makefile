@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals compute export ocean-c9 serve pipeline check \
+        ingest fundamentals compute export ocean-c9 rotation-c9 serve pipeline check \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -139,6 +139,7 @@ PIPELINE_ARGS ?=
 
 ingest:
 	@python3 ingest/run.py $(PIPELINE_ARGS)
+	@python3 ingest/sector_etf.py
 
 fundamentals:
 	@python3 ingest/edgar.py $(PIPELINE_ARGS)
@@ -146,6 +147,7 @@ fundamentals:
 compute:
 	@python3 compute/run.py
 	@python3 compute/valuation.py
+	@python3 compute/rotation.py
 
 check:
 	@python3 compute/check.py
@@ -153,11 +155,16 @@ check:
 export:
 	@python3 export/board.py $(PIPELINE_ARGS)
 	@python3 export/ocean.py
-	@echo "[export] M1/M2 board.json + ocean.json -> web/public/data/ (M5 adds Parquet shards)."
+	@python3 export/rotation.py
+	@echo "[export] M1/M2/M3 board.json + ocean.json + rotation.json -> web/public/data/ (M5 adds Parquet shards)."
 
 # C9 cross-surface check (AC-M2): ocean.json positions trace to board/Stock numbers.
 ocean-c9:
 	@python3 export/check_ocean.py
+
+# C9 cross-surface check (AC-M3): rotation.json league traces to board.json members.
+rotation-c9:
+	@python3 export/check_rotation.py
 
 serve: web-dev
 
