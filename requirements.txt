@@ -1,0 +1,5 @@
+# TickerTide product runtime deps (ingest + compute).
+# NOTE: the devtopology workflow engine (engine/index.py) is stdlib-only and is
+# NOT covered here — never add deps that the gate engine would import.
+duckdb>=1.5
+yfinance>=0.2.40

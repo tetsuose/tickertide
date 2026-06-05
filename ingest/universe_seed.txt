@@ -1,0 +1,69 @@
+# TickerTide universe seed — theme representatives guaranteed into the M0 bars pull
+# even if below the mktcap top-N cut. One ticker per line; '#' starts a comment.
+# Themes per PRD §8.2: AI / Robotics / Space Compute / Optical / Semis / Nuclear / Cybersecurity / Cloud.
+# Membership is many-to-many (a ticker may belong to several themes) — this list is
+# only a coverage seed, NOT the authoritative theme membership (that is M4, EDGAR-anchored).
+
+# AI / mega-cap platforms
+NVDA
+MSFT
+GOOGL
+META
+AMZN
+AAPL
+PLTR
+TSLA
+
+# Semiconductors
+AMD
+AVGO
+TSM
+MU
+ASML
+LRCX
+AMAT
+KLAC
+ARM
+SMCI
+MRVL
+
+# Robotics / automation
+ISRG
+ROK
+PATH
+SYM
+
+# Space compute
+RKLB
+ASTS
+LUNR
+PL
+
+# Optical / networking
+COHR
+LITE
+AAOI
+FN
+CIEN
+
+# Nuclear / power
+CEG
+VST
+SMR
+OKLO
+LEU
+NNE
+
+# Cybersecurity
+CRWD
+PANW
+ZS
+FTNT
+S
+NET
+
+# Cloud / data
+SNOW
+DDOG
+MDB
+CRWV
