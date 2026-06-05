@@ -2,17 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 import { loadOcean } from '../lib/data'
 import {
-  drawOcean, nearestPoint, resolvePalette, OCEAN_GEOM,
-  type ColorMode, type DrawnPoint,
+  drawOcean, nearestPoint, pointsInRect, resolvePalette, OCEAN_GEOM,
+  type ColorMode, type DrawnPoint, type Rect,
 } from '../lib/ocean-draw'
 
 // Ocean (PRD §9.2): the wide-explore canvas scatter on a FIXED RS×Valuation plane
 // (x = RS percentile weak→strong, y = Valuation percentile bottom=cheap→top=dear),
 // (50,50) crosshair, a green strong+cheap quadrant = the emerging-leader corner.
-// M2.2 rendered the latest week statically; M2.3 adds the manual WEEK scrubber (no
-// autoplay — C2) and a hover nearest-neighbor tip. Pin→trail + lasso→scope: M2.4.
-// `initial` lets tests/SSR inject without fetching.
+// M2.2 static scatter; M2.3 manual scrubber (no autoplay — C2) + hover tip; M2.4
+// click→pin (colored trail + current-position arrow, ONLY pinned — C2) and lasso
+// drag→set the global scope (Ocean is the first scope WRITER — C10). `initial` +
+// the App-owned pinned/scope/setScope make the surface injectable for tests/SSR.
 const MODES: ColorMode[] = ['sector', 'theme', 'quadrant']
+const CLICK_SLOP2 = 16 // (4px)^2 — drags shorter than this count as a click (pin)
 
 function fmtCap(v: number | null): string {
   if (v == null) return '—'
@@ -39,12 +41,24 @@ export function Tip({ stock, pt }: { stock: OceanStock; pt: OceanPt }) {
           ))}
         </div>
       )}
-      <div className="ohint">click to pin / track (M2.4)</div>
+      <div className="ohint">click to pin · drag to lasso scope</div>
     </div>
   )
 }
 
-export default function Ocean({ initial, scope }: { initial?: OceanData; scope: Scope }) {
+export default function Ocean({
+  initial,
+  scope,
+  setScope,
+  pinned = [],
+  setPinned,
+}: {
+  initial?: OceanData
+  scope: Scope
+  setScope?: (s: Scope) => void
+  pinned?: string[]
+  setPinned?: (p: string[]) => void
+}) {
   const [data, setData] = useState<OceanData | null>(initial ?? null)
   const [err, setErr] = useState<string | null>(null)
   const [colorBy, setColorBy] = useState<ColorMode>('sector')
@@ -52,8 +66,10 @@ export default function Ocean({ initial, scope }: { initial?: OceanData; scope: 
   const [activeTheme] = useState<string | null>(null)
   const [week, setWeek] = useState<number | null>(null) // null = follow latest until scrubbed
   const [hover, setHover] = useState<DrawnPoint | null>(null)
+  const [lasso, setLasso] = useState<Rect | null>(null) // active drag rectangle
   const cv = useRef<HTMLCanvasElement>(null)
   const pos = useRef<DrawnPoint[]>([]) // last-drawn point positions, for hit-testing
+  const down = useRef<{ x: number; y: number } | null>(null) // mousedown anchor (click vs drag)
 
   useEffect(() => {
     if (initial) return
@@ -80,19 +96,55 @@ export default function Ocean({ initial, scope }: { initial?: OceanData; scope: 
     ctx.setTransform(2, 0, 0, 2, 0, 0)
     const palette = resolvePalette(document.documentElement)
     pos.current = drawOcean(ctx, {
-      data, week: wk, colorBy, activeTheme, scope, palette, hover: hover?.ticker ?? null,
+      data, week: wk, colorBy, activeTheme, scope, palette,
+      hover: hover?.ticker ?? null, pinned, lassoRect: lasso,
     })
-  }, [data, wk, colorBy, activeTheme, scope, hover])
+  }, [data, wk, colorBy, activeTheme, scope, hover, pinned, lasso])
 
   const toLogical = (e: React.MouseEvent): [number, number] => {
     const c = cv.current!
     const r = c.getBoundingClientRect()
     return [(e.clientX - r.left) * (OCEAN_GEOM.w / r.width), (e.clientY - r.top) * (OCEAN_GEOM.h / r.height)]
   }
+  const togglePin = (id: string) => {
+    setPinned?.(pinned.includes(id) ? pinned.filter((t) => t !== id) : [...pinned, id])
+  }
+  const onDown = (e: React.MouseEvent) => {
+    const [lx, ly] = toLogical(e)
+    down.current = { x: lx, y: ly }
+    setLasso({ x0: lx, y0: ly, x1: lx, y1: ly })
+    setHover(null)
+  }
   const onMove = (e: React.MouseEvent) => {
     const [lx, ly] = toLogical(e)
+    if (down.current) {
+      setLasso((r) => (r ? { ...r, x1: lx, y1: ly } : r)) // dragging: grow the lasso, no hover
+      return
+    }
     const id = nearestPoint(pos.current, lx, ly)
     setHover(id != null ? pos.current.find((p) => p.ticker === id) ?? null : null)
+  }
+  const onUp = (e: React.MouseEvent) => {
+    const [lx, ly] = toLogical(e)
+    const d = down.current
+    const rect = lasso
+    down.current = null
+    setLasso(null)
+    if (!d) return
+    const moved = (lx - d.x) ** 2 + (ly - d.y) ** 2 > CLICK_SLOP2
+    if (!moved) {
+      const id = nearestPoint(pos.current, lx, ly) // click → toggle pin (trail)
+      if (id) togglePin(id)
+    } else if (rect) {
+      const sel = pointsInRect(pos.current, rect) // drag → lasso sets the global scope
+      setPinned?.(sel)
+      setScope?.({ kind: 'pinned', key: null })
+    }
+  }
+  const onLeave = () => {
+    setHover(null)
+    down.current = null
+    setLasso(null)
   }
 
   if (err) {
@@ -133,6 +185,7 @@ export default function Ocean({ initial, scope }: { initial?: OceanData; scope: 
           ))}
         </div>
         <div className="ocscrub">
+          {pinned.length > 0 && <span className="ocpins">📌 {pinned.length} pinned</span>}
           <span className="ocweek">
             WEEK {wk + 1}/{data.n_weeks} · {data.weeks[wk]}
           </span>
@@ -154,8 +207,10 @@ export default function Ocean({ initial, scope }: { initial?: OceanData; scope: 
           ref={cv}
           className="occanvas"
           style={{ aspectRatio: `${OCEAN_GEOM.w} / ${OCEAN_GEOM.h}` }}
+          onMouseDown={onDown}
           onMouseMove={onMove}
-          onMouseLeave={() => setHover(null)}
+          onMouseUp={onUp}
+          onMouseLeave={onLeave}
         />
         <div className="oax-x">RS percentile → (weak · strong)</div>
         <div className="oax-y">Valuation ↑ (cheap · expensive)</div>
@@ -172,8 +227,9 @@ export default function Ocean({ initial, scope }: { initial?: OceanData; scope: 
 
       <div className="foot">
         固定轴 <b>RS percentile × Valuation percentile</b>（底 = 便宜）；右下绿象限 = 强 + 便宜 = 要找的 emerging
-        leader。拖 WEEK 滑杆切周（手动，无 autoplay）；悬停出最近点 tip。点大小 = √市值；颜色按 {colorBy}。as_of{' '}
-        {data.as_of_date} · {data.count} 点 · metric {data.metric}。pin→trail + lasso 框选 set scope（M2.4）随后接入。
+        leader。拖 WEEK 滑杆切周（无 autoplay）；悬停出 tip；<b>点击 pin</b> 出彩色 trail + 箭头（仅 pinned）；
+        <b>框选 lasso</b> → set 全局 scope（其他 tab 同步过滤、可在顶部一键清）。点大小 = √市值；颜色按 {colorBy}。as_of{' '}
+        {data.as_of_date} · {data.count} 点 · metric {data.metric}。
       </div>
     </div>
   )

@@ -639,6 +639,11 @@ body {
   accent-color: var(--accent);
   cursor: pointer;
 }
+.ocpins {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--grn);
+}
 .otipwrap {
   position: absolute;
   transform: translate(12px, -50%);
