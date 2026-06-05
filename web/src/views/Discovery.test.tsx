@@ -60,3 +60,29 @@ describe('AC-M1: Discovery evidence-card board', () => {
     expect(html).toContain('stroke-dasharray')
   })
 })
+
+// AC-M2.4 (C10): Discovery respects the global scope — filter BEFORE sort (§9.3).
+describe('AC-M2.4: Discovery respects global scope', () => {
+  it('scope=sector keeps only that sector', () => {
+    const sector = data.stocks.find((s) => s.sector)!.sector as string
+    const expected = data.stocks.filter((s) => s.sector === sector).length
+    const html = renderToStaticMarkup(
+      <Discovery initial={data} k={0.5} scope={{ kind: 'sector', key: sector }} />,
+    )
+    expect(order(html).length).toBe(expected)
+    expect(expected).toBeLessThan(data.stocks.length) // genuinely filtered
+  })
+
+  it('scope=pinned keeps only the pinned tickers', () => {
+    const pins = [data.stocks[2].ticker, data.stocks[5].ticker]
+    const html = renderToStaticMarkup(
+      <Discovery initial={data} k={0.5} scope={{ kind: 'pinned', key: null }} pinned={pins} />,
+    )
+    expect(order(html).sort()).toEqual([...pins].sort())
+  })
+
+  it('scope=all (or unset) shows everything', () => {
+    const html = renderToStaticMarkup(<Discovery initial={data} k={0.5} scope={{ kind: 'all', key: null }} />)
+    expect(order(html).length).toBe(data.stocks.length)
+  })
+})

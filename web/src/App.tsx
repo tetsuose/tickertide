@@ -47,9 +47,12 @@ export default function App() {
   const [tab, setTab] = useState<SurfaceId>('discovery')
   const [k, setK] = useState(0.5)
   // global scope filter — single source, sticky across tabs (PRD §9.1.2, C8/C10).
-  // M1.2 has no writers yet (Rotation/Valuation/Ocean clicks land later), so it
-  // stays `all` and the chip is hidden; the clear handler is wired for M1.4+.
+  // M2.4 wires the first writer: Ocean's lasso sets scope='pinned' over `pinned`,
+  // which Ocean + Discovery respect (filter). The chip clears it back to `all`.
   const [scope, setScope] = useState<Scope>({ kind: 'all', key: null })
+  // pinned ticker set — Ocean click pins (trail); lasso bulk-selects + focuses.
+  // Lives in App so scope='pinned' can filter every surface by it.
+  const [pinned, setPinned] = useState<string[]>([])
 
   const info = SURFACE_INFO[tab]
 
@@ -126,7 +129,7 @@ export default function App() {
         {scope.kind !== 'all' && (
           <div className="scopebar">
             <span className="scopechip">
-              Scope: <b>{scope.key ?? scope.kind}</b>
+              Scope: <b>{scope.kind === 'pinned' ? `pinned (${pinned.length})` : scope.key}</b>
               <button className="scopex" onClick={() => setScope({ kind: 'all', key: null })}>
                 ✕
               </button>
@@ -143,9 +146,9 @@ export default function App() {
             <span className="khint">{info.milestone}</span>
           </div>
           {tab === 'discovery' ? (
-            <Discovery k={k} />
+            <Discovery k={k} scope={scope} pinned={pinned} />
           ) : tab === 'ocean' ? (
-            <Ocean scope={scope} />
+            <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} />
           ) : (
             <>
               <div className="placeholder">

@@ -5,7 +5,8 @@ import Ocean, { Tip } from './Ocean'
 import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 import {
   radiusFor, colorVar, quadrantVar, makeScales, withAlpha, drawOcean, nearestPoint,
-  SECTOR_VAR, OCEAN_GEOM, type CanvasLike, type Palette, type DrawnPoint,
+  pointsInRect, inScope, SECTOR_VAR, OCEAN_GEOM,
+  type CanvasLike, type Palette, type DrawnPoint,
 } from '../lib/ocean-draw'
 
 // AC-M2.2 (ROADMAP) as a committed regression gate: the Ocean canvas renders the
@@ -21,16 +22,18 @@ const ALL: Scope = { kind: 'all', key: null }
 // A mock 2D context recording the calls drawOcean makes. Any palette var resolves
 // to a valid hex so withAlpha() parses; we assert structure, not exact colors.
 function mockCtx() {
-  const calls = { arc: [] as number[][], fillRect: 0, stroke: 0, clearRect: 0 }
+  const calls = { arc: [] as number[][], fillRect: 0, stroke: 0, clearRect: 0, text: [] as string[] }
   const ctx: CanvasLike & { calls: typeof calls } = {
     calls,
-    fillStyle: '', strokeStyle: '', lineWidth: 0, globalAlpha: 1,
+    fillStyle: '', strokeStyle: '', lineWidth: 0, globalAlpha: 1, font: '',
     clearRect: () => { calls.clearRect++ },
     fillRect: () => { calls.fillRect++ },
     beginPath: () => {},
     moveTo: () => {}, lineTo: () => {},
     arc: (x, y, r) => { calls.arc.push([x, y, r]) },
+    closePath: () => {},
     fill: () => {}, stroke: () => { calls.stroke++ },
+    fillText: (t: string) => { calls.text.push(t) },
   }
   return ctx
 }
@@ -196,5 +199,65 @@ describe('AC-M2.3: scrubber + hover', () => {
     expect(html).toContain('type="range"')
     expect(html).toContain(`max="${data.n_weeks - 1}"`)
     expect(html).toContain('week scrubber')
+  })
+})
+
+// AC-M2.4 (ROADMAP): pin→trail+arrow (only pinned — C2); lasso→set global scope
+// (Ocean = first scope writer — C10); non-scope points fade.
+describe('AC-M2.4: pin trail + lasso scope', () => {
+  const RECT: DrawnPoint[] = [
+    { ticker: 'A', px: 100, py: 100, r: 4 },
+    { ticker: 'B', px: 200, py: 150, r: 5 },
+    { ticker: 'C', px: 700, py: 400, r: 6 },
+  ]
+
+  it('pointsInRect selects only enclosed tickers (and handles an inverted drag)', () => {
+    expect(pointsInRect(RECT, { x0: 50, y0: 50, x1: 250, y1: 200 }).sort()).toEqual(['A', 'B'])
+    expect(pointsInRect(RECT, { x0: 250, y0: 200, x1: 50, y1: 50 }).sort()).toEqual(['A', 'B']) // inverted
+    expect(pointsInRect(RECT, { x0: 600, y0: 350, x1: 800, y1: 450 })).toEqual(['C'])
+    expect(pointsInRect(RECT, { x0: 0, y0: 0, x1: 10, y1: 10 })).toEqual([])
+  })
+
+  it("inScope('pinned') is membership in the pinned set", () => {
+    const s = data.stocks[0]
+    expect(inScope(s, { kind: 'pinned', key: null }, [s.ticker])).toBe(true)
+    expect(inScope(s, { kind: 'pinned', key: null }, ['ZZZ'])).toBe(false)
+    expect(inScope(s, { kind: 'all', key: null }, [])).toBe(true)
+  })
+
+  it('a pinned stock gets a trail + ticker label (only pinned — C2)', () => {
+    const tk = data.stocks[0].ticker
+    const base = mockCtx()
+    drawOcean(base, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
+    const withPin = mockCtx()
+    drawOcean(withPin, {
+      data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL, pinned: [tk],
+    })
+    expect(withPin.calls.stroke).toBeGreaterThan(base.calls.stroke) // trail + dot ring strokes
+    expect(withPin.calls.text).toContain(tk)                         // ticker label on the trail head
+    expect(base.calls.text).toHaveLength(0)                          // nothing labeled without pins
+  })
+
+  it('scope=pinned fades all but the pinned stocks (C10)', () => {
+    const tks = data.stocks.slice(0, 3).map((s) => s.ticker)
+    const ctx = mockCtx()
+    const drawn = drawOcean(ctx, {
+      data, week: latest, colorBy: 'sector', activeTheme: null,
+      scope: { kind: 'pinned', key: null }, palette: PAL, pinned: tks,
+    })
+    expect(drawn.map((p) => p.ticker).sort()).toEqual([...tks].sort()) // only pinned non-faded
+    expect(ctx.calls.arc.length).toBeGreaterThanOrEqual(data.count)    // faded ones still drawn as dots (+ pin dots)
+  })
+
+  it('drawing a lasso rect adds a selection rectangle (fillRect + stroke)', () => {
+    const base = mockCtx()
+    drawOcean(base, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
+    const withLasso = mockCtx()
+    drawOcean(withLasso, {
+      data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL,
+      lassoRect: { x0: 100, y0: 100, x1: 300, y1: 250 },
+    })
+    expect(withLasso.calls.fillRect).toBe(base.calls.fillRect + 1) // quadrant tint + lasso fill
+    expect(withLasso.calls.stroke).toBe(base.calls.stroke + 1)     // + the rect outline
   })
 })

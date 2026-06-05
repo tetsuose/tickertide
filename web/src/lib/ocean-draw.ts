@@ -81,11 +81,12 @@ export function colorVar(s: OceanStock, pt: OceanPt, mode: ColorMode, activeThem
   return (s.sector != null && SECTOR_VAR[s.sector]) || FALLBACK_VAR
 }
 
-/** Whether a stock is in the global scope (PRD §9.1.2). 'pinned' is caller-handled. */
-export function inScope(s: OceanStock, scope: Scope): boolean {
+/** Whether a stock is in the global scope (PRD §9.1.2). 'pinned' = in the pinned set. */
+export function inScope(s: OceanStock, scope: Scope, pinned: string[] = []): boolean {
   if (scope.kind === 'sector') return s.sector === scope.key
   if (scope.kind === 'theme') return s.themes.some((t) => t.theme === scope.key)
-  return true // 'all' | 'pinned'
+  if (scope.kind === 'pinned') return pinned.includes(s.ticker)
+  return true // 'all'
 }
 
 export interface Scales {
@@ -125,14 +126,25 @@ export interface CanvasLike {
   moveTo(x: number, y: number): void
   lineTo(x: number, y: number): void
   arc(x: number, y: number, r: number, a0: number, a1: number): void
+  closePath(): void
   fill(): void
   stroke(): void
+  fillText(text: string, x: number, y: number): void
   // widened to the DOM types so a real CanvasRenderingContext2D is assignable
   // (we only ever assign strings); a mock just sets them to strings too.
   fillStyle: string | CanvasGradient | CanvasPattern
   strokeStyle: string | CanvasGradient | CanvasPattern
   lineWidth: number
   globalAlpha: number
+  font: string
+}
+
+/** A selection rectangle in logical px (lasso). */
+export interface Rect {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
 }
 
 export interface DrawOpts {
@@ -143,6 +155,8 @@ export interface DrawOpts {
   scope: Scope
   palette: Palette
   hover?: string | null
+  pinned?: string[]
+  lassoRect?: Rect | null
   geom?: Geom
 }
 
@@ -186,7 +200,7 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
       o.colorBy === 'theme'
         ? o.activeTheme != null && s.themes.some((t) => t.theme === o.activeTheme)
         : true
-    const faded = !inScope(s, o.scope) || !member
+    const faded = !inScope(s, o.scope, o.pinned) || !member
     const r = radiusFor(s.mktcap)
     ctx.globalAlpha = faded ? 0.06 : o.colorBy === 'theme' ? 1 : 0.72
     ctx.fillStyle = o.palette[colorVar(s, pt, o.colorBy, o.activeTheme)] ?? o.palette['--dim2']
@@ -209,8 +223,95 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
     }
   }
 
+  // pinned trails + current-position arrow + label (M2.4; only pinned — C2).
+  if (o.pinned && o.pinned.length) {
+    const byTicker = new Map(o.data.stocks.map((s) => [s.ticker, s]))
+    ctx.globalAlpha = 1
+    for (const tk of o.pinned) {
+      const s = byTicker.get(tk)
+      if (!s) continue
+      const col = o.palette[(s.sector && SECTOR_VAR[s.sector]) || FALLBACK_VAR] || o.palette['--dim2']
+      // trail through the non-null weekly positions up to `week` (break at gaps).
+      ctx.strokeStyle = col
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      let pen = false
+      for (let w = 0; w <= o.week; w++) {
+        const p = s.pts[w]
+        if (!p) {
+          pen = false
+          continue
+        }
+        const X = sx(p.rs)
+        const Y = sy(p.val)
+        if (!pen) {
+          ctx.moveTo(X, Y)
+          pen = true
+        } else {
+          ctx.lineTo(X, Y)
+        }
+      }
+      ctx.stroke()
+      const cur = s.pts[o.week]
+      if (!cur) continue
+      const cX = sx(cur.rs)
+      const cY = sy(cur.val)
+      // arrowhead from the most recent prior non-null position into the current one.
+      let pi = o.week - 1
+      while (pi >= 0 && !s.pts[pi]) pi--
+      if (pi >= 0) {
+        const pp = s.pts[pi]!
+        const ang = Math.atan2(cY - sy(pp.val), cX - sx(pp.rs))
+        ctx.fillStyle = col
+        ctx.beginPath()
+        ctx.moveTo(cX, cY)
+        ctx.lineTo(cX - 8 * Math.cos(ang - 0.4), cY - 8 * Math.sin(ang - 0.4))
+        ctx.lineTo(cX - 8 * Math.cos(ang + 0.4), cY - 8 * Math.sin(ang + 0.4))
+        ctx.closePath()
+        ctx.fill()
+      }
+      // emphasized current dot + ticker label.
+      ctx.fillStyle = col
+      ctx.beginPath()
+      ctx.arc(cX, cY, radiusFor(s.mktcap) + 1, 0, 7)
+      ctx.fill()
+      ctx.strokeStyle = o.palette['--bg'] || '#080b11'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.fillStyle = o.palette['--txt'] || '#e9eef5'
+      ctx.font = '600 11px IBM Plex Mono, monospace'
+      ctx.fillText(s.ticker, cX + 8, cY - 7)
+    }
+  }
+
+  // lasso selection rectangle while dragging (M2.4).
+  if (o.lassoRect) {
+    const { x0, y0, x1, y1 } = o.lassoRect
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = o.palette['--txt'] || '#e9eef5'
+    ctx.lineWidth = 1
+    ctx.fillStyle = withAlpha(o.palette['--txt'] as string, 0.06)
+    ctx.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0))
+    ctx.beginPath()
+    ctx.moveTo(x0, y0)
+    ctx.lineTo(x1, y0)
+    ctx.lineTo(x1, y1)
+    ctx.lineTo(x0, y1)
+    ctx.closePath()
+    ctx.stroke()
+  }
+
   ctx.globalAlpha = 1
   return drawn
+}
+
+/** Tickers whose drawn position falls inside the rect (lasso selection; pure). */
+export function pointsInRect(points: DrawnPoint[], r: Rect): string[] {
+  const xlo = Math.min(r.x0, r.x1)
+  const xhi = Math.max(r.x0, r.x1)
+  const ylo = Math.min(r.y0, r.y1)
+  const yhi = Math.max(r.y0, r.y1)
+  return points.filter((p) => p.px >= xlo && p.px <= xhi && p.py >= ylo && p.py <= yhi).map((p) => p.ticker)
 }
 
 /** Nearest drawn point to (lx,ly) in logical px, or null if none within ~r+5px
