@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react'
 import type { BoardData } from '../types'
 import { loadBoard } from '../lib/data'
+import { weights, composite } from '../lib/composite'
 import EvidenceCard from '../components/EvidenceCard'
 
 // Discovery board (PRD §9.3): 2-column evidence-card grid, composite-descending.
-// M1.3 sorts by the EXPORTED composite (engine snapshot) and shows weights at the
-// default k; the early⟷reliable knob re-weighting + live re-sort land in M1.4
-// (composite.ts, C9). `initial` lets tests/SSR inject the board without fetching.
+// The early⟷reliable knob k re-weights the exported components c_* via composite.ts
+// (a verbatim port of compute/signals.py — C9, the engine is never recomputed),
+// so changing k re-sorts the grid and moves every badge live. `initial` lets
+// tests/SSR inject the board without fetching; `k` defaults to the snapshot's
+// knob_default_k (at which the recompute reproduces the engine's composite).
 export default function Discovery({
   initial,
   onOpen,
+  k,
 }: {
   initial?: BoardData
   onOpen?: (ticker: string) => void
+  k?: number
 }) {
   const [board, setBoard] = useState<BoardData | null>(initial ?? null)
   const [err, setErr] = useState<string | null>(null)
@@ -48,22 +53,24 @@ export default function Discovery({
     )
   }
 
-  const stocks = [...board.stocks].sort(
-    (a, b) => (b.composite ?? -Infinity) - (a.composite ?? -Infinity),
-  )
+  const kEff = k ?? board.knob_default_k
+  const w = weights(kEff)
+  const scored = board.stocks
+    .map((s) => ({ s, score: composite(s.components, kEff) }))
+    .sort((a, b) => b.score - a.score)
 
   return (
     <div className="disco">
       <div className="ecgrid">
-        {stocks.map((s) => (
-          <EvidenceCard key={s.ticker} stock={s} weights={board.weights_default} onOpen={onOpen} />
+        {scored.map(({ s, score }) => (
+          <EvidenceCard key={s.ticker} stock={s} weights={w} score={score} onOpen={onOpen} />
         ))}
       </div>
       <div className="foot">
-        每张卡 = 一只票的原始证据（price + volume + MA 图 + 摊开的硬数字），<b>不是</b>分数榜。composite
-        缩成角标（点 ▾ 看 5 个 component 原始值 + 权重，无黑箱）。点卡片任意处 → Stock（M5）。
-        旋钮调权重重排 + 分量条随 k 变 = M1.4（前端按 c_* 重算，C9）。as_of {board.as_of_date} · {stocks.length}{' '}
-        只 · valuation 覆盖 {board.valuation_coverage}。
+        每张卡 = 一只票的原始证据（price + volume + MA 图 + 摊开的硬数字），<b>不是</b>分数榜。角标 = 按当前权重
+        （k = {kEff.toFixed(2)}）重算的 composite —— 拨旋钮即实时重排、分量条权重随之变（前端按 c_* 重算，不碰引擎，C9）。
+        点 ▾ 看 5 个 component 原始值 + 权重（无黑箱）；▲▼ = 引擎默认权重下的 d/d。点卡片任意处 → Stock（M5）。
+        as_of {board.as_of_date} · {scored.length} 只 · valuation 覆盖 {board.valuation_coverage}。
       </div>
     </div>
   )
