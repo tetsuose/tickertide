@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T03:42:35.942842+00:00",
+  "updated_at": "2026-06-05T04:13:04.360500+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -129,9 +129,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert + compute/fundamentals 读写（M0）",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 用 INSERT OR REPLACE/ON CONFLICT 幂等；read_bars/read_spx/read_fundamentals 返回 pandas；clear_derived 支持全重算",
-        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；count 返回整数"
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert + compute/fundamentals/valuation 读写（M0）",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算",
+        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame"
       }
     },
     {
@@ -157,6 +157,18 @@
         "invariants": "pandas 算时序；composite 分量∈[0,1]；weights 对每个 k 恒 Σ=1 且不删任何分量；math 对齐 PRD §10",
         "verification": "compute_metrics 返回各 metric 列；weights(0)/weights(1) 之和均=1"
       }
+    },
+    {
+      "path": "compute/valuation.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M0.4 估值：daily_bars ASOF JOIN fundamentals_q → valuation_daily（日频倍数 + common-vintage）",
+        "invariants": "ASOF 键用 filed_date（point-in-time，非 period_end，anti-lookahead）；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除",
+        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_filed≤date 无 lookahead；common-vintage fresh/stale 分离"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -351,6 +363,7 @@
       }
     },
     {
+      "notes": "",
       "path": "ingest/edgar.py",
       "kind": "script",
       "module": "ingest",
@@ -359,8 +372,7 @@
         "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，point-in-time",
         "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）",
         "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -405,9 +417,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量原始值供 client 重配权；fundamentals_q 以 filed_date 为 as-of(point-in-time)；segment_revenue 建表但 M0.2 不填(归 M4)",
-        "verification": "compute.db.connect 应用后六表存在；重复 connect 不报错"
+        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily 建表 DDL",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)",
+        "verification": "compute.db.connect 应用后七表存在；重复 connect 不报错"
       }
     },
     {
@@ -442,8 +454,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "yfinance price provider —— M0 默认主干（BUILD-PLAN 的 fallback 因 Stooq 需 apikey 转主力）",
-        "invariants": "非官方脆弱、视中断为常态；展平单票 MultiIndex 列；NaN→None；空响应返回 []",
-        "verification": "get_bars 返回 OHLCV 元组列表，newest last；无数据返回 []"
+        "invariants": "非官方脆弱、视中断为常态；展平单票 MultiIndex 列；NaN→None；**跳过未收盘 bar(close 为 NULL，如当天盘中行)** 保证 EOD 完整性",
+        "verification": "get_bars 返回 OHLCV 元组列表 newest last；无数据返回 []；不含 close=NULL 的行"
       }
     },
     {
@@ -544,5 +556,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "dabec3e8b82fdb268b7319153847f3e66253a151d45960fded86a1265389f6de"
+  "last_structure_digest": "7c28843525f2eca511a59611426aa2e3f561930c56137e6b21190a9f828f7d1f"
 }

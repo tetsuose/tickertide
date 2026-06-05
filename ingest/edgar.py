@@ -125,8 +125,9 @@ def _flow_ttm(units: list[dict]) -> dict[str, tuple[float, str]]:
     ttm: dict[str, tuple[float, str]] = {}
     for i in range(3, len(qs)):
         win = qs[i - 3:i + 1]
+        # 4 consecutive quarter-ENDS span 3 gaps ≈ 273d (NOT 365d, which would be 5 quarters).
         span = (date.fromisoformat(win[-1][1]) - date.fromisoformat(win[0][1])).days
-        if 320 <= span <= 410:
+        if 250 <= span <= 295:
             ttm[win[-1][1]] = (sum(w[2] for w in win), max(w[3] for w in win))
 
     # Annual-only fallback: ensure every FY end has a ttm point.
