@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T15:24:12.681813+00:00",
+  "updated_at": "2026-06-05T15:35:00.068392+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -159,6 +159,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/rotation.py",
       "kind": "script",
       "module": "compute",
@@ -167,8 +168,7 @@
         "purpose": "M3.2 rotation compute：bucket_bars + spx_daily 周线 RS-Ratio(JdK 透明 reconstruction) → bucket_rrg；league_table 聚合 per-sector 成员(breadth/at-52w-high/composite 中位/agg EV-S/多 horizon rel return)供 M3.3 export",
         "invariants": "周线(daily resample 周五收盘)；RS=100×P_bucket/P_spx(price relative)、M=EMA(rs,n1)、rs_ratio=100+k·(M−SMA(M,n2))/σ(M,n2)(z-score recenter 100，>100=跑赢自身近期趋势)；sector 用 temporal z-score(对自身历史；theme M4 才 point-in-time，否则尾迹虚构破 C3)；momentum=rs_ratio 斜率、RS-Momentum 归一量已砍(PRD §16)；n1/n2/k 暴露 PARAMS 透明 reconstruction、不声称复刻 StockCharts/de Kempenaer；compute_rotation 只读 bucket_bars+spx_daily、绝不碰 universe 横截面(隔离 PRD §16)；league_table 成员量(breadth/at-high/composite 中位/agg_evs)取自 derived_daily/valuation_daily 的 universe 成员、与 Discovery/Ocean/Stock 同源可追溯(C9)、不持久化、不在此造成员卡(走 board.json，DRY)；infer_state/slope_4w 是 state/Δ4w 单一口径供 export/web",
         "verification": "make fixture-pipeline 后 python3 compute/rotation.py：bucket_rrg 11 sector 周序列、rs_ratio ~95-105 量级、4 态(LEADING/WEAKENING/IMPROVING/LAGGING)可推；league composite_median/member_count 与直接查 derived_daily 成员逐一致(C9)；ETF 不在 universe 横截面"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -409,6 +409,18 @@
         "invariants": "每票 pts[] 与 weeks[] 对齐(老→新)：rs=derived_daily.rs_pct(0-100 横截面，与 Discovery/Stock 同列同源、点位可追溯 C9)、val=common-vintage 百分位(0-100，底=便宜，§10.5)、ps=val 背后的原始倍数(供 hover tip §9.2，与位置同周)；val 一律经 compute.valuation.common_vintage 计算(M2 Ocean 与 M5 Valuation 复用同一函数、口径不分叉 C9)；weeks=各 ISO 周最后交易日(date_trunc('week'))、最新周==最新快照(==board.json as_of)故 Ocean 当前位与 Stock 数字一致；入选票=最新周同时有 rs 且 fresh val(有可渲染 (x,y))，stale/n.m./无基本面者无 y 坐标→不导出(符合 §10.5 stale 不进 percentile)，历史周缺 rs/fresh-val 则该 pt=null(不伪造位置)；mktcap 原始 USD(同 board.json)；输出为派生物、gitignore、不含任何 key/secret",
         "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 len(pts)==n_weeks 且最新 pt 非空；val orientation 最便宜 ps 的 val 不高于最贵=底=便宜)；ocean.json rs/val∈[0,100]、ps>0、weeks 老→新且 weeks[-1]==max(derived_daily.date)；none/stale/overdue profile 票缺席；≥500 票 fixture 下 count≥500、size 几百 KB、export<1s"
       }
+    },
+    {
+      "path": "export/rotation.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M3.3 导出：DuckDB → web/public/data/rotation.json（Rotation RS-Ratio 多线序列 + enriched league，每 bucket 一条，供多线图 + league 表 + 钻进）",
+        "invariants": "读 bucket_rrg(周线 RS-Ratio 序列)对齐共享 weeks[](最近 N 周 union、缺失补 null，仿 ocean pts)；league 量经 compute.rotation.league_table 取自 derived_daily/valuation_daily 成员(与 Discovery/Ocean/Stock 同源 C9)；members 仅 top-N ticker(成员卡走 board.json scope filter、不重复造 DRY)；etf 从 sector_etf_map.txt 附加(审计)；params 暴露 n1/n2/k(透明 reconstruction 不复刻 StockCharts)；inline self_check(rs_ratio 对齐 weeks、weeks 老→新、末值非空)；输出 gitignored 紧凑 JSON；同 fixture seed 字节级可复现",
+        "verification": "make fixture-pipeline 后 python3 export/rotation.py：rotation.json 11 bucket、weeks=52、4 态(LEADING/WEAKENING/IMPROVING/LAGGING)、params 暴露、rs_ratio 对齐 weeks、members 非空、etf 齐；same seed 重导出 byte 一致"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -747,6 +759,18 @@
       }
     },
     {
+      "path": "web/src/lib/__fixtures__/rotation.sample.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M3 Rotation 渲染测试用样本 rotation.json（export/rotation.py 真实产物，110 票 fixture→11 sector×52 周）",
+        "invariants": "export/rotation.py 对 fixture(seed 7、110 票)的真实产物、非手写；含 11 sector RS-Ratio 周序列 + 4 态 league(breadth/at-high/composite 中位/agg EV-S/rel return) + members ticker；供 M3.4 web SSR 测试(react-dom/server 断言 path 数=bucket 数、4 态标签、钻进 N=1)；fixture 确定性 → 提交版字节稳定",
+        "verification": "JSON.parse 通过；buckets=11、weeks=52、4 态齐、各 bucket rs_ratio 长度=weeks；与 export/rotation.py 当前产物一致"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "web/src/lib/composite.test.ts",
       "kind": "code",
@@ -916,5 +940,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "1946e648e5939530ae9fb1447e8fab815bd22f0447739ad0eb835dbbdbe3c433"
+  "last_structure_digest": "7e8e538d061764e62d32328938a4f076b69e37e6696fbe9c86a5edfa6361d978"
 }
