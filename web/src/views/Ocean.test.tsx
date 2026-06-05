@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ocean from '../lib/__fixtures__/ocean.sample.json'
-import Ocean from './Ocean'
+import Ocean, { Tip } from './Ocean'
 import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 import {
-  radiusFor, colorVar, quadrantVar, makeScales, withAlpha, drawOcean,
-  SECTOR_VAR, OCEAN_GEOM, type CanvasLike, type Palette,
+  radiusFor, colorVar, quadrantVar, makeScales, withAlpha, drawOcean, nearestPoint,
+  SECTOR_VAR, OCEAN_GEOM, type CanvasLike, type Palette, type DrawnPoint,
 } from '../lib/ocean-draw'
 
 // AC-M2.2 (ROADMAP) as a committed regression gate: the Ocean canvas renders the
@@ -140,5 +140,61 @@ describe('AC-M2.2: Ocean component scaffold (SSR)', () => {
   it('labels the latest week', () => {
     expect(html).toContain(`WEEK ${data.n_weeks}/${data.n_weeks}`)
     expect(html).toContain(data.weeks[latest])
+  })
+})
+
+// AC-M2.3 (ROADMAP): manual WEEK scrubber (no autoplay — C2) moves the points;
+// hover → nearest-neighbor tip(ticker/sector/RS/Val/P-S/mktcap/themes).
+describe('AC-M2.3: scrubber + hover', () => {
+  const PTS: DrawnPoint[] = [
+    { ticker: 'A', px: 100, py: 100, r: 4 },
+    { ticker: 'B', px: 300, py: 200, r: 6 },
+  ]
+
+  it('nearestPoint hits within ~r+5px, picks the closest, misses far away', () => {
+    expect(nearestPoint(PTS, 101, 102)).toBe('A')          // on top of A
+    expect(nearestPoint(PTS, 304, 203)).toBe('B')          // on top of B
+    expect(nearestPoint(PTS, 800, 400)).toBe(null)         // empty space -> no tip
+    expect(nearestPoint([], 1, 1)).toBe(null)              // nothing drawn
+  })
+
+  it('scrubbing the week moves points (different positions than the latest week)', () => {
+    const c0 = mockCtx()
+    drawOcean(c0, { data, week: 0, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
+    const cN = mockCtx()
+    drawOcean(cN, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
+    const moved = c0.calls.arc.some(([x, y], i) => {
+      const b = cN.calls.arc[i]
+      return b && (Math.abs(x - b[0]) > 0.5 || Math.abs(y - b[1]) > 0.5)
+    })
+    expect(moved).toBe(true)
+  })
+
+  it('drawOcean adds a hover ring (one extra stroke) for the hovered point', () => {
+    const base = mockCtx()
+    drawOcean(base, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
+    const withHover = mockCtx()
+    drawOcean(withHover, {
+      data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL,
+      hover: data.stocks[0].ticker,
+    })
+    expect(withHover.calls.stroke).toBe(base.calls.stroke + 1)
+  })
+
+  it('Tip shows ticker / sector / RS / Val / P-S / mkt cap', () => {
+    const s = data.stocks[0]
+    const pt = s.pts[latest] as OceanPt
+    const html = renderToStaticMarkup(<Tip stock={s} pt={pt} />)
+    expect(html).toContain(s.ticker)
+    if (s.sector) expect(html).toContain(s.sector)
+    for (const label of ['RS pct', 'Val pct', 'P/S', 'Mkt cap']) expect(html).toContain(label)
+    expect(html).toContain(pt.rs.toFixed(0))
+  })
+
+  it('renders a manual week range input (max = n_weeks-1, no autoplay)', () => {
+    const html = renderToStaticMarkup(<Ocean initial={data} scope={ALL} />)
+    expect(html).toContain('type="range"')
+    expect(html).toContain(`max="${data.n_weeks - 1}"`)
+    expect(html).toContain('week scrubber')
   })
 })

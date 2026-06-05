@@ -43,7 +43,7 @@ const FALLBACK_VAR = '--dim2'
 export const OCEAN_VARS: string[] = [
   ...new Set([
     ...Object.values(SECTOR_VAR), ...Object.values(THEME_VAR),
-    '--q-lead', '--q-weak', '--q-impr', '--dim2', '--dim', '--grn',
+    '--q-lead', '--q-weak', '--q-impr', '--dim2', '--dim', '--grn', '--txt',
   ]),
 ]
 
@@ -142,6 +142,7 @@ export interface DrawOpts {
   activeTheme: string | null
   scope: Scope
   palette: Palette
+  hover?: string | null
   geom?: Geom
 }
 
@@ -194,6 +195,35 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
     ctx.fill()
     if (!faded) drawn.push({ ticker: s.ticker, px: sx(pt.rs), py: sy(pt.val), r })
   }
+
+  // hover ring around the hovered (non-faded) point (M2.3).
+  if (o.hover) {
+    const hp = drawn.find((p) => p.ticker === o.hover)
+    if (hp) {
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = o.palette['--txt'] || '#e9eef5'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(hp.px, hp.py, hp.r + 3, 0, 7)
+      ctx.stroke()
+    }
+  }
+
   ctx.globalAlpha = 1
   return drawn
+}
+
+/** Nearest drawn point to (lx,ly) in logical px, or null if none within ~r+5px
+ *  (the hover/click hit test — linear scan, fine for 500-2000 points; PRD NFR-8). */
+export function nearestPoint(points: DrawnPoint[], lx: number, ly: number): string | null {
+  let best: DrawnPoint | null = null
+  let bd = Infinity
+  for (const p of points) {
+    const d = (p.px - lx) ** 2 + (p.py - ly) ** 2
+    if (d < bd) {
+      bd = d
+      best = p
+    }
+  }
+  return best && bd < (best.r + 5) ** 2 ? best.ticker : null
 }

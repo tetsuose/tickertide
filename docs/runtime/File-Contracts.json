@@ -740,9 +740,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Ocean canvas 纯绘制库：固定 RS×Val 平面的几何/配色/尺寸 helpers + drawOcean 单次绘制一周快照（PRD §9.2）",
-        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式 sector/theme/quadrant 返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时 getComputedStyle 解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；drawOcean 画象限 tint(右下绿)+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)并返回非淡点屏幕位置供命中测试(M2.3 hover)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
-        "verification": "Ocean.test.tsx：radiusFor clamp/√量级、makeScales sy 底=便宜、quadrantVar 四象限、colorVar 各模式、withAlpha hex→rgba；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 且落 plot 框内 + clear/象限 fillRect/十字线 stroke + scope=sector 仅成员非淡"
+        "purpose": "Ocean canvas 纯绘制库：固定 RS×Val 平面的几何/配色/尺寸 helpers + drawOcean 单次绘制一周快照 + nearestPoint 命中测试（PRD §9.2）",
+        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式 sector/theme/quadrant 返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时 getComputedStyle 解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；drawOcean 画象限 tint(右下绿)+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)+可选 hover 白环，并返回非淡点屏幕位置；nearestPoint 线性扫描返回 ~r+5px 内最近点 ticker(hover/click 命中，NFR-8 500-2000 点可接受)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
+        "verification": "Ocean.test.tsx：radiusFor clamp/√量级、makeScales sy 底=便宜、quadrantVar 四象限、colorVar 各模式、withAlpha hex→rgba、nearestPoint 命中/未命中/最近；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 且落 plot 框内 + clear/象限 fillRect/十字线 stroke + scope=sector 仅成员非淡 + hover 多一笔 ring stroke + 切周点位移动"
       },
       "notes": ""
     },
@@ -766,8 +766,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "暗色主题与配色 SoT：附录C 全调色板 CSS 变量 + shell 组件类 + evidence-card/Discovery/Ocean 类",
-        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad) 转写自 UX 合同",
-        "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb*/.oc* 类；视觉对 UX 合同"
+        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同",
+        "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb*/.oc*/.otip 类；视觉对 UX 合同"
       }
     },
     {
@@ -812,9 +812,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "AC-M2.2 提交版回归 gate（vitest）：Ocean 纯绘制库单测 + drawOcean mock-ctx 断言最新周 ≥500 点 + SSR scaffold",
-        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/quadrantVar/colorVar/withAlpha) 直测 + drawOcean 喂 recording mock-ctx 计 arc 数==可渲染票数且≥500、点落 plot 框、scope=sector 仅成员非淡、static 层 clear+象限 fillRect+十字线 stroke；SSR 断言 canvas+三配色切换+轴标+WEEK 标签；fixture=ocean.sample.json",
-        "verification": "npm test / make web-test 全绿（本文件 12 用例）"
+        "purpose": "AC-M2.2/M2.3 提交版回归 gate（vitest）：Ocean 纯绘制库单测 + drawOcean mock-ctx 断言最新周 ≥500 点 + scrubber/hover/Tip + SSR scaffold",
+        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/quadrantVar/colorVar/withAlpha/nearestPoint) 直测 + drawOcean 喂 recording mock-ctx 计 arc 数==可渲染票数且≥500、点落 plot 框、scope=sector 仅成员非淡、static 层 clear+象限 fillRect+十字线 stroke、hover 多一笔 ring stroke、切周点位移动；Tip SSR 断言 7 字段；Ocean SSR 断言 canvas+三配色切换+轴标+WEEK 标签+手动周 range；fixture=ocean.sample.json",
+        "verification": "npm test / make web-test 全绿（本文件 17 用例）"
       },
       "notes": "ocean.sample.json 再生：make fixture-pipeline FIXTURE_ARGS=\"--tickers 520 --seed 7\" && python export/ocean.py --out web/src/lib/__fixtures__/ocean.sample.json"
     },
@@ -824,9 +824,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Ocean surface（PRD §9.2）：固定 RS×Val canvas 散点 + sector/theme/quadrant 配色切换 + √市值尺寸，M2.2 渲染最新周静态散点",
-        "invariants": "读 ocean.json(loadOcean) 或 initial 注入(测试免 fetch)；canvas 2x retina(setTransform)；useEffect 调 ocean-draw.drawOcean、色板经 resolvePalette(document.documentElement)；M2.2 固定渲染最新周(n_weeks-1)，scrubber/hover 留 M2.3、pin/trail/lasso 留 M2.4；respect 全局 scope(透传 App 单一真源)；轴/象限标签 overlay 对照 UX 合同；错误/加载态降级 placeholder",
-        "verification": "SSR(renderToStaticMarkup) 含 canvas + sector/theme/quadrant 三切换 + RS/Valuation 轴标 + WEEK n/N 标签；npm run build(tsc+vite) 通过；绘制正确性见 ocean-draw 头测；浏览器视觉/性能 M2.5"
+        "purpose": "Ocean surface（PRD §9.2）：固定 RS×Val canvas 散点 + 配色切换 + √市值尺寸 + 手动 WEEK scrubber + hover 最近邻 tip",
+        "invariants": "读 ocean.json(loadOcean) 或 initial 注入(测试免 fetch)；canvas 2x retina(setTransform)；useEffect 调 ocean-draw.drawOcean、色板经 resolvePalette、绘制返回的点位存 pos ref 供命中；WEEK scrubber 为手动 range(min0/max n_weeks-1)、无 autoplay(C2)、未拖时跟随最新周；hover 经 toLogical+nearestPoint 命中、drawOcean 画白环、Tip overlay 显 ticker/sector/RS/Val/P-S/mktcap/themes(§9.2)且 Tip 导出可测；respect 全局 scope(透传 App 单一真源)；pin/trail/lasso 留 M2.4；错误/加载态降级 placeholder",
+        "verification": "SSR 含 canvas + 三配色切换 + 轴标 + WEEK n/N 标签 + type=range 周滑杆(max=n_weeks-1,aria week scrubber)；Tip SSR 含 ticker/sector/RS pct/Val pct/P/S/Mkt cap；npm run build(tsc+vite) 通过；绘制/命中正确性见 ocean-draw 头测；浏览器视觉/性能 M2.5"
       },
       "notes": "themes 数据 M4 前空→theme 配色模式暂全淡、theme 选择器留 M4；Makefile export 接线 + 浏览器性能验证留 M2.5"
     },
