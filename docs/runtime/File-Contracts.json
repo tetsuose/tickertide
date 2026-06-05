@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T11:42:08.383825+00:00",
+  "updated_at": "2026-06-05T12:19:05.118163+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -190,8 +190,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M0.4 估值：daily_bars ASOF JOIN fundamentals_q → valuation_daily（日频倍数 + common-vintage）",
-        "invariants": "ASOF 键用 filed_date（point-in-time，非 period_end，anti-lookahead）；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除",
-        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_filed≤date 无 lookahead；common-vintage fresh/stale 分离"
+        "invariants": "ASOF 键用 filed_date（point-in-time，非 period_end，anti-lookahead）；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除，升序故 0=最便宜(Ocean y 底=便宜)；common_vintage(con,metric,on_date,fresh_days) 为该百分位的单一定义、按交易日参数化，M2 Ocean(周度)与 M5 Valuation(横截面)复用同一函数、口径不分叉(C9)，latest_common_vintage 为其最新日 int 取整薄包装",
+        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_filed≤date 无 lookahead；common-vintage fresh/stale 分离；common_vintage 任意 on_date 只对 fresh cohort 排名、metric 经白名单校验、百分位随 ps 升序(底=便宜)"
       }
     },
     {
@@ -373,6 +373,18 @@
         "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；输出为派生物、gitignore、不含任何 key",
         "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev；抽查 E≤0 票 pe=null 且 ps 非空、freshness 分档正确、无 NaN token、rank 连续且 composite 降序"
       }
+    },
+    {
+      "path": "export/ocean.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M2.1 导出：DuckDB 周度快照 → web/public/data/ocean.json（Ocean wide-explore 散点每票 N 周 RS×估值位置序列，供 scrubber + pin trail）",
+        "invariants": "每票 pts[] 与 weeks[] 对齐(老→新)：rs=derived_daily.rs_pct(0-100 横截面，与 Discovery/Stock 同列同源、点位可追溯 C9)、val=common-vintage 百分位(0-100，底=便宜，§10.5)、ps=val 背后的原始倍数(供 hover tip §9.2，与位置同周)；val 一律经 compute.valuation.common_vintage 计算(M2 Ocean 与 M5 Valuation 复用同一函数、口径不分叉 C9)；weeks=各 ISO 周最后交易日(date_trunc('week'))、最新周==最新快照(==board.json as_of)故 Ocean 当前位与 Stock 数字一致；入选票=最新周同时有 rs 且 fresh val(有可渲染 (x,y))，stale/n.m./无基本面者无 y 坐标→不导出(符合 §10.5 stale 不进 percentile)，历史周缺 rs/fresh-val 则该 pt=null(不伪造位置)；mktcap 原始 USD(同 board.json)；输出为派生物、gitignore、不含任何 key/secret",
+        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 len(pts)==n_weeks 且最新 pt 非空；val orientation 最便宜 ps 的 val 不高于最贵=底=便宜)；ocean.json rs/val∈[0,100]、ps>0、weeks 老→新且 weeks[-1]==max(derived_daily.date)；none/stale/overdue profile 票缺席；≥500 票 fixture 下 count≥500、size 几百 KB、export<1s"
+      },
+      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5"
     },
     {
       "notes": "",
@@ -747,6 +759,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/views/Discovery.test.tsx",
       "kind": "code",
       "module": "web",
@@ -755,8 +768,7 @@
         "purpose": "AC-M1 渲染 gate（vitest）：从真实导出 fixture SSR 渲染 Discovery/EvidenceCard 断言里程碑可见契约",
         "invariants": "renderToStaticMarkup 断言 ≥18 卡 / 旋钮 k=0 vs k=1 重排 / badge=composite(top,k)(C9) / 6 字段 / 展开 5 分量+权重+无黑箱 / d-d 箭头 / mini chart svg+MA+52w；无浏览器、用 board.sample.json fixture",
         "verification": "npm test / make web-test 全绿（本文件 7 用例）"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -808,5 +820,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "1aaa7d3a51f141abc610c83928660ca95981a9d47cfa850693a6b622778a9202"
+  "last_structure_digest": "0abeaf02db89e5cddd042b1408b51b0afb5e33dd9ff2e552aaf958819ddaefc3"
 }
