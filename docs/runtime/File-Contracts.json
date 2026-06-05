@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T04:13:04.360500+00:00",
+  "updated_at": "2026-06-05T04:45:58.305118+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -93,9 +93,9 @@
       "module": ".",
       "stage": "implemented",
       "contract": {
-        "purpose": "编排层：devtopology 结构/合同 gate + 工作流路由 + 数据管道占位 target",
-        "invariants": "所有 target 名与 CLAUDE.md/AGENTS.md/SKILL 引用一致；数据管道 target 在对应 milestone 前为占位提示，不报错",
-        "verification": "make help 列全命令；make verify / route / atlas 可跑"
+        "purpose": "编排层：devtopology 结构/合同 gate + 工作流路由 + M0 数据管道",
+        "invariants": "target 名与 CLAUDE.md/AGENTS.md/SKILL 引用一致；M0 pipeline(ingest→fundamentals→compute→check)跑真命令、export/serve 为 M2 占位；产品 target 用 venv 依赖(requirements.txt)、devtopology 引擎保持 stdlib-only；PIPELINE_ARGS 透传 runner flags",
+        "verification": "make help 列全命令；make verify 可跑；make pipeline 端到端产出 CHECK_OK"
       }
     },
     {
@@ -121,6 +121,18 @@
         "invariants": "所有 surface 共用单一 per-stock 数据（C9）；买 robustness 不买 alpha 不回测优化权重",
         "verification": "计算内容与 PRD §4/§10 一致；输出表对齐 §12"
       }
+    },
+    {
+      "path": "compute/check.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M0 验收抽查：pipeline 跑完后 sanity-check DuckDB（PRD §14）",
+        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E",
+        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -159,6 +171,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/valuation.py",
       "kind": "script",
       "module": "compute",
@@ -167,8 +180,7 @@
         "purpose": "M0.4 估值：daily_bars ASOF JOIN fundamentals_q → valuation_daily（日频倍数 + common-vintage）",
         "invariants": "ASOF 键用 filed_date（point-in-time，非 period_end，anti-lookahead）；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除",
         "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_filed≤date 无 lookahead；common-vintage fresh/stale 分离"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -556,5 +568,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "7c28843525f2eca511a59611426aa2e3f561930c56137e6b21190a9f828f7d1f"
+  "last_structure_digest": "db953f63d2d4c651cb8b4b622a728fa48659f38ed19535c3242fb48506de5ab7"
 }
