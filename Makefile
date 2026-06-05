@@ -6,7 +6,8 @@ export PYTHONDONTWRITEBYTECODE := 1
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
         ingest fundamentals compute export serve pipeline check \
-        fixture fixture-pipeline
+        fixture fixture-pipeline \
+        web-install web-build web-test web-dev
 
 ENGINE ?= engine/index.py
 QUERY ?=
@@ -45,14 +46,19 @@ help:
 	@echo "    make writeback-apply WRITE=1   Sync File-Contracts.json"
 	@echo "    make enforce-fill MODULE=...   Restrict changes to one module"
 	@echo ""
-	@echo "  Data Pipeline (M0 live; export/serve are M2 placeholders — see docs/PRD.md §13)"
+	@echo "  Data Pipeline (M0-M1 live — see docs/PRD.md §13)"
 	@echo "    make ingest                   Nasdaq universe + price bars (yfinance)"
 	@echo "    make fundamentals             SEC EDGAR companyfacts -> fundamentals_q"
 	@echo "    make compute                  DuckDB: derived_daily (composite) + valuation_daily"
 	@echo "    make check                    AC-M0 acceptance check on the DB"
 	@echo "    make pipeline                 ingest -> fundamentals -> compute -> check (M0 end-to-end)"
-	@echo "    make export                   [M2] Snapshot -> Parquet/JSON shards"
-	@echo "    make serve                    [M2] Local preview of the static client"
+	@echo "    make export                   M1 board.json -> web/public/data (M2 adds Parquet shards)"
+	@echo ""
+	@echo "  Web Client (M1 — Vite + React + TS; run web-install once)"
+	@echo "    make web-install              Install web/ npm deps"
+	@echo "    make web-test                 vitest: C9 parity + AC-M1 render gate"
+	@echo "    make web-build                export -> npm build -> web/dist (static artifact)"
+	@echo "    make web-dev                  export -> npm dev (local live preview)"
 	@echo ""
 	@echo "  Offline Verification (no network — for web/export/CI; see compute/fixture.py)"
 	@echo "    make fixture                  Build a synthetic data/tickertide.duckdb (deterministic)"
@@ -123,9 +129,9 @@ task-close:
 	@DEVTOPOLOGY_BASE="$(BASE)" bash scripts/worktree.sh close --base "$(BASE)"
 
 # --- Data Pipeline ---
-# M0 is live: ingest/fundamentals/compute/check run real code. export/serve are M2
-# placeholders. Product code uses requirements.txt deps (duckdb/yfinance/pandas/numpy)
-# in a venv; the workflow engine (engine/index.py) stays stdlib-only.
+# M0-M1 live: ingest/fundamentals/compute/check + export (board.json). Product code
+# uses requirements.txt deps (duckdb/yfinance/pandas/numpy) in a venv + web/ uses npm;
+# the workflow engine (engine/index.py) stays stdlib-only.
 # Pass runner flags via PIPELINE_ARGS, e.g. make ingest PIPELINE_ARGS="--limit 500".
 
 PIPELINE_ARGS ?=
@@ -144,10 +150,10 @@ check:
 	@python3 compute/check.py
 
 export:
-	@echo "[export] M2 — will run: python3 export/run.py (Parquet/JSON shards). See docs/PRD.md §13, export/README.md."
+	@python3 export/board.py $(PIPELINE_ARGS)
+	@echo "[export] M1 board.json -> web/public/data/ (M2 adds Parquet/JSON shards)."
 
-serve:
-	@echo "[serve] M2 — will serve web/ statically. See docs/PRD.md §13, web/README.md."
+serve: web-dev
 
 pipeline: ingest fundamentals compute check
 	@echo "[pipeline] M0 end-to-end complete: ingest -> fundamentals -> compute -> check (nightly cron body)"
@@ -166,3 +172,21 @@ fixture:
 
 fixture-pipeline: fixture compute
 	@echo "[fixture-pipeline] synthetic DB -> derived_daily + valuation_daily ready (offline). Next: python3 export/board.py; make check"
+
+# --- Web Client (M1) ---
+# Vite + React + TS static client. `export` (board.json) is the runtime data; the
+# build bundles it from public/data into web/dist. web/node_modules + web/dist are
+# gitignored. Run `make web-install` once, then web-test / web-build / web-dev.
+
+web-install:
+	@cd web && npm install
+
+web-test:
+	@cd web && npm test
+
+web-build: export
+	@cd web && npm run build
+	@echo "[web-build] static client -> web/dist (board.json bundled from public/data)."
+
+web-dev: export
+	@cd web && npm run dev
