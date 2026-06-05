@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals compute export serve pipeline check \
+        ingest fundamentals compute export ocean-c9 serve pipeline check \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -52,11 +52,12 @@ help:
 	@echo "    make compute                  DuckDB: derived_daily (composite) + valuation_daily"
 	@echo "    make check                    AC-M0 acceptance check on the DB"
 	@echo "    make pipeline                 ingest -> fundamentals -> compute -> check (M0 end-to-end)"
-	@echo "    make export                   M1 board.json -> web/public/data (M2 adds Parquet shards)"
+	@echo "    make export                   M1/M2 board.json + ocean.json -> web/public/data"
+	@echo "    make ocean-c9                 AC-M2 C9: ocean.json positions == board/Stock numbers"
 	@echo ""
-	@echo "  Web Client (M1 — Vite + React + TS; run web-install once)"
+	@echo "  Web Client (M1/M2 — Vite + React + TS; run web-install once)"
 	@echo "    make web-install              Install web/ npm deps"
-	@echo "    make web-test                 vitest: C9 parity + AC-M1 render gate"
+	@echo "    make web-test                 vitest: C9 parity + AC-M1/M2 render gate"
 	@echo "    make web-build                export -> npm build -> web/dist (static artifact)"
 	@echo "    make web-dev                  export -> npm dev (local live preview)"
 	@echo ""
@@ -151,7 +152,12 @@ check:
 
 export:
 	@python3 export/board.py $(PIPELINE_ARGS)
-	@echo "[export] M1 board.json -> web/public/data/ (M2 adds Parquet/JSON shards)."
+	@python3 export/ocean.py
+	@echo "[export] M1/M2 board.json + ocean.json -> web/public/data/ (M5 adds Parquet shards)."
+
+# C9 cross-surface check (AC-M2): ocean.json positions trace to board/Stock numbers.
+ocean-c9:
+	@python3 export/check_ocean.py
 
 serve: web-dev
 
