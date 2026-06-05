@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-04T23:32:31.030002+00:00",
+  "updated_at": "2026-06-05T02:10:43.909143+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -14,6 +14,18 @@
     "replan_rule": "When repo structure changes, run `make writeback-apply WRITE=1` before continuing."
   },
   "entries": [
+    {
+      "path": ".env.example",
+      "kind": "config",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "secrets 模板（names-only）：STOOQ_APIKEY 等",
+        "invariants": "只记名不记值；真实 .env 走 gitignore；STOOQ_APIKEY 仅 --provider stooq 需要",
+        "verification": "git check-ignore 确认真实 .env 被忽略；本模板入库且不含值"
+      },
+      "notes": ""
+    },
     {
       "notes": "",
       "path": ".gitattributes",
@@ -111,6 +123,18 @@
       }
     },
     {
+      "path": "compute/db.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert（universe/bars/spx）",
+        "invariants": "single-writer offline batch；DB 在 data/ 下 gitignored；schema 取自 ingest/schema.sql；upsert 用 INSERT OR REPLACE / ON CONFLICT 可重入",
+        "verification": "connect 建表幂等；重复 upsert 不产生重复行；count/distinct_bar_tickers 返回整数"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "devtopology.yaml",
       "kind": "config",
@@ -147,6 +171,7 @@
       }
     },
     {
+      "notes": "",
       "path": "docs/ROADMAP.md",
       "kind": "doc",
       "module": "docs",
@@ -155,8 +180,7 @@
         "purpose": "M0–M6 开发方案：PRD §13 里程碑的执行展开（M0 详细到可 task-open 执行，M1–M6 纲要）",
         "invariants": "引用 PRD/BUILD-PLAN 不复制；M0 拆解可追溯到 §13/§14；just-in-time 不提前承诺 §17 未决决策；冲突以 PRD §16 为准",
         "verification": "M0 五个 task 与 AC-M0 对应；M1–M6 纲要各指向 PRD §14 对应 AC；依赖链自洽"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -303,6 +327,102 @@
       }
     },
     {
+      "path": "ingest/nasdaq.py",
+      "kind": "script",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "从 Nasdaq screener download 端点拉取 US 股票 universe（含 sector/industry/mktcap）",
+        "invariants": "需 browser-like User-Agent 否则空响应；三交易所即 US-listed（ADR 允许）；按 ticker dedup 保留大 mktcap",
+        "verification": "fetch_universe 返回 ≥500 行且 sector/mktcap 多数非空；含 NASDAQ/NYSE/AMEX"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/prices.py",
+      "kind": "script",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "可插拔 price provider 接口 + 工厂（默认 yfinance，Stooq 待 apikey）",
+        "invariants": "provider 返回统一 bar 元组 (date,open,high,low,close,adj_close,volume)；具体 provider lazy import；换 provider 不动 run.py；换源是 provider 选择非脊柱改动",
+        "verification": "get_provider('yfinance'/'stooq') 返回实例；未知名 raise ValueError"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/run.py",
+      "kind": "script",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M0 ingest 编排：universe(Nasdaq) → daily_bars(provider) → spx_daily",
+        "invariants": "全量存 universe 但 bars 只拉 top-N(mktcap) ∪ seed（M0 先窄，扩量是 M6）；provider 失败 skip 不崩；--provider/--limit/--lookback-days 可调",
+        "verification": "python3 ingest/run.py --limit N 端到端产出 DuckDB；打印 universe/bar_tickers/bars/spx 计数"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/schema.sql",
+      "kind": "code",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "DuckDB M0 schema：universe / daily_bars / spx_daily 建表 DDL",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；PK 防重；只覆盖 M0.1 写入的表",
+        "verification": "compute.db.connect 应用后三表存在；重复 connect 不报错"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/stooq.py",
+      "kind": "script",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Stooq price provider 占位 —— per-symbol CSV 现需 apikey（BUILD-PLAN 后政策变化）",
+        "invariants": "无 STOOQ_APIKEY 时 raise 并引导用 yfinance；apikey 从 env 读不入库；endpoint 形状待有 key 时验证",
+        "verification": "未设 key 时 get_bars 抛带引导信息的 RuntimeError"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/universe_seed.txt",
+      "kind": "doc",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "主题代表票种子，保证小票即使不在 mktcap top-N 也进 M0 bars 拉取",
+        "invariants": "非权威 theme membership（M4 EDGAR 锚定才是）；每行一 ticker，# 注释；仅覆盖用途",
+        "verification": "load_seed 解析非空；被 run.py union 进 bars 目标列表"
+      },
+      "notes": ""
+    },
+    {
+      "path": "ingest/yfinance_provider.py",
+      "kind": "script",
+      "module": "ingest",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "yfinance price provider —— M0 默认主干（BUILD-PLAN 的 fallback 因 Stooq 需 apikey 转主力）",
+        "invariants": "非官方脆弱、视中断为常态；展平单票 MultiIndex 列；NaN→None；空响应返回 []",
+        "verification": "get_bars 返回 OHLCV 元组列表，newest last；无数据返回 []"
+      },
+      "notes": ""
+    },
+    {
+      "path": "requirements.txt",
+      "kind": "doc",
+      "module": ".",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "产品运行时依赖声明（duckdb + yfinance）",
+        "invariants": "不含 engine/index.py 会 import 的依赖（gate 引擎须 stdlib only）；用 venv 安装",
+        "verification": "pip install -r 后 import duckdb / yfinance 成功"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "scripts/render_acceptance_comment.py",
       "kind": "script",
@@ -388,5 +508,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "2930dd6f00173e974df9e08a336e7ab6eb642c5a27a04c83bccf2df08fe1fe93"
+  "last_structure_digest": "47b4ffa366faa5045a09322db50287d5b31a5ab059aeeaa92323d48b8eb38bb8"
 }
