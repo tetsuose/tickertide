@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest compute export serve pipeline
+        ingest fundamentals compute export serve pipeline check
 
 ENGINE ?= engine/index.py
 QUERY ?=
@@ -44,12 +44,14 @@ help:
 	@echo "    make writeback-apply WRITE=1   Sync File-Contracts.json"
 	@echo "    make enforce-fill MODULE=...   Restrict changes to one module"
 	@echo ""
-	@echo "  Data Pipeline (placeholders until M0 — see docs/PRD.md §13)"
-	@echo "    make ingest                   Stooq + Nasdaq screener + EDGAR pull"
-	@echo "    make compute                  DuckDB: derived_daily + composite + valuation"
-	@echo "    make export                   Snapshot -> Parquet/JSON shards"
-	@echo "    make serve                    Local preview of the static client"
-	@echo "    make pipeline                 ingest -> compute -> export (nightly cron body)"
+	@echo "  Data Pipeline (M0 live; export/serve are M2 placeholders — see docs/PRD.md §13)"
+	@echo "    make ingest                   Nasdaq universe + price bars (yfinance)"
+	@echo "    make fundamentals             SEC EDGAR companyfacts -> fundamentals_q"
+	@echo "    make compute                  DuckDB: derived_daily (composite) + valuation_daily"
+	@echo "    make check                    AC-M0 acceptance check on the DB"
+	@echo "    make pipeline                 ingest -> fundamentals -> compute -> check (M0 end-to-end)"
+	@echo "    make export                   [M2] Snapshot -> Parquet/JSON shards"
+	@echo "    make serve                    [M2] Local preview of the static client"
 	@echo ""
 
 # --- Workflow Routing ---
@@ -115,21 +117,32 @@ task-status:
 task-close:
 	@DEVTOPOLOGY_BASE="$(BASE)" bash scripts/worktree.sh close --base "$(BASE)"
 
-# --- Data Pipeline (placeholders) ---
-# These print their intended command and exit 0 until the corresponding milestone
-# lands real code. Replace the echo with the runner when implementing M0+.
+# --- Data Pipeline ---
+# M0 is live: ingest/fundamentals/compute/check run real code. export/serve are M2
+# placeholders. Product code uses requirements.txt deps (duckdb/yfinance/pandas/numpy)
+# in a venv; the workflow engine (engine/index.py) stays stdlib-only.
+# Pass runner flags via PIPELINE_ARGS, e.g. make ingest PIPELINE_ARGS="--limit 500".
+
+PIPELINE_ARGS ?=
 
 ingest:
-	@echo "[ingest] not yet implemented (M0). Will run: python3 ingest/run.py  — see docs/PRD.md §13, ingest/README.md"
+	@python3 ingest/run.py $(PIPELINE_ARGS)
+
+fundamentals:
+	@python3 ingest/edgar.py $(PIPELINE_ARGS)
 
 compute:
-	@echo "[compute] not yet implemented (M0). Will run: python3 compute/run.py — see docs/PRD.md §13, compute/README.md"
+	@python3 compute/run.py
+	@python3 compute/valuation.py
+
+check:
+	@python3 compute/check.py
 
 export:
-	@echo "[export] not yet implemented (M2). Will run: python3 export/run.py  — see docs/PRD.md §13, export/README.md"
+	@echo "[export] M2 — will run: python3 export/run.py (Parquet/JSON shards). See docs/PRD.md §13, export/README.md."
 
 serve:
-	@echo "[serve] not yet implemented (M2). Will serve web/ statically       — see docs/PRD.md §13, web/README.md"
+	@echo "[serve] M2 — will serve web/ statically. See docs/PRD.md §13, web/README.md."
 
-pipeline: ingest compute export
-	@echo "[pipeline] nightly body = ingest -> compute -> export (GitHub Actions cron, post-US-close)"
+pipeline: ingest fundamentals compute check
+	@echo "[pipeline] M0 end-to-end complete: ingest -> fundamentals -> compute -> check (nightly cron body)"
