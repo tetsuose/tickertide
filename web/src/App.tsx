@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import type { SurfaceId, Scope } from './types'
+import type { SurfaceId, Scope, Components } from './types'
 import Discovery from './views/Discovery'
+import { weights } from './lib/composite'
 
 // The five lenses in the contract's fixed order (PRD §9.0). Discovery is the
 // M1 surface and the default tab; the others are scaffolded stubs that land in
@@ -100,6 +101,24 @@ export default function App() {
               onChange={(e) => setK(parseFloat(e.target.value))}
               aria-label="early to reliable knob"
             />
+            <div className="wbars">
+              {(
+                [
+                  ['rs', 'RS'],
+                  ['high', '52WH'],
+                  ['trend', 'TREND'],
+                  ['vol', 'VOL'],
+                  ['accel', 'ACCEL'],
+                ] as [keyof Components, string][]
+              ).map(([key, label]) => (
+                <div key={key} className="wb" title={`${label} ${(weights(k)[key] * 100).toFixed(0)}%`}>
+                  <div className="wbtrack">
+                    <div className="wbfill" style={{ height: `${Math.round((weights(k)[key] / 0.45) * 100)}%` }} />
+                  </div>
+                  <div className="wbl">{label}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -123,7 +142,7 @@ export default function App() {
             <span className="khint">{info.milestone}</span>
           </div>
           {tab === 'discovery' ? (
-            <Discovery />
+            <Discovery k={k} />
           ) : (
             <>
               <div className="placeholder">
@@ -132,7 +151,7 @@ export default function App() {
               </div>
               <div className="foot">
                 脊柱骨架：单一 composite 引擎 → 5 个 lens，两个尺度（wide explore / bounded decide），零常驻
-                backend。旋钮已就位（k = {k.toFixed(2)}），权重重算 + 分量条随 Discovery 卡流在 M1.4 接入。
+                backend。旋钮 k = {k.toFixed(2)} 已驱动 Discovery 实时重排（权重条见上）；此 surface 待后续 milestone。
               </div>
             </>
           )}

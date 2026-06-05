@@ -36,17 +36,27 @@ const COMPONENTS: { key: keyof Components; label: string }[] = [
 export default function EvidenceCard({
   stock,
   weights,
+  score,
   onOpen,
   defaultOpen = false,
 }: {
   stock: Stock
-  /** weights at the current knob k — default-k snapshot in M1.3, live in M1.4. */
+  /** weights at the current knob k (live — re-weighted by the early⟷reliable knob). */
   weights: Components
+  /** composite recomputed at the current k (composite.ts, C9). Drives badge + sort. */
+  score: number
   onOpen?: (ticker: string) => void
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const e = stock.evidence
+  // d/d: the engine's day-over-day composite move at the default weighting.
+  // prev-day components aren't exported, so this is a snapshot fact (it does not
+  // track the knob); at the default k it lines up with the badge.
+  const dd =
+    stock.composite != null && stock.composite_prev != null
+      ? stock.composite - stock.composite_prev
+      : null
 
   return (
     <div className="ecard" onClick={() => onOpen?.(stock.ticker)}>
@@ -57,17 +67,29 @@ export default function EvidenceCard({
             {stock.sector ?? '—'} · {fmtMktcap(stock.mktcap)}
           </span>
         </div>
-        <button
-          className="ec-badge"
-          style={{ color: scoreColor(stock.composite) }}
-          onClick={(ev) => {
-            ev.stopPropagation()
-            setOpen(!open)
-          }}
-          aria-expanded={open}
-        >
-          {stock.composite == null ? '—' : stock.composite.toFixed(0)} <i>▾</i>
-        </button>
+        <div className="ec-headr">
+          {dd != null && (
+            <span
+              className="ec-dd"
+              style={{ color: dd >= 0 ? 'var(--grn)' : 'var(--red)' }}
+              title="d/d composite (engine default weighting)"
+            >
+              {dd >= 0 ? '▲' : '▼'}
+              {Math.abs(dd).toFixed(1)}
+            </span>
+          )}
+          <button
+            className="ec-badge"
+            style={{ color: scoreColor(score) }}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              setOpen(!open)
+            }}
+            aria-expanded={open}
+          >
+            {score.toFixed(0)} <i>▾</i>
+          </button>
+        </div>
       </div>
 
       {stock.themes.length > 0 && (
