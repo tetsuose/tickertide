@@ -22,9 +22,10 @@
 ## 2. 开工前必读（权威顺序）
 
 1. `docs/PRD.md` — 完整产品需求（**权威规格**，本仓库的 SoT）。
-2. `docs/BUILD-PLAN.md` — 构建计划 + 数学规格（kickoff prompt 原件）。
-3. `docs/equity-monitor-v2.jsx` — UX 合同（锁定 layout/interaction/hierarchy/color；**不是要跑的代码**）。
-4. `docs/workflow/WORKFLOW.md` — 工作流 policy（merge 边界、权威顺序、decision gate）。
+2. `docs/ROADMAP.md` — 里程碑开发方案（PRD §13 的执行展开：当前进度 + 各 M 的 task 拆解；**开工前看你这个 M 的段**）。
+3. `docs/BUILD-PLAN.md` — 构建计划 + 数学规格（kickoff prompt 原件）。
+4. `docs/equity-monitor-v2.jsx` — UX 合同（锁定 layout/interaction/hierarchy/color；**不是要跑的代码**）。
+5. `docs/workflow/WORKFLOW.md` — 工作流 policy（merge 边界、权威顺序、decision gate）。
 
 ## 3. 内建工作流（硬约束，不是建议）
 
