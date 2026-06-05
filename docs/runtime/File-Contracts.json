@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T07:30:32.884272+00:00",
+  "updated_at": "2026-06-05T08:37:49.085428+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -45,9 +45,9 @@
       "module": ".github",
       "stage": "implemented",
       "contract": {
-        "purpose": "advisory CI：每次 push/PR 在 Linux runner 跑 make verify + make health",
-        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；其价值是 PR 上留客观健康记录并验证小写路径",
-        "verification": "push 后 GitHub Actions 出现 verify/health 日志；gate 输出可见"
+        "purpose": "advisory CI：每次 push/PR 在 Linux runner 跑 devtopology gate(make verify + make health) 与离线合成管道验证(fixture→compute→valuation→export→check)",
+        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖；其价值是 PR 上留客观健康记录并验证小写路径",
+        "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK；gate 输出可见；board.json 作为 artifact 上传"
       }
     },
     {
@@ -94,8 +94,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "编排层：devtopology 结构/合同 gate + 工作流路由 + M0 数据管道",
-        "invariants": "target 名与 CLAUDE.md/AGENTS.md/SKILL 引用一致；M0 pipeline(ingest→fundamentals→compute→check)跑真命令、export/serve 为 M2 占位；产品 target 用 venv 依赖(requirements.txt)、devtopology 引擎保持 stdlib-only；PIPELINE_ARGS 透传 runner flags",
-        "verification": "make help 列全命令；make verify 可跑；make pipeline 端到端产出 CHECK_OK"
+        "invariants": "target 名与 CLAUDE.md/AGENTS.md/SKILL 引用一致；M0 pipeline(ingest→fundamentals→compute→check)跑真命令、export/serve 为 M2 占位；产品 target 用 venv 依赖(requirements.txt)、devtopology 引擎保持 stdlib-only；PIPELINE_ARGS 透传 runner flags；fixture/fixture-pipeline 为离线合成验证 target(无网络喂真实引擎，FIXTURE_ARGS 透传 tickers/days/seed)",
+        "verification": "make help 列全命令(含 fixture/fixture-pipeline)；make verify 可跑；make pipeline 端到端产出 CHECK_OK；make fixture-pipeline 离线端到端、compute/check.py 验为 CHECK_OK"
       }
     },
     {
@@ -145,6 +145,18 @@
         "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算",
         "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame"
       }
+    },
+    {
+      "path": "compute/fixture.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "合成 DuckDB fixture：确定性造 universe/daily_bars/spx_daily/fundamentals_q，供无网络环境（CI/sandbox，真实 ingest 依赖 api.nasdaq.com + Yahoo 常不可达）离线验证 compute/export/web —— 经 compute/db.py 真实 upsert 落库后喂真实引擎，验证的是生产读路径而非造数",
+        "invariants": "只写四张源表(universe/daily_bars/spx_daily/fundamentals_q)、绝不写 derived_daily/valuation_daily(那是引擎的活，须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；内建边缘票 eps<0(P/E n.m.→P/S)·ebitda<0(EV/EBITDA n.m.→EV/S)·stale/overdue 申报(as-of freshness 分档)·无基本面票(valuation 覆盖缺口)，默认 30 票×320 日(≥25×≥260 暖 MA200/252d高/126d收益)；属产品代码用 venv 依赖(numpy/duckdb，非 engine stdlib-only 范畴)；是 dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)保证只含合成数据",
+        "verification": "make fixture 产出四源表非空且计数=tickers×days；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py 顶层 composite_recon_max_drift≈0(C9)；抽查 board.json：loss 票 pe=null 且 ps 非空、deep_loss ev_ebitda=null、stale/overdue/无基本面三类各现、rank 无缝 1..N、composite 降序、无 NaN/Infinity；同 seed 两次重建 board.json sha256 一致"
+      },
+      "notes": "M1.2–M1.5 web 任务与 CI offline-pipeline job 的共用离线前置；非 nightly pipeline；data/ 与 web/public/data/board.json 走 gitignore 不入库。见 export/board.py 合同与 memory m1-web-export-verification。"
     },
     {
       "notes": "",
@@ -351,6 +363,7 @@
       }
     },
     {
+      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；board.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证",
       "path": "export/board.py",
       "kind": "script",
       "module": "export",
@@ -359,8 +372,7 @@
         "purpose": "M1.1 导出：DuckDB 最新快照 → web/public/data/board.json（Discovery evidence-first 卡流数据，per-stock 一条）",
         "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；输出为派生物、gitignore、不含任何 key",
         "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev；抽查 E≤0 票 pe=null 且 ps 非空、freshness 分档正确、无 NaN token、rank 连续且 composite 降序"
-      },
-      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；board.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证"
+      }
     },
     {
       "notes": "",
@@ -580,5 +592,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "3c8389326efb8b37ff759b57e27dbd77f806f1778c4d094b58b413e357010a8b"
+  "last_structure_digest": "b3aba99ce5127fa0017bbae751108d071a3a913f47285d8751bde2c4b94e7eb0"
 }

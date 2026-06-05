@@ -5,7 +5,8 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals compute export serve pipeline check
+        ingest fundamentals compute export serve pipeline check \
+        fixture fixture-pipeline
 
 ENGINE ?= engine/index.py
 QUERY ?=
@@ -52,6 +53,10 @@ help:
 	@echo "    make pipeline                 ingest -> fundamentals -> compute -> check (M0 end-to-end)"
 	@echo "    make export                   [M2] Snapshot -> Parquet/JSON shards"
 	@echo "    make serve                    [M2] Local preview of the static client"
+	@echo ""
+	@echo "  Offline Verification (no network — for web/export/CI; see compute/fixture.py)"
+	@echo "    make fixture                  Build a synthetic data/tickertide.duckdb (deterministic)"
+	@echo "    make fixture-pipeline         fixture -> compute -> valuation (offline; then export/check)"
 	@echo ""
 
 # --- Workflow Routing ---
@@ -146,3 +151,18 @@ serve:
 
 pipeline: ingest fundamentals compute check
 	@echo "[pipeline] M0 end-to-end complete: ingest -> fundamentals -> compute -> check (nightly cron body)"
+
+# --- Offline Verification Fixture ---
+# Synthetic, deterministic DuckDB for verifying compute/export/web WITHOUT network
+# (real ingest needs api.nasdaq.com + Yahoo/yfinance, often unreachable in CI/sandbox).
+# Product code: uses requirements.txt deps (duckdb/numpy/pandas) in a venv; the
+# devtopology engine stays stdlib-only. Tune via FIXTURE_ARGS, e.g.
+#   make fixture FIXTURE_ARGS="--tickers 50 --days 400 --seed 7"
+
+FIXTURE_ARGS ?=
+
+fixture:
+	@python3 compute/fixture.py $(FIXTURE_ARGS)
+
+fixture-pipeline: fixture compute
+	@echo "[fixture-pipeline] synthetic DB -> derived_daily + valuation_daily ready (offline). Next: python3 export/board.py; make check"

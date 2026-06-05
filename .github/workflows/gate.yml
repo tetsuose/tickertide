@@ -29,3 +29,27 @@ jobs:
         run: make verify
       - name: health summary
         run: make health
+
+  # Offline data-pipeline check: the real ingest needs api.nasdaq.com + Yahoo,
+  # which CI cannot reach, so the M0/M1 compute + export path had NO CI coverage.
+  # The synthetic fixture (compute/fixture.py) closes that gap deterministically.
+  offline-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install product deps
+        run: pip install -r requirements.txt
+      - name: fixture -> compute -> valuation -> export -> acceptance
+        run: |
+          make fixture-pipeline
+          python3 export/board.py
+          make check
+      - name: upload sample board.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-json-sample
+          path: web/public/data/board.json
+          if-no-files-found: error
