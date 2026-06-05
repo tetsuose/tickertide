@@ -25,12 +25,14 @@ export default function Discovery({
   k,
   scope,
   pinned = [],
+  limit,
 }: {
   initial?: BoardData
   onOpen?: (ticker: string) => void
   k?: number
   scope?: Scope
   pinned?: string[]
+  limit?: number
 }) {
   const [board, setBoard] = useState<BoardData | null>(initial ?? null)
   const [err, setErr] = useState<string | null>(null)
@@ -73,11 +75,14 @@ export default function Discovery({
     .filter((s) => inScope(s, scope, pinned))
     .map((s) => ({ s, score: composite(s.components, kEff) }))
     .sort((a, b) => b.score - a.score)
+  // Rotation's drill drawer reuses Discovery as the member preview (scope=sector) and
+  // caps it to a top-N (PRD §9.4); the full set is one click away in Discovery proper.
+  const shown = limit != null ? scored.slice(0, limit) : scored
 
   return (
     <div className="disco">
       <div className="ecgrid">
-        {scored.map(({ s, score }) => (
+        {shown.map(({ s, score }) => (
           <EvidenceCard key={s.ticker} stock={s} weights={w} score={score} onOpen={onOpen} />
         ))}
       </div>
@@ -85,7 +90,7 @@ export default function Discovery({
         每张卡 = 一只票的原始证据（price + volume + MA 图 + 摊开的硬数字），<b>不是</b>分数榜。角标 = 按当前权重
         （k = {kEff.toFixed(2)}）重算的 composite —— 拨旋钮即实时重排、分量条权重随之变（前端按 c_* 重算，不碰引擎，C9）。
         点 ▾ 看 5 个 component 原始值 + 权重（无黑箱）；▲▼ = 引擎默认权重下的 d/d。点卡片任意处 → Stock（M5）。
-        as_of {board.as_of_date} · {scored.length} 只
+        as_of {board.as_of_date} · {shown.length} 只
         {scope && scope.kind !== 'all' ? `（scope=${scope.kind === 'pinned' ? 'pinned' : scope.key} 过滤后）` : ''} · valuation
         覆盖 {board.valuation_coverage}。
       </div>
