@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T04:45:58.305118+00:00",
+  "updated_at": "2026-06-05T07:30:32.884272+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -123,6 +123,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/check.py",
       "kind": "script",
       "module": "compute",
@@ -131,8 +132,7 @@
         "purpose": "AC-M0 验收抽查：pipeline 跑完后 sanity-check DuckDB（PRD §14）",
         "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E",
         "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -349,6 +349,18 @@
         "invariants": "导出物不含任何 key；依赖 membership 的 point-in-time 正确性；分片粒度为实现级决策",
         "verification": "输入/输出与 PRD §5、§12 一致"
       }
+    },
+    {
+      "path": "export/board.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M1.1 导出：DuckDB 最新快照 → web/public/data/board.json（Discovery evidence-first 卡流数据，per-stock 一条）",
+        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；输出为派生物、gitignore、不含任何 key",
+        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev；抽查 E≤0 票 pe=null 且 ps 非空、freshness 分档正确、无 NaN token、rank 连续且 composite 降序"
+      },
+      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；board.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证"
     },
     {
       "notes": "",
@@ -568,5 +580,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "db953f63d2d4c651cb8b4b622a728fa48659f38ed19535c3242fb48506de5ab7"
+  "last_structure_digest": "3c8389326efb8b37ff759b57e27dbd77f806f1778c4d094b58b413e357010a8b"
 }
