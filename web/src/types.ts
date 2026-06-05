@@ -93,3 +93,36 @@ export type Scope =
   | { kind: 'sector'; key: string }
   | { kind: 'theme'; key: string }
   | { kind: 'pinned'; key: null }
+
+// --- Ocean (M2.1 export/ocean.py -> public/data/ocean.json) ---
+// Weekly RS×Valuation snapshots for the canvas scatter (PRD §9.2). A stock's
+// pts[] is aligned to weeks[] (oldest→newest); a null pt = no renderable position
+// that week (stale vintage / cold history — never fabricated). See export/ocean.py.
+
+/** One week's position for a stock. rs/val ∈ [0,100]; val low=cheap (y bottom). */
+export interface OceanPt {
+  rs: number
+  val: number
+  ps: number | null
+}
+
+export interface OceanStock {
+  ticker: string
+  sector: string | null
+  mktcap: number | null
+  themes: ThemeTag[]
+  pts: (OceanPt | null)[]
+}
+
+export interface OceanData {
+  schema_version: number
+  as_of_date: string
+  metric: string
+  fresh_days: number
+  n_weeks: number
+  weeks: string[]
+  count: number
+  fresh_cohort_latest: number
+  stale_excluded_latest: number
+  stocks: OceanStock[]
+}

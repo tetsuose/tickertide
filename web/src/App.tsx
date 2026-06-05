@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { SurfaceId, Scope, Components } from './types'
 import Discovery from './views/Discovery'
+import Ocean from './views/Ocean'
 import { weights } from './lib/composite'
 
 // The five lenses in the contract's fixed order (PRD §9.0). Discovery is the
@@ -143,6 +144,8 @@ export default function App() {
           </div>
           {tab === 'discovery' ? (
             <Discovery k={k} />
+          ) : tab === 'ocean' ? (
+            <Ocean scope={scope} />
           ) : (
             <>
               <div className="placeholder">
