@@ -5,7 +5,7 @@ import Ocean, { Tip } from './Ocean'
 import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 import {
   radiusFor, colorVar, quadrantVar, makeScales, withAlpha, drawOcean, nearestPoint,
-  pointsInRect, inScope, SECTOR_VAR, OCEAN_GEOM,
+  pointsInRect, inScope, SECTOR_VAR, OCEAN_GEOM, TRAIL_CAP,
   type CanvasLike, type Palette, type DrawnPoint,
 } from '../lib/ocean-draw'
 
@@ -247,6 +247,29 @@ describe('AC-M2.4: pin trail + lasso scope', () => {
     })
     expect(drawn.map((p) => p.ticker).sort()).toEqual([...tks].sort()) // only pinned non-faded
     expect(ctx.calls.arc.length).toBeGreaterThanOrEqual(data.count)    // faded ones still drawn as dots (+ pin dots)
+  })
+
+  it('a large pinned set (lasso scope) caps trails: no per-stock label/trail — the fade carries it (C2)', () => {
+    // A lasso pins a whole REGION for scope filtering, not for tracing. Past
+    // TRAIL_CAP drawOcean must NOT emit a trail + ticker label per stock (the
+    // spaghetti this guards); the scope fade alone marks the selection. fillText
+    // is only ever the pinned trail-head label, so an empty text log == no trails.
+    const many = data.stocks.slice(0, TRAIL_CAP + 20).map((s) => s.ticker) // well over the cap
+    const ctx = mockCtx()
+    const drawn = drawOcean(ctx, {
+      data, week: latest, colorBy: 'sector', activeTheme: null,
+      scope: { kind: 'pinned', key: null }, palette: PAL, pinned: many,
+    })
+    expect(ctx.calls.text).toHaveLength(0)                              // no N labels => no N trails
+    expect(drawn.map((p) => p.ticker).sort()).toEqual([...many].sort()) // fade still marks exactly the lassoed set
+    // contrast: at the cap each pinned stock IS fully labeled (trail head + ticker).
+    const few = data.stocks.slice(0, TRAIL_CAP).map((s) => s.ticker)
+    const cf = mockCtx()
+    drawOcean(cf, {
+      data, week: latest, colorBy: 'sector', activeTheme: null,
+      scope: { kind: 'pinned', key: null }, palette: PAL, pinned: few,
+    })
+    expect(cf.calls.text.sort()).toEqual([...few].sort())              // <= cap => one label per pinned stock
   })
 
   it('drawing a lasso rect adds a selection rectangle (fillRect + stroke)', () => {
