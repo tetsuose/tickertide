@@ -225,9 +225,9 @@
       "module": "docs",
       "stage": "implemented",
       "contract": {
-        "purpose": "M0–M6 开发方案：PRD §13 里程碑的执行展开（M0 详细到可 task-open 执行，M1–M6 纲要）",
-        "invariants": "引用 PRD/BUILD-PLAN 不复制；M0 拆解可追溯到 §13/§14；just-in-time 不提前承诺 §17 未决决策；冲突以 PRD §16 为准",
-        "verification": "M0 五个 task 与 AC-M0 对应；M1–M6 纲要各指向 PRD §14 对应 AC；依赖链自洽"
+        "purpose": "M0–M6 开发方案：PRD §13 里程碑的执行展开（M0 与 M1 详细到可 task-open 执行，M2–M6 纲要）",
+        "invariants": "引用 PRD/BUILD-PLAN 不复制；M0–M1 拆解可追溯到 §13/§14、M2–M6 纲要；just-in-time 临近再细化、不提前承诺 §17 未决决策；冲突以 PRD §16 为准",
+        "verification": "M0–M1 各 task 与对应 AC 一致；M2–M6 纲要指向 PRD §14；依赖链自洽"
       }
     },
     {

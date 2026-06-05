@@ -63,12 +63,54 @@
 
 ---
 
-## M1 — Leaders + digest（纲要）
+## M1 — Web 客户端起步 + Discovery board ★ 详细方案
 
-- **目标**：bounded top-N board（Discovery 的最小可用形态）+ early⟷reliable 旋钮 + day-over-day 标注 + 每日 email digest（保证你真的会看）。
-- **前置**：M0（composite 已生成）。
-- **关键未决**：digest 实现方式（GitHub Actions + 邮件服务 vs 本地）；board 是先静态 HTML 还是直接进 `web/` 框架。
-- **验收**：PRD §14 AC-M1。
+**目标**：第一个能看的 web 界面 —— Discovery evidence-first 卡流 + early⟷reliable 旋钮 + composite 排序 + d/d 标注。**email digest 已砍**（PRD §15，2026-06）。
+
+**技术栈（PRD §5.2 已定，2026-06）**：React + Vite + TypeScript（视觉优先 + 与 `equity-monitor-v2.jsx` 同源）。视图用 SVG/DOM，Ocean canvas 留 M2。暗色配色对照 PRD 附录 C。M1 仍静态（Vite 构建 + nightly 导出 JSON，无常驻 server；零后端放宽给未来留口子，M1 不提前加 — 奥卡姆）。
+
+**前置**：M0（composite + valuation + bars 已在 DuckDB）。**对应模块**：`export/`（最小 JSON 导出）+ `web/`（React app）。
+
+### M1 任务拆解（每个 = 一个 worktree+PR）
+
+| task | 分支建议 | 范围 | 产出文件 | 验收 |
+|---|---|---|---|---|
+| **M1.1** board JSON 导出 | `feat/export-board` | compute 后从 DuckDB 导出 Discovery 数据 | `export/board.py` | board.json 含 per-stock composite + 5 分量 + 6 字段 + 90d bars + valuation + d/d |
+| **M1.2** web 脚手架 | `feat/web-scaffold` | Vite+React+TS + 暗色主题 + 布局骨架（5 tab，仅 Discovery 实现） | `web/package.json` `vite.config.ts` `src/{main.tsx,App.tsx,theme.css,types.ts}` | `npm run build` 成功；配色对附录 C |
+| **M1.3** evidence-card 组件 | `feat/web-evidence-card` | EvidenceCard + MiniChart（SVG：K线+MA50/150/200+volume+52w 高） | `src/components/{EvidenceCard,MiniChart}.tsx` | 对照 jsx：头部+theme tags+mini 图+6 字段+composite 角标可展开 5 分量 |
+| **M1.4** Discovery board + 旋钮 | `feat/web-discovery` | 2 列卡流 + composite 排序 + early⟷reliable 旋钮（前端按 c_* 重算）+ d/d | `src/views/Discovery.tsx` `src/lib/{composite,data}.ts` | 旋钮改 k → 排序实时变；d/d 标注 |
+| **M1.5** 验证 + 构建 | `feat/web-build-m1` | npm build 静态产出 + Makefile web target | `Makefile`(web/build target) | AC-M1 全过 |
+
+> 顺序：M1.1（数据）先；M1.2→M1.3→M1.4（前端逐层，依赖脚手架）；M1.5 收尾。
+
+### 数据契约（M1.1 `export/board.py`）
+
+读 DuckDB（`derived_daily` + `valuation_daily` + `daily_bars` + `universe` + `theme_membership`〔M4 前空〕）→ 每票导出：
+- 身份：ticker / name / sector / mktcap / themes[]
+- 引擎：composite + **5 分量原始值 c_***（供前端按 k 重算）+ rank
+- evidence 6 字段：ret1m/3m/6m、from-high、weeks-since-breakout、volX
+- mini chart：最近 ~90 日 OHLCV
+- 估值：pe/ps/evs/ev_ebitda/growth/rule40 + as_of 新鲜度
+- d/d：`composite_prev`（前一交易日 composite）
+
+输出 `web/public/data/board.json`（最新快照）。
+
+### 关键约束（C9 数据一致性）
+
+- **前端 `weights(k)` 必须与 `compute/signals.weights` 数值一致**（同曲线 `rs=.20+.03k …`）。前端用导出的 `c_*` 按 k 重算 composite，**绝不重算引擎**；`src/lib/composite.ts` 直接移植系数 + 单测对拍。
+- evidence-card 的 6 字段、mini chart bars、composite 来自**同一份 export**，可互相追溯（与 Ocean/Stock 跨 surface 同源是 M2+ 的事；M1 先保证 board 内部一致）。
+
+### AC-M1（PRD §14）
+
+web 静态构建成功；Discovery 渲染 ≥18 卡；旋钮改 k 排序实时变（前端重算与引擎一致 C9）；6 字段 + 角标展开 5 分量；d/d 标注。
+
+### M1 风险与缓解
+
+| 风险 | 缓解 |
+|---|---|
+| 前端/引擎 `weights(k)` 不一致 → 数据矛盾（C9） | `composite.ts` 移植 `signals.weights` 系数 + 单测对拍 |
+| board.json 体积（数百票 × 90d OHLCV） | M1 先窄（~50–100 票）；mini chart bars 可降采样；M2 export 分片优化 |
+| React 引入 node_modules 构建依赖 | `web/` 独立 package.json；`web/node_modules`、`web/dist` 已在 .gitignore |
 
 ## M2 — Ocean（纲要）
 
