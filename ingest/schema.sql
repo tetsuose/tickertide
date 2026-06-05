@@ -49,6 +49,22 @@ CREATE TABLE IF NOT EXISTS bucket_bars (
   PRIMARY KEY (bucket_type, bucket, date)
 );
 
+-- bucket_rrg: weekly RS-Ratio series per bucket (sector M3 / theme M4) — the Rotation
+-- multi-line chart source (compute/rotation.py, M3.2). rs = 100*P_bucket/P_SPX (raw
+-- price-relative line, kept for audit/transparency); rs_ratio = JdK RS-Ratio, a z-score
+-- of EMA(rs) recentered to 100 (PRD §10.4). The RS-Momentum 归一量 is CUT (PRD §16):
+-- momentum = the SLOPE of rs_ratio, derived on the fly (export/web), NOT stored here.
+-- z-score basis is temporal (vs the bucket's own history) for the fixed 11 GICS sectors;
+-- themes (M4, changing membership) will use point-in-time. Weekly (Friday close).
+CREATE TABLE IF NOT EXISTS bucket_rrg (
+  bucket_type  VARCHAR,   -- 'sector' (M3) | 'theme' (M4)
+  bucket       VARCHAR,   -- GICS sector name | theme name
+  date         DATE,      -- weekly (Friday)
+  rs           DOUBLE,    -- 100 * P_bucket / P_SPX (raw price-relative line)
+  rs_ratio     DOUBLE,    -- 100 + k·(M − SMA(M,n2))/σ(M,n2), M = EMA(rs, n1)
+  PRIMARY KEY (bucket_type, bucket, date)
+);
+
 -- derived_daily: per-stock signals + composite (M0.3). Spec: PRD §12, math: §10.
 -- Stores the 5 composite COMPONENTS (c_*) in [0,1] so the client can recompute
 -- composite at any early<->reliable knob k; `composite` is the default-k snapshot.

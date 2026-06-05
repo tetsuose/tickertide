@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T15:01:30.808410+00:00",
+  "updated_at": "2026-06-05T15:24:12.681813+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -141,9 +141,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars) + compute/fundamentals/valuation 读写（M0–M3）",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx",
-        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复"
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写（M0–M3）",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、clear/upsert/read_bucket_rrg 管周线 RS-Ratio 序列)同隔离原则",
+        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等"
       }
     },
     {
@@ -157,6 +157,18 @@
         "invariants": "写五张源表(universe/daily_bars/spx_daily/fundamentals_q + bucket_bars)、绝不写 derived_daily/valuation_daily(那是引擎的活，须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；合成 11 sector ETF 经 db.upsert_bucket_bars 落 bucket_bars(bucket=GICS 名、与真实 sector_etf.py 同写入路径)、绝不进 universe 横截面、且造数放在所有现有 rng 消费之后(尾部 draw) → 不扰动既有 draw 顺序、daily_bars/spx_daily/fundamentals_q 保字节不变(M1/M2 提交版 fixture 依赖此)；内建边缘票 eps<0(P/E n.m.→P/S)·ebitda<0(EV/EBITDA n.m.→EV/S)·stale/overdue 申报(as-of freshness 分档)·无基本面票(valuation 覆盖缺口)，默认 30 票×320 日(≥25×≥260 暖 MA200/252d高/126d收益)；属产品代码用 venv 依赖(numpy/duckdb，非 engine stdlib-only 范畴)；是 dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)保证只含合成数据",
         "verification": "make fixture 产出五源表非空(bucket_bars=11 sector×days)；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py 顶层 composite_recon_max_drift≈0(C9)；抽查 board.json：loss 票 pe=null 且 ps 非空、deep_loss ev_ebitda=null、stale/overdue/无基本面三类各现、rank 无缝 1..N、composite 降序、无 NaN/Infinity；同 seed 两次重建 board.json sha256 一致；扩 ETF 后三源表(daily_bars/spx/fundamentals)sha256 与扩前一致(回归)、ETF ticker 不在 universe/daily_bars(隔离)"
       }
+    },
+    {
+      "path": "compute/rotation.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M3.2 rotation compute：bucket_bars + spx_daily 周线 RS-Ratio(JdK 透明 reconstruction) → bucket_rrg；league_table 聚合 per-sector 成员(breadth/at-52w-high/composite 中位/agg EV-S/多 horizon rel return)供 M3.3 export",
+        "invariants": "周线(daily resample 周五收盘)；RS=100×P_bucket/P_spx(price relative)、M=EMA(rs,n1)、rs_ratio=100+k·(M−SMA(M,n2))/σ(M,n2)(z-score recenter 100，>100=跑赢自身近期趋势)；sector 用 temporal z-score(对自身历史；theme M4 才 point-in-time，否则尾迹虚构破 C3)；momentum=rs_ratio 斜率、RS-Momentum 归一量已砍(PRD §16)；n1/n2/k 暴露 PARAMS 透明 reconstruction、不声称复刻 StockCharts/de Kempenaer；compute_rotation 只读 bucket_bars+spx_daily、绝不碰 universe 横截面(隔离 PRD §16)；league_table 成员量(breadth/at-high/composite 中位/agg_evs)取自 derived_daily/valuation_daily 的 universe 成员、与 Discovery/Ocean/Stock 同源可追溯(C9)、不持久化、不在此造成员卡(走 board.json，DRY)；infer_state/slope_4w 是 state/Δ4w 单一口径供 export/web",
+        "verification": "make fixture-pipeline 后 python3 compute/rotation.py：bucket_rrg 11 sector 周序列、rs_ratio ~95-105 量级、4 态(LEADING/WEAKENING/IMPROVING/LAGGING)可推；league composite_median/member_count 与直接查 derived_daily 成员逐一致(C9)；ETF 不在 universe 横截面"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -477,12 +489,13 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)",
-        "verification": "compute.db.connect 应用后八表存在(含 bucket_bars)；重复 connect 不报错"
+        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) 建表 DDL",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)",
+        "verification": "compute.db.connect 应用后九表存在(含 bucket_bars/bucket_rrg)；重复 connect 不报错"
       }
     },
     {
+      "notes": "",
       "path": "ingest/sector_etf.py",
       "kind": "script",
       "module": "ingest",
@@ -491,10 +504,10 @@
         "purpose": "M3.1 ingest：读 sector_etf_map.txt(GICS sector→SPDR ETF) 经 M0 同款 price provider 拉 11 个 sector ETF 的 EOD bars → bucket_bars(RS-Ratio 分子源，相对 spx_daily benchmark)",
         "invariants": "只写 bucket_bars、绝不碰 daily_bars/universe —— ETF 价硬隔离不进 universe 横截面(derived_daily.rs_pct/rank)，否则百分位漂移破 C9；bucket=GICS sector 名(==universe.sector)供 compute/rotation.py league 按名 join；取 adj_close(total-return，与 spx_daily/upsert_spx 一致)；provider 失败 skip 不崩；--provider/--lookback-days/--map 可调；真实 Nasdaq screener 的 sector 名→GICS 归一属 universe 层 follow-up、不在本脚本(离线 fixture 路径已对齐)",
         "verification": "python3 ingest/sector_etf.py 端到端落 bucket_bars 并打印 ok/skipped/rows/sectors_in_db；离线由 compute/fixture.py 合成 11 sector ETF 喂同表验证(真实 provider 本环境常不可达)；load_map 解析得 11 条且 bucket 名==fixture SECTORS"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "ingest/sector_etf_map.txt",
       "kind": "doc",
       "module": "ingest",
@@ -503,8 +516,7 @@
         "purpose": "11 个 GICS sector → SPDR Select Sector ETF(XLK/XLV/XLF/XLY/XLC/XLI/XLP/XLE/XLU/XLRE/XLB) 映射，sector_etf.py 拉取 RS-Ratio bucket 源的清单",
         "invariants": "每行 <GICS sector 名> <ETF ticker>(ETF=末空白 token，# 起行注释)；bucket 名 == GICS sector 名 == universe.sector == compute/fixture.py SECTORS(离线 league join 对齐的单一命名基准)；11 sector 全覆盖、ETF 唯一；ETF 为 Yahoo/yfinance 符号(Stooq provider 追加 .US)",
         "verification": "sector_etf.load_map 解析得 11 条；bucket 名集合 == compute/fixture.py SECTORS；ETF 无重复"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -904,5 +916,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "53b713990fce9dffeee19fbcdc9472f626d75bbdf4eaf6b2f28069fed3a90343"
+  "last_structure_digest": "1946e648e5939530ae9fb1447e8fab815bd22f0447739ad0eb835dbbdbe3c433"
 }
