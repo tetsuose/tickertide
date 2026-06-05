@@ -442,8 +442,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "只读任务 lane 路由：判定 docs-only/workflow-only/structure-trigger 并给分支建议",
-        "invariants": "绝不修改 repo 状态；输出 DOCS_ONLY/WORKFLOW_ONLY/STRUCTURE_TRIGGER/WARNINGS；路径为 tickertide 原生无 vpn-ops 耦合",
-        "verification": "make route 输出上述键且格式可解析；--structural/--planning/--gate 可强制触发"
+        "invariants": "绝不修改 repo 状态；输出 DOCS_ONLY/WORKFLOW_ONLY/STRUCTURE_TRIGGER/WARNINGS；路径为 tickertide 原生无 vpn-ops 耦合；分支建议前缀与 worktree.sh/WORKFLOW §2 共用单一规则（feat/docs/chore-workflow，date-first <prefix>/<date>-<descriptor>）",
+        "verification": "make route 输出上述键且格式可解析；--structural/--planning/--gate 可强制触发；建议分支前缀与 worktree.sh 同 lane 一致"
       }
     },
     {
@@ -454,8 +454,8 @@
       "stage": "verified",
       "contract": {
         "purpose": "git worktree 任务隔离：open/check/status/close",
-        "invariants": "拒绝在保护分支上开工作分支；一个 worktree 一个 merge intent；check 在脏工作区失败",
-        "verification": "make task-open/status/close 可跑并产出预期状态"
+        "invariants": "拒绝在保护分支上开工作分支；一个 worktree 一个 merge intent；check 在脏工作区失败；分支前缀与 task_router/WORKFLOW §2 共用单一规则（feat/docs/chore-workflow，date-first <prefix>/<date>-<descriptor>，产品任务默认 feat/）",
+        "verification": "make task-open/status/close 可跑并产出预期状态；--kind feat/docs/workflow 分别产出 feat//docs//chore/workflow- 分支前缀"
       }
     },
     {

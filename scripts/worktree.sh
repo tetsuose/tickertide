@@ -13,7 +13,7 @@ DEFAULT_WORKTREE_ROOT="${DEVTOPOLOGY_WORKTREE_ROOT:-../.worktrees}"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/worktree.sh open   --query "<task>" [--kind task|docs|workflow] [--base origin/main] [--root ../.worktrees]
+  scripts/worktree.sh open   --query "<task>" [--kind feat|docs|workflow] [--base origin/main] [--root ../.worktrees]
   scripts/worktree.sh status [--base origin/main]
   scripts/worktree.sh check
   scripts/worktree.sh close  [--base origin/main]
@@ -131,7 +131,7 @@ cmd_status() {
 }
 
 cmd_open() {
-  local query="" kind="task" base="${DEFAULT_BASE}" root="${DEFAULT_WORKTREE_ROOT}"
+  local query="" kind="feat" base="${DEFAULT_BASE}" root="${DEFAULT_WORKTREE_ROOT}"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -161,11 +161,14 @@ cmd_open() {
 
   local date_tag
   date_tag="$(date +%Y%m%d)"
+  # Branch naming is the single convention shared with scripts/task_router.py and
+  # documented in docs/workflow/WORKFLOW.md §2: <prefix>/<date>-<descriptor>.
+  # Product work defaults to feat/; docs to docs/; workflow plumbing to chore/workflow-.
   local branch
   case "${kind}" in
-    task)     branch="task/${slug}" ;;
-    docs)     branch="docs/${date_tag}-${slug}" ;;
-    workflow) branch="workflow/${date_tag}-${slug}" ;;
+    feat|task|product) branch="feat/${date_tag}-${slug}" ;;
+    docs)              branch="docs/${date_tag}-${slug}" ;;
+    workflow)          branch="chore/workflow-${date_tag}-${slug}" ;;
     *) echo "TASK_OPEN_FAIL reason=unknown_kind kind=${kind}" >&2; exit 2 ;;
   esac
 

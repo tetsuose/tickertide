@@ -141,9 +141,9 @@ def suggest_branch(paths: list[str], docs_only: bool, workflow_only: bool) -> st
         return f"docs/{stamp}-docs-update"
     if workflow_only:
         return f"chore/workflow-{stamp}-routing-guardrails"
+    # Shared convention with scripts/worktree.sh + WORKFLOW.md §2:
+    # <prefix>/<date>-<descriptor>, date-first for every lane.
     modules = sorted({m for m in (product_module_of(p) for p in paths) if m})
-    if len(modules) == 1:
-        return f"feat/{modules[0]}-{stamp}"
     if modules:
         return f"feat/{stamp}-{'-'.join(modules)}"
     return current_branch()
