@@ -35,12 +35,15 @@ class YFinanceProvider:
 
         out: list[tuple] = []
         for idx, row in df.iterrows():
+            close = g(row, "Close")
+            if close is None:
+                continue  # skip incomplete bars (e.g. today's not-yet-closed intraday row)
             d = idx.date().isoformat()
             vol = row.get("Volume")
             out.append((
                 d,
-                g(row, "Open"), g(row, "High"), g(row, "Low"), g(row, "Close"),
-                g(row, "Adj Close") if "Adj Close" in df.columns else g(row, "Close"),
+                g(row, "Open"), g(row, "High"), g(row, "Low"), close,
+                g(row, "Adj Close") if "Adj Close" in df.columns else close,
                 int(vol) if vol is not None and vol == vol else None,
             ))
         return out

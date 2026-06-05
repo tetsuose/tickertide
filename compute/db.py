@@ -130,3 +130,18 @@ def read_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str):
         "FROM fundamentals_q WHERE ticker = ? ORDER BY period_end",
         [ticker],
     ).df()
+
+
+# --- M0.4 valuation ---
+
+def clear_valuation(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("DELETE FROM valuation_daily")
+
+
+def read_valuation(con: duckdb.DuckDBPyConnection, ticker: str):
+    """Return a ticker's daily valuation multiples as a pandas DataFrame, oldest first."""
+    return con.execute(
+        "SELECT date, pe, ps, evs, ev_ebitda, peg, growth, margin, rule40, as_of_period_end, as_of_filed "
+        "FROM valuation_daily WHERE ticker = ? ORDER BY date",
+        [ticker],
+    ).df()

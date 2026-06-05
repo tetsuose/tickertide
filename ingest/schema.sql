@@ -89,3 +89,23 @@ CREATE TABLE IF NOT EXISTS segment_revenue (
   revenue     DOUBLE,
   PRIMARY KEY (ticker, period_end, segment)
 );
+
+-- valuation_daily: daily multiples = price/EV ÷ trailing-4Q financials (M0.4).
+-- ASOF-aligned on filed_date (point-in-time, anti-lookahead); numerator is daily,
+-- denominator steps at each filing. E<=0 -> n.m. (pe NULL, fall back to ps).
+-- as_of_period_end exposes vintage freshness for common-vintage ranking (PRD §9.5, §10.5).
+CREATE TABLE IF NOT EXISTS valuation_daily (
+  ticker            VARCHAR,
+  date              DATE,
+  pe                DOUBLE,
+  ps                DOUBLE,
+  evs               DOUBLE,
+  ev_ebitda         DOUBLE,
+  peg               DOUBLE,
+  growth            DOUBLE,
+  margin            DOUBLE,
+  rule40            DOUBLE,
+  as_of_period_end  DATE,
+  as_of_filed       DATE,
+  PRIMARY KEY (ticker, date)
+);
