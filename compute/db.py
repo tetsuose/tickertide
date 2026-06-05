@@ -79,3 +79,30 @@ def count(con: duckdb.DuckDBPyConnection, table: str) -> int:
 
 def distinct_bar_tickers(con: duckdb.DuckDBPyConnection) -> int:
     return con.execute("SELECT count(DISTINCT ticker) FROM daily_bars").fetchone()[0]
+
+
+# --- M0.3 compute reads/writes ---
+
+def bar_tickers(con: duckdb.DuckDBPyConnection) -> list[str]:
+    """Tickers that have at least one daily bar."""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT ticker FROM daily_bars ORDER BY ticker"
+    ).fetchall()]
+
+
+def read_bars(con: duckdb.DuckDBPyConnection, ticker: str):
+    """Return a ticker's bars as a pandas DataFrame, oldest first."""
+    return con.execute(
+        "SELECT date, open, high, low, close, adj_close, volume "
+        "FROM daily_bars WHERE ticker = ? ORDER BY date",
+        [ticker],
+    ).df()
+
+
+def read_spx(con: duckdb.DuckDBPyConnection):
+    """Return benchmark closes as a pandas DataFrame, oldest first."""
+    return con.execute("SELECT date, close FROM spx_daily ORDER BY date").df()
+
+
+def clear_derived(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("DELETE FROM derived_daily")
