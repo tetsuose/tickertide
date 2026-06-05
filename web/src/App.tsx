@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SurfaceId, Scope } from './types'
+import Discovery from './views/Discovery'
 
 // The five lenses in the contract's fixed order (PRD §9.0). Discovery is the
 // M1 surface and the default tab; the others are scaffolded stubs that land in
@@ -121,14 +122,20 @@ export default function App() {
             </span>
             <span className="khint">{info.milestone}</span>
           </div>
-          <div className="placeholder">
-            <div className="ph-tag">{info.milestone} · SCAFFOLD</div>
-            <div className="ph-msg">{info.blurb}</div>
-          </div>
-          <div className="foot">
-            M1.2 脊柱骨架：单一 composite 引擎 → 5 个 lens，两个尺度（wide explore / bounded decide），零常驻
-            backend。旋钮已就位（k = {k.toFixed(2)}），权重重算 + 分量条随 Discovery 卡流在 M1.4 接入。
-          </div>
+          {tab === 'discovery' ? (
+            <Discovery />
+          ) : (
+            <>
+              <div className="placeholder">
+                <div className="ph-tag">{info.milestone} · SCAFFOLD</div>
+                <div className="ph-msg">{info.blurb}</div>
+              </div>
+              <div className="foot">
+                脊柱骨架：单一 composite 引擎 → 5 个 lens，两个尺度（wide explore / bounded decide），零常驻
+                backend。旋钮已就位（k = {k.toFixed(2)}），权重重算 + 分量条随 Discovery 卡流在 M1.4 接入。
+              </div>
+            </>
+          )}
         </section>
       </div>
     </div>

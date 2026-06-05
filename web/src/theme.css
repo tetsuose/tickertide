@@ -340,3 +340,157 @@ body {
   color: var(--dim);
   max-width: 520px;
 }
+.placeholder code {
+  font-family: var(--mono);
+  color: var(--txt);
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* --- Discovery evidence-card grid (PRD §9.3, transcribed from UX contract) --- */
+.disco {
+  padding: 14px 16px;
+}
+.ecgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+.ecard {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 13px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.ecard:hover {
+  border-color: var(--line2);
+}
+.ec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ec-tk {
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.03em;
+}
+.ec-sec {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0;
+}
+.ec-badge {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.ec-badge i {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--dim2);
+}
+.ec-themes {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.ec-comp {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.ec-crow {
+  display: grid;
+  grid-template-columns: 46px 1fr 30px 32px;
+  gap: 8px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--dim);
+  margin: 3px 0;
+}
+.ec-crow b {
+  color: var(--txt);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ec-crow em {
+  font-style: normal;
+  text-align: right;
+  color: var(--dim2);
+  font-variant-numeric: tabular-nums;
+}
+.ec-bar {
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.ec-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--blu);
+}
+.ec-note {
+  font-size: 8.5px;
+  color: var(--dim2);
+  margin-top: 5px;
+}
+.ec-chart {
+  margin: 8px 0 6px;
+}
+.ec-fields {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.ec-f {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ec-f span {
+  font-size: 8.5px;
+  color: var(--dim2);
+  letter-spacing: 0.03em;
+}
+.ec-f b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ec-why {
+  margin-top: 8px;
+  font-size: 9.5px;
+}
+.ec-wl {
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+}
+.ec-dim {
+  color: var(--dim2);
+}
+@media (max-width: 900px) {
+  .ecgrid {
+    grid-template-columns: 1fr;
+  }
+}
