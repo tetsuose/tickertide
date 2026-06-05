@@ -754,8 +754,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Ocean canvas 纯绘制库：固定 RS×Val 平面的几何/配色/尺寸 helpers + drawOcean 单次绘制一周快照(含 pinned trail/arrow + lasso rect) + nearestPoint/pointsInRect 命中测试（PRD §9.2）",
-        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawOcean 画象限 tint+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)+可选 hover 白环+pinned 彩色 trail(断 null 段)+当前位箭头+ticker 标签(仅 pinned C2)+lasso 选框，并返回非淡点屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
-        "verification": "Ocean.test.tsx：radiusFor/makeScales(底=便宜)/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope(pinned) 纯测；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 落框内 + 静态层 + scope 淡化 + hover ring + pinned trail(多 stroke + ticker fillText) + lasso rect(多 fillRect+stroke) + 切周点位移动"
+        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawOcean 画象限 tint+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)+可选 hover 白环+pinned 装饰(彩色 trail 断 null 段+当前位箭头+ticker 标签)仅当 pinned 数≤TRAIL_CAP(8) 时整画、超过则每只仅留强调点(无 trail/箭头/label)由 scope 淡化承载选择(C2 认知带宽守卫，防 lasso 大区域 trail spaghetti)+lasso 选框，并返回非淡点屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
+        "verification": "Ocean.test.tsx：radiusFor/makeScales(底=便宜)/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope(pinned) 纯测；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 落框内 + 静态层 + scope 淡化 + hover ring + pinned trail(多 stroke + ticker fillText) + 大 pinned(>TRAIL_CAP) 不画 N 条 trail(text 空、仅强调点) + lasso rect(多 fillRect+stroke) + 切周点位移动"
       }
     },
     {
@@ -826,8 +826,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M2.2/2.3/2.4 提交版回归 gate（vitest）：Ocean 纯绘制库 + drawOcean mock-ctx(≥500 点/scrubber/hover/pin trail/lasso/scope 淡化) + SSR scaffold",
-        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope) 直测；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切周点位移动、pinned trail(多 stroke+ticker fillText)、scope=pinned 仅 pinned 非淡、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言；fixture=ocean.sample.json",
-        "verification": "npm test / make web-test 全绿（本文件 22 用例）"
+        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope) 直测；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切周点位移动、pinned trail(多 stroke+ticker fillText)、scope=pinned 仅 pinned 非淡、大 pinned(>TRAIL_CAP) 不画 N 条 trail label(text 空、由淡化承载)、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言；fixture=ocean.sample.json",
+        "verification": "npm test / make web-test 全绿（本文件 23 用例）"
       }
     },
     {

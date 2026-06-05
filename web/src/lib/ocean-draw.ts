@@ -13,6 +13,13 @@ import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 export const OCEAN_GEOM = { w: 880, h: 470, pl: 46, pr: 18, pt: 16, pb: 40 } as const
 export type Geom = typeof OCEAN_GEOM
 
+// C2 cognitive-bandwidth guard (PRD §9.2: trail/arrow ONLY for pinned = "few and
+// clear"). A click pins a handful → full trails. A lasso pins a whole region for
+// SCOPE filtering (§9.1.2), not for tracing — past this many pins drawOcean drops
+// the trail/arrow/label and keeps only an emphasized dot per stock, letting the
+// scope fade carry the selection (so 50-point lassos don't become line spaghetti).
+export const TRAIL_CAP = 8
+
 export type ColorMode = 'sector' | 'theme' | 'quadrant'
 
 // Full GICS sector name -> CSS var (附录 C 11 sectors). universe.sector carries the
@@ -223,54 +230,63 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
     }
   }
 
-  // pinned trails + current-position arrow + label (M2.4; only pinned — C2).
+  // pinned trails + current-position arrow + label (M2.4; only pinned — C2). The
+  // trail/arrow/label are the "few and clear" decoration for click-pins; a lasso
+  // (a large pinned set) is a SCOPE selection carried by the fade above, so past
+  // TRAIL_CAP we draw only an emphasized dot per stock — no trails, no spaghetti.
   if (o.pinned && o.pinned.length) {
+    const fullTrails = o.pinned.length <= TRAIL_CAP
     const byTicker = new Map(o.data.stocks.map((s) => [s.ticker, s]))
     ctx.globalAlpha = 1
     for (const tk of o.pinned) {
       const s = byTicker.get(tk)
       if (!s) continue
       const col = o.palette[(s.sector && SECTOR_VAR[s.sector]) || FALLBACK_VAR] || o.palette['--dim2']
-      // trail through the non-null weekly positions up to `week` (break at gaps).
-      ctx.strokeStyle = col
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      let pen = false
-      for (let w = 0; w <= o.week; w++) {
-        const p = s.pts[w]
-        if (!p) {
-          pen = false
-          continue
+      if (fullTrails) {
+        // trail through the non-null weekly positions up to `week` (break at gaps).
+        ctx.strokeStyle = col
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        let pen = false
+        for (let w = 0; w <= o.week; w++) {
+          const p = s.pts[w]
+          if (!p) {
+            pen = false
+            continue
+          }
+          const X = sx(p.rs)
+          const Y = sy(p.val)
+          if (!pen) {
+            ctx.moveTo(X, Y)
+            pen = true
+          } else {
+            ctx.lineTo(X, Y)
+          }
         }
-        const X = sx(p.rs)
-        const Y = sy(p.val)
-        if (!pen) {
-          ctx.moveTo(X, Y)
-          pen = true
-        } else {
-          ctx.lineTo(X, Y)
-        }
+        ctx.stroke()
       }
-      ctx.stroke()
       const cur = s.pts[o.week]
       if (!cur) continue
       const cX = sx(cur.rs)
       const cY = sy(cur.val)
-      // arrowhead from the most recent prior non-null position into the current one.
-      let pi = o.week - 1
-      while (pi >= 0 && !s.pts[pi]) pi--
-      if (pi >= 0) {
-        const pp = s.pts[pi]!
-        const ang = Math.atan2(cY - sy(pp.val), cX - sx(pp.rs))
-        ctx.fillStyle = col
-        ctx.beginPath()
-        ctx.moveTo(cX, cY)
-        ctx.lineTo(cX - 8 * Math.cos(ang - 0.4), cY - 8 * Math.sin(ang - 0.4))
-        ctx.lineTo(cX - 8 * Math.cos(ang + 0.4), cY - 8 * Math.sin(ang + 0.4))
-        ctx.closePath()
-        ctx.fill()
+      if (fullTrails) {
+        // arrowhead from the most recent prior non-null position into the current one.
+        let pi = o.week - 1
+        while (pi >= 0 && !s.pts[pi]) pi--
+        if (pi >= 0) {
+          const pp = s.pts[pi]!
+          const ang = Math.atan2(cY - sy(pp.val), cX - sx(pp.rs))
+          ctx.fillStyle = col
+          ctx.beginPath()
+          ctx.moveTo(cX, cY)
+          ctx.lineTo(cX - 8 * Math.cos(ang - 0.4), cY - 8 * Math.sin(ang - 0.4))
+          ctx.lineTo(cX - 8 * Math.cos(ang + 0.4), cY - 8 * Math.sin(ang + 0.4))
+          ctx.closePath()
+          ctx.fill()
+        }
       }
-      // emphasized current dot + ticker label.
+      // emphasized current dot — drawn for every pinned stock (the lasso-scope
+      // marker past the cap; the trail head when under it).
       ctx.fillStyle = col
       ctx.beginPath()
       ctx.arc(cX, cY, radiusFor(s.mktcap) + 1, 0, 7)
@@ -278,9 +294,12 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
       ctx.strokeStyle = o.palette['--bg'] || '#080b11'
       ctx.lineWidth = 1.5
       ctx.stroke()
-      ctx.fillStyle = o.palette['--txt'] || '#e9eef5'
-      ctx.font = '600 11px IBM Plex Mono, monospace'
-      ctx.fillText(s.ticker, cX + 8, cY - 7)
+      if (fullTrails) {
+        // ticker label — only when few; many labels = text spaghetti (C2).
+        ctx.fillStyle = o.palette['--txt'] || '#e9eef5'
+        ctx.font = '600 11px IBM Plex Mono, monospace'
+        ctx.fillText(s.ticker, cX + 8, cY - 7)
+      }
     }
   }
 
