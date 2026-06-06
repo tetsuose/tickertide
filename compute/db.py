@@ -87,6 +87,13 @@ def upsert_bucket_bars(
     return len(payload)
 
 
+def clear_bucket_bars(con: duckdb.DuckDBPyConnection, bucket_type: str) -> None:
+    """Delete one bucket_type's bars (e.g. 'theme' before a full theme-index rebuild),
+    leaving the other type intact — sector ETF rows (M3) and theme index rows (M4) share
+    the table but are rebuilt by different steps."""
+    con.execute("DELETE FROM bucket_bars WHERE bucket_type = ?", [bucket_type])
+
+
 def count(con: duckdb.DuckDBPyConnection, table: str) -> int:
     return con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
 

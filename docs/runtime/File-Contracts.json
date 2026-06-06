@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-06T01:54:10.682632+00:00",
+  "updated_at": "2026-06-06T02:11:22.523851+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -141,9 +141,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1)",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、clear/upsert/read_bucket_rrg 管周线 RS-Ratio 序列)同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理",
-        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确"
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1) + clear_bucket_bars 按 bucket_type 清(M4.2 theme index 重建)",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、clear/upsert/read_bucket_rrg 管周线 RS-Ratio 序列)同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理",
+        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；clear_bucket_bars('theme') 只清 theme 行、sector 行保留；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确"
       }
     },
     {
@@ -193,6 +193,18 @@
         "invariants": "pandas 算时序；composite 分量∈[0,1]；weights 对每个 k 恒 Σ=1 且不删任何分量；math 对齐 PRD §10",
         "verification": "compute_metrics 返回各 metric 列；weights(0)/weights(1) 之和均=1"
       }
+    },
+    {
+      "path": "compute/theme_index.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "theme 指数(M4.2)：theme_membership(point-in-time) + daily_bars → bucket_bars(bucket_type='theme')，每 theme 一条日价序列。非市值加权(exposure-weighted + cap,C4) + chained-return point-in-time(C3)。供 compute/rotation.py(bucket_type='theme',M4.3)算 RS-Ratio —— theme 复用整套 M3 bucket 框架,不建第 6 surface,RS-Ratio 算法不在此翻案",
+        "invariants": "非市值加权(C4)：权重纯由 exposure(营收份额)派生、零 mktcap 输入；water-fill cap 使单票权重≤themes.yaml 的 cap(防单票主导,「AI」≠NVDA 一只);成员数<ceil(1/cap)时 cap 不可行 → 退等权(最分散可行向量,仍 mktcap 无关)。point-in-time(C3)：index 为 chained-return 序列(level[t]=level[t-1]·(1+Σ wᵢ·rᵢ))非加权价位 —— 当日 return 用『前一日 as-of』成员权重(db.theme_membership_asof),故改晚 as_of 只动其后、每个更早 index 值 byte 不变(theme RS-Ratio 线/Ocean trail 不虚构)、rebalance 不跳价(链式连续)、用 return 而非价位使尺度无关(高价/低价票按权重非价位贡献);index 从该 theme 首个 as_of 起 —— 更早需用今天 membership 回溯=lookahead(C3 禁),故单 as_of seed 几无历史,真实 PIT 历史靠各历史 filing 打戳的 membership(M4.5);只读 daily_bars+theme_membership、写 bucket_bars(theme)、绝不进 universe 横截面(同 sector ETF 隔离 PRD §16);clear_bucket_bars('theme')先清再全量重建;cap 取自 themes.yaml(缺省 0.30)",
+        "verification": "make fixture 后 python3 compute/theme_index.py 产 ≥4 theme × N 日 bucket_bars(bucket_type='theme')、base=100 起、全正无 NaN、sector 行不受影响;capped_weights 单测:>=4 票可行时主导成员被 cap 至 cap(NVDA-like 不主导)、cap 不可行(cap×n≤1)退等权、和为 1;index 权重 == capped_weights(纯 exposure)(零 mktcap:fixture AI@last 最大市值票 mktcap 占比≈0.65 但 index 权重≤cap=0.30);C3:改晚 as_of 一条 membership→rebuild→≤late 段 index byte 不变、>late 段变;compute_rotation(bucket_type='theme')能据此产 bucket_rrg(M4.3 衔接 smoke 通过)"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -663,6 +675,7 @@
       }
     },
     {
+      "notes": "",
       "path": "themes/seed.py",
       "kind": "script",
       "module": "themes",
@@ -671,10 +684,10 @@
         "purpose": "从 ingest/universe_seed.txt 的主题分组结构化出 bootstrap theme_membership(point-in-time 基线快照)：按 themes.yaml 的 seed_header 数据驱动把段头映射到 theme,写 exposure 初值 + 单一 baseline as_of + source=seed + approved_by=seed,经 compute/db.upsert_theme_membership 落库",
         "invariants": "是 LLM/EDGAR 营收锚定(M4.5)前的确定性兜底、粗初值非权威：exposure=SEED_EXPOSURE 平值、approved_by='seed'(未经 human 审批的哨兵,C6)、单一 baseline as_of_date；映射纯数据驱动(seed_header)无代码硬编码观点,reset-on-comment 解析令未识别段头下的 ticker 显式 unmapped 而非静默误配；多对多由数据天然支持(同票列两段→两行),当前 seed 每票一段、真实 overlap(NVDA∈AI+SEMI)按设计留 M4.5 营收锚定;幂等(clear 后全量重写,source=seed 完全派生);依赖 PyYAML(产品代码,engine/index.py 仍 stdlib-only)",
         "verification": "python3 themes/seed.py --dry-run 报 8 theme、universe_seed 48 票全部映射且零 unmapped；--db 写库后 db.theme_keys()=8、代表票各归位(NVDA∈AI / AMD∈SEMI / CRWD∈CYBR / RKLB∈SPACE / SNOW∈CLOUD / ISRG∈ROBO / COHR∈OPTIC / CEG∈NUKE)；全行 source=seed、approved_by=seed、exposure=0.6"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "themes/themes.yaml",
       "kind": "config",
       "module": "themes",
@@ -683,8 +696,7 @@
         "purpose": "8 个 concept theme 定义的单一真源：key/name/color_var(--th-*)/cap/seed_header/description/keywords。被 themes/seed.py(据 seed_header 映射 universe_seed 分组 + 校验 key)、compute/theme_index.py(cap 限权,M4.2)、themes/extract.py(keywords 喂 LLM 候选,M4.5)、web theme.css/THEME_VAR(镜像 color_var→hex)消费",
         "invariants": "8 theme = AI/ROBO/SPACE/OPTIC/SEMI/NUKE/CYBR/CLOUD(PRD §8.2 / 附录 C)；color_var 对齐 web theme.css 的 --th-*(本文件为权威,web 镜像)；cap=theme index 单票权重上限(非市值加权 C4,M4.2 消费)、当前 0.30、按真实成员 just-in-time 调(不回测 alpha 买 robustness)；seed_header 精确匹配 universe_seed.txt 段头(数据驱动映射,改段头须同步)；只定义 theme 不分配 ticker(membership 在 theme_membership 表,point-in-time)；多对多绝不 MECE",
         "verification": "yaml.safe_load 得 themes 列表 8 条、每条含 key/name/color_var/cap/seed_header/description/keywords；color_var 均见 web/src/theme.css；themes/seed.py 据 seed_header 把 universe_seed.txt 48 票映射到 8 theme、零 unmapped"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1012,5 +1024,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "6bc29544be741a5cc8d0f6dbe71c6626eb72bd35f759adfcf6b87aee0dca16da"
+  "last_structure_digest": "1f51749715b9f79c985a7f85f105ac2b71c663f92899176d554d66a7ac4529a9"
 }
