@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-06T05:23:53.967173+00:00",
+  "updated_at": "2026-06-06T06:06:43.116228+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -57,9 +57,9 @@
       "module": ".github",
       "stage": "implemented",
       "contract": {
-        "purpose": "夜间 EOD 数据管道(D.2)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact 供 D.3 发布",
-        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)、零 secret(EDGAR UA 明文于 edgar.py、artifact 用内置 GITHUB_TOKEN)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；workflow_dispatch input limit 可手测小规模；schedule 只产 artifact 不触发 deploy(D.3 才发布)；M4 theme export 未接 Makefile→nightly 暂不产 theme.json(M4 follow-up)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
-        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；engine 不装 deps；workflow_dispatch 手测无 Node20 runtime 弃用告警"
+        "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 私有上线",
+        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；M4 theme export 未接 Makefile→暂不产 theme.json(M4 follow-up)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
+        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；设 secret 后 deploy 步骤执行、未设时 skip 不报错；run log 不含 token 值；engine 不装 deps、无 Node20 弃用告警"
       }
     },
     {
@@ -70,8 +70,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "排除生成物、产品数据产物与凭证文件，使版本库只跟踪源与规格",
-        "invariants": "必须含 .index/、__pycache__/、data/、*.duckdb、*.parquet、secrets/、*.env；保留 *.env.example 与 docs/runtime 的 .example 模板",
-        "verification": "git status 不出现生成物/数据/密钥；clone 后无被忽略文件被跟踪"
+        "invariants": "必须含 .index/、__pycache__/、data/、*.duckdb、*.parquet、secrets/、*.env、.wrangler/、.dev.vars(Cloudflare 本地 state/secret)；保留 *.env.example 与 docs/runtime 的 .example 模板",
+        "verification": "git status 不出现生成物/数据/密钥/wrangler 本地态；clone 后无被忽略文件被跟踪"
       }
     },
     {
@@ -315,6 +315,18 @@
       }
     },
     {
+      "path": "docs/runtime/Deploy-Pages-Runbook.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "D.3 部署操作 runbook：Cloudflare Pages 私有上线的凭证两条路、建项目、首次 go-live、Cloudflare Access 私有锁、CI 自动部署、AC-D 验收清单、回滚",
+        "invariants": "只记操作步骤与凭证位置(names-only)，绝不含 token/account 值；私有访问硬线(Cloudflare Access email 白名单，不对外分发数据 SCOPE/§6.2/NFR-7)；部署只在 nightly 全绿后(陈旧/失败不发布)；与 Credentials-Management.md / nightly.yml / wrangler.jsonc 三者一致",
+        "verification": "按 runbook 走通首次 go-live + 私有访问验证(AC-D 清单可全勾)；grep 确认无 secret 值入库"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "docs/runtime/Env-Registry.example.md",
       "kind": "doc",
@@ -447,6 +459,7 @@
       }
     },
     {
+      "notes": "",
       "path": "export/manifest.py",
       "kind": "script",
       "module": "export",
@@ -455,8 +468,7 @@
         "purpose": "D.4 新鲜度 manifest：读 board/ocean/rotation.json → manifest.json(最新 as_of + 各 surface count)，供 web as_of badge 免 load 全量 JSON + D.3 deploy gate",
         "invariants": "读 export 已写的 board/ocean/rotation；as_of_date 取各 surface 最新；缺 surface→None(部分 export 可见、非静默当完整)；Makefile export 末尾跑(在三 export 后)；输出 gitignored 紧凑 JSON",
         "verification": "make export 后 manifest.json 含 as_of+surfaces counts；as_of==max(各 surface as_of)；缺文件→对应 surface=None"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
@@ -903,6 +915,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/freshness.test.ts",
       "kind": "code",
       "module": "web",
@@ -911,10 +924,10 @@
         "purpose": "freshness 纯函数单测(D.4)：dataAgeDays/freshness/ageLabel 边界",
         "invariants": "覆盖 UTC 归一、阈值边界(3/7)、NaN/负→stale、ageLabel 各态；vitest run",
         "verification": "npx vitest run：freshness.test 全过、不破坏既有"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/lib/freshness.ts",
       "kind": "code",
       "module": "web",
@@ -923,8 +936,7 @@
         "purpose": "as_of badge 数据新鲜度纯函数(D.4)：dataAgeDays(as_of→today 日历天) + freshness(fresh≤3/aging≤7/stale) + ageLabel",
         "invariants": "纯函数无 DOM(SSR 可测)；UTC 归一(时刻/DST 不影响天数)；阈值容忍周末(周五数据周一 3 天=fresh)；NaN/负(未来 as_of)→stale(可疑、绝不静默当 fresh)",
         "verification": "freshness.test.ts：dataAgeDays 日历天/NaN、freshness 阈值边界(3/7)、ageLabel today/N天前/陈旧"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1093,8 +1105,20 @@
         "invariants": "base='./' 子路径可用；输出 web/dist(gitignore)；运行时数据从 public/data 加载、构建不内联；test 段跑 C9 parity + AC-M1 渲染测试(.ts/.tsx)",
         "verification": "vite build 成功且资源相对路径；make web-test 跑 composite.test.ts + Discovery.test.tsx"
       }
+    },
+    {
+      "path": "web/wrangler.jsonc",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "Cloudflare Pages 配置(D.3)：声明项目名 + 构建产物目录，供 `wrangler pages deploy` 直传 web/dist 私有上线",
+        "invariants": "纯静态站点(无 Functions/bindings/vars)；绝不含 secret(token 走 wrangler login OAuth 或 CI secret)；name=tickertide(改名同步 Deploy-Pages-Runbook.md)；pages_build_output_dir=dist(相对 web/，即 web/dist)；私有访问由 Cloudflare Access 带外强制、不在此声明",
+        "verification": "`cd web && npx wrangler pages deploy --branch=main` 读本文件 name+output dir 直传成功；grep 确认无 token/account 值入库"
+      },
+      "notes": ""
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "17d871f523d3a1977ed7886b12e1dae7d22de9fe5ea7f93f4d6bdae221c22ab8"
+  "last_structure_digest": "f9b672befe4c774b3b9cff25b73dfa77a0f9007d82161999c74a2451d8c8a599"
 }
