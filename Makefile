@@ -156,7 +156,8 @@ export:
 	@python3 export/board.py $(PIPELINE_ARGS)
 	@python3 export/ocean.py
 	@python3 export/rotation.py
-	@echo "[export] M1/M2/M3 board.json + ocean.json + rotation.json -> web/public/data/ (M5 adds Parquet shards)."
+	@python3 export/manifest.py
+	@echo "[export] board + ocean + rotation + manifest -> web/public/data/ (M5 adds Parquet shards)."
 
 # C9 cross-surface check (AC-M2): ocean.json positions trace to board/Stock numbers.
 ocean-c9:

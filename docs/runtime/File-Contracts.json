@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-06T04:52:13.899511+00:00",
+  "updated_at": "2026-06-06T05:23:53.967173+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -51,6 +51,7 @@
       }
     },
     {
+      "notes": "",
       "path": ".github/workflows/nightly.yml",
       "kind": "config",
       "module": ".github",
@@ -59,8 +60,7 @@
         "purpose": "夜间 EOD 数据管道(D.2)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact 供 D.3 发布",
         "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)、零 secret(EDGAR UA 明文于 edgar.py、artifact 用内置 GITHUB_TOKEN)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；workflow_dispatch input limit 可手测小规模；schedule 只产 artifact 不触发 deploy(D.3 才发布)；M4 theme export 未接 Makefile→nightly 暂不产 theme.json(M4 follow-up)",
         "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；engine 不装 deps"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -106,7 +106,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)、export 含 rotation(rotation.json)、rotation-c9 跑 check_rotation(AC-M3 C9 league↔board)",
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)、export 含 rotation(rotation.json)、rotation-c9 跑 check_rotation(AC-M3 C9 league↔board)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
         "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9 端到端可跑；make verify GATE_PASS"
       }
     },
@@ -447,6 +447,18 @@
       }
     },
     {
+      "path": "export/manifest.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "D.4 新鲜度 manifest：读 board/ocean/rotation.json → manifest.json(最新 as_of + 各 surface count)，供 web as_of badge 免 load 全量 JSON + D.3 deploy gate",
+        "invariants": "读 export 已写的 board/ocean/rotation；as_of_date 取各 surface 最新；缺 surface→None(部分 export 可见、非静默当完整)；Makefile export 末尾跑(在三 export 后)；输出 gitignored 紧凑 JSON",
+        "verification": "make export 后 manifest.json 含 as_of+surfaces counts；as_of==max(各 surface as_of)；缺文件→对应 surface=None"
+      },
+      "notes": ""
+    },
+    {
       "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
       "path": "export/ocean.py",
       "kind": "script",
@@ -778,7 +790,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "应用 shell：固定顶部控制栏（5 tab + early⟷reliable 旋钮 + 权重条 + scope chip）+ 中央 surface 面板 + 全局 scope/pinned 单一真源",
-        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条 + 透传 Discovery 实时重排；discovery 渲染 <Discovery k scope pinned>、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余占位；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；权重曲线来自 composite.ts(C9)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab/k)、Rotation 为第 2 个 scope writer(league 行/线→sector)",
+        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条 + 透传 Discovery 实时重排；discovery 渲染 <Discovery k scope pinned>、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余占位；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；权重曲线来自 composite.ts(C9)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab/k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜",
         "verification": "npm run build 通过；SSR app chrome 含 wbars/wbfill + RELIABLE/EARLY；旋钮改 k → Discovery 重排；ocean tab 渲染 Ocean canvas；scope≠all 显 chip + 可清"
       }
     },
@@ -886,9 +898,33 @@
       "stage": "implemented",
       "contract": {
         "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
-        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)",
+        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)",
         "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
       }
+    },
+    {
+      "path": "web/src/lib/freshness.test.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "freshness 纯函数单测(D.4)：dataAgeDays/freshness/ageLabel 边界",
+        "invariants": "覆盖 UTC 归一、阈值边界(3/7)、NaN/负→stale、ageLabel 各态；vitest run",
+        "verification": "npx vitest run：freshness.test 全过、不破坏既有"
+      },
+      "notes": ""
+    },
+    {
+      "path": "web/src/lib/freshness.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "as_of badge 数据新鲜度纯函数(D.4)：dataAgeDays(as_of→today 日历天) + freshness(fresh≤3/aging≤7/stale) + ageLabel",
+        "invariants": "纯函数无 DOM(SSR 可测)；UTC 归一(时刻/DST 不影响天数)；阈值容忍周末(周五数据周一 3 天=fresh)；NaN/负(未来 as_of)→stale(可疑、绝不静默当 fresh)",
+        "verification": "freshness.test.ts：dataAgeDays 日历天/NaN、freshness 阈值边界(3/7)、ageLabel today/N天前/陈旧"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -934,7 +970,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "暗色主题与配色 SoT：附录C 全调色板 CSS 变量 + shell 组件类 + evidence-card/Discovery/Ocean 类",
-        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.ocpins/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同；加 Rotation 组件类(.rot/.rleague/.rlrow/.rot-summary/.rrgsvg/.seg/.qchip 等，复用现有调色板 var)",
+        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.ocpins/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同；加 Rotation 组件类(.rot/.rleague/.rlrow/.rot-summary/.rrgsvg/.seg/.qchip 等，复用现有调色板 var)；D.4 freshness badge 类(.dot.fresh/aging/stale + .asof2.fresh-aging/stale)复用 grn/amb/red",
         "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb*/.oc*/.otip 类；视觉对 UX 合同"
       }
     },
@@ -946,7 +982,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1) + ocean.json(M2.1) + rotation.json(M3.3) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts，D.4)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
@@ -1060,5 +1096,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "9a5647be51606469190d8f46fbc5356a59d90716f52cf4c68e956b4363731a84"
+  "last_structure_digest": "17d871f523d3a1977ed7886b12e1dae7d22de9fe5ea7f93f4d6bdae221c22ab8"
 }

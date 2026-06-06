@@ -167,3 +167,13 @@ export interface RotationData {
   count: number
   buckets: RotationBucket[]
 }
+
+// --- Manifest (D.4 export/manifest.py -> public/data/manifest.json) ---
+// Tiny freshness descriptor so the header as_of badge loads without a full surface JSON
+// (data age + 陈旧色). as_of_date is the latest across surfaces; null = nothing exported.
+export interface ManifestData {
+  schema_version: number
+  as_of_date: string | null
+  generated_at: string
+  surfaces: { board: number | null; ocean: number | null; rotation: number | null }
+}

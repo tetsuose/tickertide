@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import type { SurfaceId, Scope, Components } from './types'
+import { useState, useEffect } from 'react'
+import type { SurfaceId, Scope, Components, ManifestData } from './types'
 import Discovery from './views/Discovery'
 import Ocean from './views/Ocean'
 import Rotation from './views/Rotation'
 import { weights } from './lib/composite'
+import { loadManifest } from './lib/data'
+import { dataAgeDays, freshness, ageLabel } from './lib/freshness'
 
 // The five lenses in the contract's fixed order (PRD §9.0). Discovery is the
 // M1 surface and the default tab; the others are scaffolded stubs that land in
@@ -55,8 +57,18 @@ export default function App() {
   // pinned ticker set — Ocean click pins (trail); lasso bulk-selects + focuses.
   // Lives in App so scope='pinned' can filter every surface by it.
   const [pinned, setPinned] = useState<string[]>([])
+  // D.4 freshness: load the tiny manifest for the header as_of badge (data age + 陈旧色),
+  // so stale / failed nightly data is VISIBLE, never silently served as fresh.
+  const [manifest, setManifest] = useState<ManifestData | null>(null)
+  useEffect(() => {
+    const ac = new AbortController()
+    loadManifest(ac.signal).then(setManifest).catch(() => {})
+    return () => ac.abort()
+  }, [])
 
   const info = SURFACE_INFO[tab]
+  const age = manifest ? dataAgeDays(manifest.as_of_date, new Date()) : NaN
+  const fresh = freshness(age)
 
   return (
     <div className="app">
@@ -70,11 +82,17 @@ export default function App() {
             </div>
           </div>
           <div className="asof">
-            <div>
-              <span className="dot" />
-              <b>EOD</b> snapshot
-            </div>
-            <div className="asof2">M1.2 scaffold · 数据接入 M1.4</div>
+            {manifest && manifest.as_of_date ? (
+              <>
+                <div>
+                  <span className={'dot ' + fresh} />
+                  <b>EOD</b> {manifest.as_of_date}
+                </div>
+                <div className={'asof2 fresh-' + fresh}>{ageLabel(age)}</div>
+              </>
+            ) : (
+              <div className="asof2">数据未就绪 — 跑 make export</div>
+            )}
           </div>
         </header>
 
