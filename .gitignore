@@ -31,6 +31,13 @@ data/
 # Task isolation worktrees
 .worktrees/
 
+# Cloudflare Pages / wrangler (D.3). Local deploy state + local secret file —
+# the API token lives only in a GitHub Actions secret or `wrangler login` creds,
+# never in the repo. See docs/runtime/Deploy-Pages-Runbook.md.
+.wrangler/
+.dev.vars
+.dev.vars.*
+
 # Credential-bearing paths. The .example templates under docs/runtime/ stay in git;
 # real env files, real inventories, mirrors, and incoming-staging files do not.
 # See docs/runtime/Credentials-Management.md.
