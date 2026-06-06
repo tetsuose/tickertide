@@ -1,4 +1,4 @@
-import type { BoardData, OceanData, RotationData } from '../types'
+import type { BoardData, OceanData, RotationData, ManifestData } from '../types'
 
 // Load the nightly Discovery snapshot (export/board.py -> public/data/board.json).
 // import.meta.env.BASE_URL respects Vite's base './', so the fetch works from any
@@ -30,4 +30,12 @@ export async function loadRotation(
   const res = await fetch(`${base}data/${file}`, { signal })
   if (!res.ok) throw new Error(`${file} HTTP ${res.status}`)
   return (await res.json()) as RotationData
+}
+
+// Load the nightly freshness manifest (export/manifest.py -> public/data/manifest.json).
+export async function loadManifest(signal?: AbortSignal): Promise<ManifestData> {
+  const base = import.meta.env?.BASE_URL ?? './'
+  const res = await fetch(`${base}data/manifest.json`, { signal })
+  if (!res.ok) throw new Error(`manifest.json HTTP ${res.status}`)
+  return (await res.json()) as ManifestData
 }

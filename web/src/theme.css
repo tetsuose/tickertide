@@ -154,6 +154,22 @@ body {
   margin-top: 4px;
   font-size: 10px;
 }
+/* D.4 freshness badge: dot + sub-line color by data age (fresh/aging/stale). */
+.dot.fresh {
+  background: var(--grn);
+}
+.dot.aging {
+  background: var(--amb);
+}
+.dot.stale {
+  background: var(--red);
+}
+.asof2.fresh-aging {
+  color: var(--amb);
+}
+.asof2.fresh-stale {
+  color: var(--red);
+}
 .dot {
   display: inline-block;
   width: 7px;
