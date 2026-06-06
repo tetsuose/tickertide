@@ -36,7 +36,8 @@ from compute import db, rotation  # noqa: E402
 import sector_etf  # noqa: E402
 
 SCHEMA_VERSION = 1
-DEFAULT_OUT = ROOT / "web" / "public" / "data" / "rotation.json"
+DATA_DIR = ROOT / "web" / "public" / "data"
+DEFAULT_OUT = DATA_DIR / "rotation.json"
 DEFAULT_WEEKS = 52       # ~1y of weekly RS-Ratio points (PRD §9.4 / ROADMAP M3.3)
 DEFAULT_MEMBERS = 12     # top-N member tickers per bucket (client filters board.json)
 BUCKET_TYPE = "sector"
@@ -66,19 +67,25 @@ def _etf_map() -> dict:
     return {sector: etf for sector, etf in sector_etf.load_map(sector_etf.MAP_FILE)}
 
 
-def _members(con, latest_date, top_n: int) -> dict:
-    """Top-N member tickers per sector by composite on `latest_date`. The client filters
-    board.json by scope=sector for the actual evidence cards (DRY/C9) — this carries the
-    ticker list only."""
-    rows = con.execute(
-        """
-        SELECT u.sector AS bucket, d.ticker
-        FROM derived_daily d JOIN universe u ON u.ticker = d.ticker
-        WHERE d.date = ? AND d.composite IS NOT NULL
-        ORDER BY u.sector, d.composite DESC
-        """,
-        [latest_date],
-    ).fetchall()
+def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
+    """Top-N member tickers per bucket by composite on `latest_date`. Bucket membership is
+    rotation._bucket_members (sector: universe.sector; theme: theme_membership point-in-time,
+    many-to-many) — the SAME source the league uses (C9). The client filters board.json by
+    scope for the actual evidence cards (DRY/C9); this carries the ticker list only."""
+    mem = rotation._bucket_members(con, bucket_type, latest_date)
+    con.register("mem_rel", mem)
+    try:
+        rows = con.execute(
+            """
+            SELECT mr.bucket AS bucket, d.ticker
+            FROM derived_daily d JOIN mem_rel mr ON mr.ticker = d.ticker
+            WHERE d.date = ? AND d.composite IS NOT NULL
+            ORDER BY mr.bucket, d.composite DESC
+            """,
+            [latest_date],
+        ).fetchall()
+    finally:
+        con.unregister("mem_rel")
     out: dict[str, list] = {}
     for bucket, ticker in rows:
         lst = out.setdefault(bucket, [])
@@ -104,7 +111,7 @@ def build_rotation(con, bucket_type: str = BUCKET_TYPE, n_weeks: int = DEFAULT_W
     league = rotation.league_table(con, bucket_type)
     etf_map = _etf_map()
     latest = con.execute("SELECT max(date) FROM derived_daily").fetchone()[0]
-    members = _members(con, latest, top_n) if latest is not None else {}
+    members = _members(con, latest, top_n, bucket_type) if latest is not None else {}
 
     buckets = []
     for _, lr in league.iterrows():
@@ -168,17 +175,21 @@ def _self_check(buckets: list, weeks: list) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="TickerTide M3.3 export: Rotation rotation.json.")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
-    ap.add_argument("--out", default=str(DEFAULT_OUT), help="output JSON path")
+    ap.add_argument("--out", default=None,
+                    help="output JSON path (default rotation.json; rotation.theme.json for --bucket-type theme)")
     ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS, help="weekly RS-Ratio points (default 52)")
     ap.add_argument("--members", type=int, default=DEFAULT_MEMBERS, help="top-N member tickers per bucket")
-    ap.add_argument("--bucket-type", default=BUCKET_TYPE, help="sector (M3) | theme (M4)")
+    ap.add_argument("--bucket-type", default=BUCKET_TYPE, choices=["sector", "theme"], help="sector (M3) | theme (M4)")
     args = ap.parse_args(argv)
 
     con = db.connect(args.db)
     rot = build_rotation(con, bucket_type=args.bucket_type, n_weeks=args.weeks, top_n=args.members)
     con.close()
 
-    out = Path(args.out)
+    # Sector and theme are separate files (separate weeks axes / params); the web loads the
+    # one matching its GICS↔Theme toggle (M4.4b). Default name keyed off bucket_type.
+    default_out = DATA_DIR / ("rotation.theme.json" if args.bucket_type == "theme" else "rotation.json")
+    out = Path(args.out) if args.out else default_out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rot, ensure_ascii=False, separators=(",", ":")) + "\n")
 
@@ -186,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     for b in rot["buckets"]:
         states[b["state"]] = states.get(b["state"], 0) + 1
     kb = out.stat().st_size / 1024
-    print(f"[rotation] {args.out}  as_of={rot['as_of_date']}  buckets={rot['count']}  "
+    print(f"[rotation] {out}  as_of={rot['as_of_date']}  buckets={rot['count']}  "
           f"weeks={rot['n_weeks']}  states={states}  size={kb:.1f}KB")
     return 0
 

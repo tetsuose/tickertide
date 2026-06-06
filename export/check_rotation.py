@@ -1,10 +1,12 @@
 """M3.5 C9 cross-surface check: rotation.json league traces to board.json members.
 
-AC-M3 (PRD §14): the Rotation league's member aggregates must agree with the Discovery
-board — both read the SAME DuckDB (derived_daily / valuation_daily). Rotation
-(export/rotation.py) aggregates per sector; the board (export/board.py) is per stock.
-This proves a sector's league row is traceable to the very member cards Discovery shows
-(C9 — "聚合量取自 universe 成员", ROADMAP M3 risk table):
+AC-M3/AC-M4 (PRD §14): the Rotation league's member aggregates must agree with the
+Discovery board — both read the SAME DuckDB (derived_daily / valuation_daily). Rotation
+(export/rotation.py) aggregates per bucket (sector via universe.sector; theme via
+theme_membership point-in-time); the board (export/board.py) is per stock. This proves a
+bucket's league row is traceable to the very member cards Discovery shows (C9 — "聚合量取自
+成员"). The grouping follows the rotation file's bucket_type, so the same check gates both
+the sector (rotation.json) and theme (rotation.theme.json) exports:
 
   - same as_of date (both export the latest snapshot);
   - members[] ⊆ board tickers (the client filters board.json by scope=sector for cards);
@@ -37,28 +39,37 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
         problems.append(f"as_of mismatch: board={board.get('as_of_date')} rotation={rotation.get('as_of_date')}")
 
     board_tickers = {s["ticker"] for s in board.get("stocks", [])}
-    by_sec: dict[str, list] = defaultdict(list)
+    # Group board stocks into the rotation file's buckets. sector: one bucket per stock
+    # (universe.sector); theme: a stock joins EACH of its point-in-time theme chips
+    # (many-to-many — NVDA-like ticker counts in AI and SEMI), so the theme league's
+    # PIT member set must match the board's PIT theme chips (closes the theme C9 loop).
+    btype = rotation.get("bucket_type", "sector")
+    by_bucket: dict[str, list] = defaultdict(list)
     for s in board.get("stocks", []):
-        if s.get("sector"):
-            by_sec[s["sector"]].append(s)
+        if btype == "theme":
+            for ch in s.get("themes", []):
+                if ch.get("theme"):
+                    by_bucket[ch["theme"]].append(s)
+        elif s.get("sector"):
+            by_bucket[s["sector"]].append(s)
 
     mem_checked = med_checked = 0
     for b in rotation.get("buckets", []):
-        sec = b["bucket"]
-        members = by_sec.get(sec, [])
+        bk = b["bucket"]
+        members = by_bucket.get(bk, [])
         missing = [t for t in b.get("members", []) if t not in board_tickers]
         if missing:
-            problems.append(f"{sec}: {len(missing)} member ticker(s) not in board.json (e.g. {missing[:3]})")
+            problems.append(f"{bk}: {len(missing)} member ticker(s) not in board.json (e.g. {missing[:3]})")
         if b.get("member_count") is not None:
             mem_checked += 1
             if b["member_count"] != len(members):
-                problems.append(f"{sec}: member_count rotation={b['member_count']} vs board={len(members)}")
+                problems.append(f"{bk}: member_count rotation={b['member_count']} vs board={len(members)}")
         comps = [s["composite"] for s in members if s.get("composite") is not None]
         if comps and b.get("composite_median") is not None:
             med_checked += 1
             med = statistics.median(comps)
             if abs(b["composite_median"] - med) > MED_TOL:
-                problems.append(f"{sec}: composite_median rotation={b['composite_median']} vs board median={med:.2f}")
+                problems.append(f"{bk}: composite_median rotation={b['composite_median']} vs board median={med:.2f}")
 
     stats = {
         "board_stocks": len(board_tickers),

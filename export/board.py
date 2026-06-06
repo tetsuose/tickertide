@@ -87,15 +87,16 @@ def _table_exists(con, name: str) -> bool:
 
 
 def _themes(con, ticker: str, snap, has_themes: bool) -> list[dict]:
-    """Point-in-time theme memberships (PRD §7). Empty until M4; table may not exist."""
+    """Point-in-time theme chips as-of the board snapshot (PRD §7 C3): per theme the latest
+    as_of_date<=snap kept only if exposure>0, via the canonical db.theme_membership_asof —
+    so a multi-as_of ticker shows each theme ONCE at its current exposure (NOT the old naive
+    scan that returned every historical row). Highest exposure first (chip order). exposure
+    is the [0,1] revenue-share fraction; the card renders it as a %. Empty until themes are
+    seeded; table may not exist pre-M4."""
     if not has_themes:
         return []
-    rows = con.execute(
-        "SELECT theme, exposure FROM theme_membership "
-        "WHERE ticker = ? AND as_of_date <= ? ORDER BY exposure DESC NULLS LAST",
-        [ticker, snap],
-    ).fetchall()
-    return [{"theme": t, "exposure": _num(e, 4)} for t, e in rows]
+    m = db.theme_membership_asof(con, snap, ticker=ticker).sort_values("exposure", ascending=False)
+    return [{"theme": r.theme, "exposure": _num(r.exposure, 4)} for r in m.itertuples()]
 
 
 def _chart(bars: list[tuple], ma_rows: list[tuple]) -> dict:
