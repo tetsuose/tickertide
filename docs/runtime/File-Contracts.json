@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-06T02:11:22.523851+00:00",
+  "updated_at": "2026-06-06T02:35:02.829002+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -195,6 +195,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/theme_index.py",
       "kind": "script",
       "module": "compute",
@@ -203,8 +204,7 @@
         "purpose": "theme 指数(M4.2)：theme_membership(point-in-time) + daily_bars → bucket_bars(bucket_type='theme')，每 theme 一条日价序列。非市值加权(exposure-weighted + cap,C4) + chained-return point-in-time(C3)。供 compute/rotation.py(bucket_type='theme',M4.3)算 RS-Ratio —— theme 复用整套 M3 bucket 框架,不建第 6 surface,RS-Ratio 算法不在此翻案",
         "invariants": "非市值加权(C4)：权重纯由 exposure(营收份额)派生、零 mktcap 输入；water-fill cap 使单票权重≤themes.yaml 的 cap(防单票主导,「AI」≠NVDA 一只);成员数<ceil(1/cap)时 cap 不可行 → 退等权(最分散可行向量,仍 mktcap 无关)。point-in-time(C3)：index 为 chained-return 序列(level[t]=level[t-1]·(1+Σ wᵢ·rᵢ))非加权价位 —— 当日 return 用『前一日 as-of』成员权重(db.theme_membership_asof),故改晚 as_of 只动其后、每个更早 index 值 byte 不变(theme RS-Ratio 线/Ocean trail 不虚构)、rebalance 不跳价(链式连续)、用 return 而非价位使尺度无关(高价/低价票按权重非价位贡献);index 从该 theme 首个 as_of 起 —— 更早需用今天 membership 回溯=lookahead(C3 禁),故单 as_of seed 几无历史,真实 PIT 历史靠各历史 filing 打戳的 membership(M4.5);只读 daily_bars+theme_membership、写 bucket_bars(theme)、绝不进 universe 横截面(同 sector ETF 隔离 PRD §16);clear_bucket_bars('theme')先清再全量重建;cap 取自 themes.yaml(缺省 0.30)",
         "verification": "make fixture 后 python3 compute/theme_index.py 产 ≥4 theme × N 日 bucket_bars(bucket_type='theme')、base=100 起、全正无 NaN、sector 行不受影响;capped_weights 单测:>=4 票可行时主导成员被 cap 至 cap(NVDA-like 不主导)、cap 不可行(cap×n≤1)退等权、和为 1;index 权重 == capped_weights(纯 exposure)(零 mktcap:fixture AI@last 最大市值票 mktcap 占比≈0.65 但 index 权重≤cap=0.30);C3:改晚 as_of 一条 membership→rebuild→≤late 段 index byte 不变、>late 段变;compute_rotation(bucket_type='theme')能据此产 bucket_rrg(M4.3 衔接 smoke 通过)"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -819,6 +819,18 @@
       }
     },
     {
+      "path": "web/src/lib/__fixtures__/rotation.theme.sample.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M4 theme Rotation 渲染测试用样本 rotation.theme.json（export/rotation.py --bucket-type theme 真实产物，offline fixture→4 theme×39 周）",
+        "invariants": "export/rotation.py --bucket-type theme 对 fixture 的真实产物、非手写；含 4 theme RS-Ratio 周序列(theme index point-in-time、非市值加权 exposure+cap)+ 4 态 league(成员取自 theme_membership PIT)+ members ticker；bucket_type='theme'、无 etf(null)；供 Rotation theme 模式 SSR 测(path 数=4、THEME_VAR --th-* 上色、theme drill、非市值加权标注)；fixture 确定性 → 提交版字节稳定；weeks 因 theme index 从首个 as_of 起可少于 sector(52)",
+        "verification": "JSON.parse 通过；bucket_type=theme、count=4、各 bucket rs_ratio 长度=weeks、末值非空；与 export/rotation.py --bucket-type theme 当前产物一致"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "web/src/lib/composite.test.ts",
       "kind": "code",
@@ -849,9 +861,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json(Rotation)（export/*.py 产物）",
-        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation 载入 rotation.json(同 BASE_URL fetch 范式)",
-        "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
+        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
+        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)",
+        "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
       }
     },
     {
@@ -873,9 +885,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Rotation 多线 + N=1 SVG 几何纯函数（无 DOM，可 SSR 测）：scale/path/末值排序标签/N=1 短窗斜率分段；颜色复用 ocean-draw SECTOR_VAR(附录 C)",
-        "invariants": "纯函数无副作用无 DOM；MULTI/SOLO geom 取自 UX 合同 viewBox(jsx RSRatioLines/SoloRSLine)；multiScale 夹 100(lo≤98.5/hi≥101.5)、soloScale(lo≤99/hi≥101)；linePath 遇 null 断线不造段；endLabels 末值排序+gap 防重叠；soloSegments 短窗 K=3 斜率 up/down；bucketColorVar 返回 CSS-var 名(SVG 直接 var()，不 resolve hex — 非 canvas)",
-        "verification": "Rotation.test.tsx：multiScale 夹 100、linePath null 断线(2 个 M)、soloSegments 单调全 up、endLabels gap≥13"
+        "purpose": "Rotation 多线 + N=1 SVG 几何纯函数（无 DOM，可 SSR 测）：scale/path/末值排序标签/N=1 短窗斜率分段；颜色复用 ocean-draw SECTOR_VAR + THEME_VAR(附录 C)",
+        "invariants": "纯函数无副作用无 DOM；MULTI/SOLO geom 取自 UX 合同 viewBox(jsx RSRatioLines/SoloRSLine)；multiScale 夹 100(lo≤98.5/hi≥101.5)、soloScale(lo≤99/hi≥101)；linePath 遇 null 断线不造段；endLabels 末值排序+gap 防重叠；soloSegments 短窗 K=3 斜率 up/down；bucketColorVar 返回 CSS-var 名(SVG 直接 var()，不 resolve hex)——sector 名→SECTOR_VAR、theme key→THEME_VAR(名不碰撞)、否则 --dim2",
+        "verification": "Rotation.test.tsx：multiScale 夹 100、linePath null 断线(2 个 M)、soloSegments 单调全 up、endLabels gap≥13；theme 线用 --th-* 色"
       }
     },
     {
@@ -969,9 +981,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Rotation SSR 渲染 + rotation-draw 纯函数测试（AC-M3）：renderToStaticMarkup 喂 rotation.sample.json",
-        "invariants": "用提交版 rotation.sample.json(export 真实产物)非手写；断言总览 ≥11 path/4 态/league/y=100/params 暴露、钻进 N=1+成员跳转、rotation-draw geometry(夹 100/null 断线/斜率分段/标签防重叠)；SVG SSR 可断言(非 canvas useEffect)",
-        "verification": "npx vitest run：Rotation.test 10 项过、不破坏 Ocean(23)/Discovery(10) 既有"
+        "purpose": "Rotation SSR 渲染 + rotation-draw 纯函数测试（AC-M3/AC-M4）：renderToStaticMarkup 喂提交版 rotation.sample.json(sector) + rotation.theme.sample.json(theme)",
+        "invariants": "用 export 真实产物 fixture(非手写)；sector：总览 ≥11 path/4 态/league/y=100/params、钻进 N=1+成员跳转、rotation-draw geometry(夹 100/null 断线/斜率分段/标签防重叠)；theme(M4.4)：总览 path 数=count(4)+不含「待 M4」+THEME_VAR(--th-*)色+「非市值加权」标注、theme drill(scope.kind=theme)N=1+成员；SVG SSR 可断言(非 canvas、effect 不跑)",
+        "verification": "npx vitest run：Rotation.test 14 项过(含 4 theme)、不破坏 Ocean(23)/Discovery(10)/composite(4) 既有；npm run build tsc 通过"
       }
     },
     {
@@ -981,9 +993,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Rotation surface（PRD §9.4）：sector RS-Ratio SVG 多线总览 + enriched league 表 + 钻进 N=1 单线(斜率色)+sector summary+成员预览；GICS↔Theme 切换",
-        "invariants": "读 rotation.json(initial 注入免 fetch 供 SSR/test，仿 Ocean/Discovery)；多线 hover 高亮其余淡、右缘末值排序标签、y=100 基线；点 league 行/线→setScope(sector) 第 2 个 scope writer(C10)+原地 inline drawer 不 auto-jump(§9.1.2)；N=1 线色=短窗斜率(↑绿↓红)=momentum；成员卡复用 Discovery 组件(limit 预览/board.json filter — C9/DRY)不重复造；「看全部」=onJumpTab 切 tab；theme 空到 M4；params 暴露透明 reconstruction 不复刻 StockCharts",
-        "verification": "Rotation.test.tsx SSR 总览 path 数=count(≥11)+4 态+league 每 sector+y=100+params；钻进 N=1+summary+「看全部成员」；npx vitest run + npm run build 通过"
+        "purpose": "Rotation surface（PRD §9.4）：bucket RS-Ratio SVG 多线总览 + enriched league 表 + 钻进 N=1 单线(斜率色)+summary+成员预览；GICS↔Theme 切换两种 bucket 模式均真实渲染(M4.4)",
+        "invariants": "读 rotation.json(sector)/rotation.theme.json(theme，toggle 首次切 theme 时 lazy-load)；initial 注入免 fetch(SSR/test)、其 bucket_type 定起始视图；theme 模式复用同一多线/league/钻进组件、经 bucketColorVar 上 THEME_VAR(--th-*)色；多线 hover 高亮其余淡、右缘末值排序标签、y=100 基线；点 league 行/线→setScope({kind:bucketType}) 第 2 个 scope writer(C10)+原地 inline drawer 不 auto-jump(§9.1.2)、drill 当 scope.kind===当前 bucketType；N=1 线色=短窗斜率(↑绿↓红)=momentum；成员预览复用 Discovery(已按 theme scope 过滤 s.themes — C9/DRY)不重复造；theme 总览标注 point-in-time + 非市值加权；params 暴露透明 reconstruction 不复刻 StockCharts",
+        "verification": "Rotation.test.tsx SSR：sector 总览 path 数=count(≥11)+4 态+league+y=100+params、钻进 N=1+summary+「看全部成员」；theme 总览 path 数=count(4)+不含「待 M4」占位+THEME_VAR(--th-*)色+「非市值加权」标注、theme drill(scope.kind=theme)N=1+成员；npx vitest run(14 项)+ npm run build(tsc)通过"
       }
     },
     {
@@ -1024,5 +1036,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "1f51749715b9f79c985a7f85f105ac2b71c663f92899176d554d66a7ac4529a9"
+  "last_structure_digest": "485a43d70210e0c3bb5c530394f9d5cc4c3a20aabd86f3e95ca4eef513319e03"
 }

@@ -18,10 +18,16 @@ export async function loadOcean(signal?: AbortSignal): Promise<OceanData> {
   return (await res.json()) as OceanData
 }
 
-// Load the nightly Rotation snapshot (export/rotation.py -> public/data/rotation.json).
-export async function loadRotation(signal?: AbortSignal): Promise<RotationData> {
+// Load a nightly Rotation snapshot (export/rotation.py). Two files: sector ->
+// rotation.json, theme -> rotation.theme.json (separate weeks axes — the theme index
+// starts at its first as_of, M4.4). The web loads the one matching its GICS↔Theme toggle.
+export async function loadRotation(
+  signal?: AbortSignal,
+  bucketType: 'sector' | 'theme' = 'sector',
+): Promise<RotationData> {
   const base = import.meta.env?.BASE_URL ?? './'
-  const res = await fetch(`${base}data/rotation.json`, { signal })
-  if (!res.ok) throw new Error(`rotation.json HTTP ${res.status}`)
+  const file = bucketType === 'theme' ? 'rotation.theme.json' : 'rotation.json'
+  const res = await fetch(`${base}data/${file}`, { signal })
+  if (!res.ok) throw new Error(`${file} HTTP ${res.status}`)
   return (await res.json()) as RotationData
 }

@@ -7,13 +7,16 @@ import {
 } from '../lib/rotation-draw'
 import Discovery from './Discovery'
 
-// Rotation (PRD §9.4): the narrow-decide surface. Overview = every sector's RS-Ratio on
+// Rotation (PRD §9.4): the narrow-decide surface. Overview = every bucket's RS-Ratio on
 // one SVG multi-line chart (height=level >100 outperforms SPY, slope=momentum) + an
-// enriched league. Click a line/row → set the global scope to that sector (Rotation is
-// the SECOND scope writer — C10) and expand an INLINE drill drawer (N=1 line whose color
-// is the slope + sector summary + member preview), NO auto-jump (§9.1.2: changing scope
-// and changing view are decoupled). RS-Ratio constants are a transparent reconstruction
-// (PRD §10.4) — NOT a StockCharts replica. `initial` injects data for SSR/tests.
+// enriched league. The GICS↔Theme toggle switches the bucket set: sectors (rotation.json,
+// M3) or concept themes (rotation.theme.json — point-in-time, non-market-cap theme index,
+// M4.4), reusing the same chart/league/drill with THEME_VAR colors. Click a line/row → set
+// the global scope to that bucket (Rotation is the SECOND scope writer — C10) and expand an
+// INLINE drill drawer (N=1 line whose color is the slope + summary + member preview), NO
+// auto-jump (§9.1.2: changing scope and changing view are decoupled). RS-Ratio constants
+// are a transparent reconstruction (PRD §10.4) — NOT a StockCharts replica. `initial`
+// injects data for SSR/tests; its bucket_type picks the starting view.
 // UX contract: docs/equity-monitor-v2.jsx RSRatioLines / SoloRSLine / rotation tab.
 
 const STATE_META: Record<RotationState, { label: string; cssVar: string }> = {
@@ -135,45 +138,75 @@ export default function Rotation({
   onJumpTab?: (t: SurfaceId) => void
   k?: number
 }) {
-  const [data, setData] = useState<RotationData | null>(initial ?? null)
+  // `initial` (SSR/tests) drives the starting view by its bucket_type, so a theme fixture
+  // renders theme mode directly. The live app passes no initial → loads sector, lazy-loads
+  // theme on first toggle.
+  const initTheme = initial?.bucket_type === 'theme'
+  const [bucketType, setBucketType] = useState<'sector' | 'theme'>(initTheme ? 'theme' : 'sector')
+  const [data, setData] = useState<RotationData | null>(initial && !initTheme ? initial : null)
+  const [themeData, setThemeData] = useState<RotationData | null>(initTheme ? initial! : null)
   const [err, setErr] = useState<string | null>(null)
+  const [themeErr, setThemeErr] = useState<string | null>(null)
   const [hover, setHover] = useState<string | null>(null)
-  const [bucketType, setBucketType] = useState<'sector' | 'theme'>('sector')
+
+  // Sector loads on mount; theme lazy-loads the first time the toggle hits Themes. Two
+  // files because the theme index starts at its first as_of, so its weeks axis differs
+  // (M4.4). Effects are browser-only — SSR tests inject `initial` and never fetch.
+  useEffect(() => {
+    if (data) return
+    const ac = new AbortController()
+    loadRotation(ac.signal, 'sector').then(setData).catch((e) => { if (!ac.signal.aborted) setErr(String(e)) })
+    return () => ac.abort()
+  }, [data])
 
   useEffect(() => {
-    if (initial) return
+    if (bucketType !== 'theme' || themeData || themeErr) return
     const ac = new AbortController()
-    loadRotation(ac.signal)
-      .then(setData)
-      .catch((e) => {
-        if (!ac.signal.aborted) setErr(String(e))
-      })
+    loadRotation(ac.signal, 'theme').then(setThemeData).catch((e) => { if (!ac.signal.aborted) setThemeErr(String(e)) })
     return () => ac.abort()
-  }, [initial])
+  }, [bucketType, themeData, themeErr])
 
-  if (err) {
+  const isTheme = bucketType === 'theme'
+  const active = isTheme ? themeData : data
+  const activeErr = isTheme ? themeErr : err
+  const noun = isTheme ? 'theme' : 'sector'
+
+  const toggle = (
+    <span className="orow" role="group" aria-label="bucket type">
+      <button className={'seg' + (!isTheme ? ' on' : '')} onClick={() => setBucketType('sector')}>GICS Sectors</button>
+      <button className={'seg' + (isTheme ? ' on' : '')} onClick={() => setBucketType('theme')}>Themes</button>
+    </span>
+  )
+
+  if (activeErr) {
+    const file = isTheme ? 'rotation.theme.json' : 'rotation.json'
     return (
-      <div className="placeholder">
-        <div className="ph-tag">NO DATA</div>
-        <div className="ph-msg">
-          rotation.json 未就绪（{err}）。先跑 <code>make fixture-pipeline</code> 或真实 <code>make pipeline</code>，再{' '}
-          <code>python export/rotation.py</code> 生成 web/public/data/rotation.json。
+      <div className="rot">
+        <div className="rot-head"><span>ROTATION</span>{toggle}</div>
+        <div className="placeholder">
+          <div className="ph-tag">NO DATA</div>
+          <div className="ph-msg">
+            {file} 未就绪（{activeErr}）。先跑 <code>make fixture-pipeline</code>
+            {isTheme ? <> + <code>python compute/theme_index.py</code></> : null}，再{' '}
+            <code>python export/rotation.py --bucket-type {noun}</code> 生成 web/public/data/{file}。
+          </div>
         </div>
       </div>
     )
   }
-  if (!data) {
+  if (!active) {
     return (
-      <div className="placeholder">
-        <div className="ph-tag">LOADING</div>
-        <div className="ph-msg">读取 Rotation 周度 RS-Ratio…</div>
+      <div className="rot">
+        <div className="rot-head"><span>ROTATION</span>{toggle}</div>
+        <div className="placeholder"><div className="ph-tag">LOADING</div><div className="ph-msg">读取 {noun} RS-Ratio…</div></div>
       </div>
     )
   }
 
-  // Drill drawer when the scope is narrowed to one sector (C10 — set by a row/line click
-  // here, or sticky from another tab). Otherwise (all / pinned / theme) → the overview.
-  const drilled = scope.kind === 'sector' ? data.buckets.find((b) => b.bucket === scope.key) ?? null : null
+  // Drill when the global scope narrows to a bucket of the ACTIVE type (set by a row/line
+  // click here — Rotation is the 2nd scope writer, C10 — or sticky from another tab).
+  // Changing scope and changing view are decoupled (§9.1.2): no auto-jump.
+  const drilled = scope.kind === bucketType ? active.buckets.find((b) => b.bucket === scope.key) ?? null : null
 
   if (drilled) {
     return (
@@ -183,7 +216,7 @@ export default function Rotation({
             ROTATION — <b style={{ color: `var(${bucketColorVar(drilled.bucket)})` }}>{drilled.bucket}</b>{' '}
             <span className="dim">{drilled.etf ?? ''}</span> · 单条放大 + 成员
           </span>
-          <button className="seg" onClick={() => setScope?.({ kind: 'all', key: null })}>← all sectors</button>
+          <button className="seg" onClick={() => setScope?.({ kind: 'all', key: null })}>← all {noun}s</button>
         </div>
         <SoloRSLine bucket={drilled} />
         <div className="rot-summary">
@@ -199,72 +232,62 @@ export default function Rotation({
           <div><span className="dim">members</span><b>{drilled.member_count ?? '—'}</b></div>
         </div>
         <div className="rot-memhead">
-          <span>成员 · top by composite <em className="tag">scope 收窄到该 sector</em></span>
+          <span>成员 · top by composite <em className="tag">scope 收窄到该 {noun}</em></span>
           <button className="seg" onClick={() => onJumpTab?.('discovery')}>在 Discovery 看全部成员 →</button>
         </div>
         <Discovery scope={scope} k={k} limit={6} />
         <div className="foot">
-          单条 RS-Ratio 放大：<b>高度=level、线色=斜率(↑绿/↓红)=momentum</b>（N=1 时 color 空出来给斜率）。下面是该 sector
-          成员证据卡（复用 board.json，按 scope filter — C9/DRY）。点「← all sectors」或顶部 scope ✕ 清 scope 回总览。
+          单条 RS-Ratio 放大：<b>高度=level、线色=斜率(↑绿/↓红)=momentum</b>（N=1 时 color 空出来给斜率）。下面是该 {noun}
+          成员证据卡（复用 board.json，按 scope filter — C9/DRY）。点「← all {noun}s」或顶部 scope ✕ 清 scope 回总览。
         </div>
       </div>
     )
   }
 
-  const league = [...data.buckets].sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+  const league = [...active.buckets].sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
+  const colName = isTheme ? 'Theme' : 'Sector'
 
   return (
     <div className="rot">
       <div className="rot-head">
-        <span>ROTATION — sector RS-Ratio vs SPY · 高度=level，斜率=momentum</span>
-        <span className="orow" role="group" aria-label="bucket type">
-          <button className={'seg' + (bucketType === 'sector' ? ' on' : '')} onClick={() => setBucketType('sector')}>GICS Sectors</button>
-          <button className={'seg' + (bucketType === 'theme' ? ' on' : '')} onClick={() => setBucketType('theme')}>Themes</button>
-        </span>
+        <span>ROTATION — {noun} RS-Ratio vs SPY · 高度=level，斜率=momentum</span>
+        {toggle}
       </div>
-      {bucketType === 'theme' ? (
-        <div className="placeholder">
-          <div className="ph-tag">M4</div>
-          <div className="ph-msg">Theme RS-Ratio 待 M4（theme_membership point-in-time + 非市值加权 theme index）。GICS↔Theme 切换 UI 已就位。</div>
+      <RSRatioLines buckets={active.buckets} hover={hover} setHover={setHover} onPick={(b) => setScope?.({ kind: bucketType, key: b })} />
+      <div className="rleague">
+        <div className="rlhead">
+          <div className="r">#</div><div>{colName}</div><div className="r">RS-Ratio</div><div className="r">Δ4w</div>
+          <div>state</div><div className="r">brdth50</div><div className="r">EV/S</div>
         </div>
-      ) : (
-        <>
-          <RSRatioLines buckets={data.buckets} hover={hover} setHover={setHover} onPick={(b) => setScope?.({ kind: 'sector', key: b })} />
-          <div className="rleague">
-            <div className="rlhead">
-              <div className="r">#</div><div>Sector</div><div className="r">RS-Ratio</div><div className="r">Δ4w</div>
-              <div>state</div><div className="r">brdth50</div><div className="r">EV/S</div>
+        {league.map((b, i) => (
+          <div key={b.bucket}
+            className={'rlrow' + (hover === b.bucket ? ' hov' : '')}
+            onClick={() => setScope?.({ kind: bucketType, key: b.bucket })}
+            onMouseEnter={() => setHover(b.bucket)} onMouseLeave={() => setHover(null)}
+            style={{ cursor: 'pointer' }}>
+            <div className="r mono dim">{i + 1}</div>
+            <div className="tk" style={{ color: `var(${bucketColorVar(b.bucket)})` }}>{b.bucket}</div>
+            <div className="r mono">{b.level?.toFixed(1) ?? '—'}</div>
+            <div className="r mono" style={{ color: (b.slope_4w ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>
+              {(b.slope_4w ?? 0) >= 0 ? '▲' : '▼'}{Math.abs(b.slope_4w ?? 0).toFixed(1)}
             </div>
-            {league.map((b, i) => (
-              <div key={b.bucket}
-                className={'rlrow' + (hover === b.bucket ? ' hov' : '')}
-                onClick={() => setScope?.({ kind: 'sector', key: b.bucket })}
-                onMouseEnter={() => setHover(b.bucket)} onMouseLeave={() => setHover(null)}
-                style={{ cursor: 'pointer' }}>
-                <div className="r mono dim">{i + 1}</div>
-                <div className="tk" style={{ color: `var(${bucketColorVar(b.bucket)})` }}>{b.bucket}</div>
-                <div className="r mono">{b.level?.toFixed(1) ?? '—'}</div>
-                <div className="r mono" style={{ color: (b.slope_4w ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>
-                  {(b.slope_4w ?? 0) >= 0 ? '▲' : '▼'}{Math.abs(b.slope_4w ?? 0).toFixed(1)}
-                </div>
-                <div>
-                  <span className="qchip" style={{ color: `var(${STATE_META[b.state].cssVar})`, borderColor: `var(${STATE_META[b.state].cssVar})` }}>
-                    {STATE_META[b.state].label}
-                  </span>
-                </div>
-                <div className="r mono dim">{b.breadth_ma50?.toFixed(0) ?? '—'}%</div>
-                <div className="r mono dim">{b.agg_evs?.toFixed(1) ?? '—'}</div>
-              </div>
-            ))}
+            <div>
+              <span className="qchip" style={{ color: `var(${STATE_META[b.state].cssVar})`, borderColor: `var(${STATE_META[b.state].cssVar})` }}>
+                {STATE_META[b.state].label}
+              </span>
+            </div>
+            <div className="r mono dim">{b.breadth_ma50?.toFixed(0) ?? '—'}%</div>
+            <div className="r mono dim">{b.agg_evs?.toFixed(1) ?? '—'}</div>
           </div>
-          <div className="foot">
-            所有 sector 的 RS-Ratio（相对 SPY）叠一张图：<b>高度=level</b>（&gt;100 跑赢自身近期趋势）、<b>斜率=momentum</b>、线交叉=leadership
-            换手。hover 高亮一条其余变淡、右缘按末值排序贴标签；<b>点一行/线 → 钻进该 sector</b>（set 全局 scope，跨 tab 粘滞、可一键清）。
-            下表按 level 排序，<b>Δ4w=斜率</b>。as_of {data.as_of_date} · {data.count} sector · params n1={data.params.n1_ema}/n2=
-            {data.params.n2_window}/k={data.params.k}（透明 reconstruction，不复刻 StockCharts/de Kempenaer 数值）。
-          </div>
-        </>
-      )}
+        ))}
+      </div>
+      <div className="foot">
+        所有 {noun} 的 RS-Ratio（相对 SPY）叠一张图：<b>高度=level</b>（&gt;100 跑赢自身近期趋势）、<b>斜率=momentum</b>、线交叉=leadership
+        换手。hover 高亮一条其余变淡、右缘按末值排序贴标签；<b>点一行/线 → 钻进该 {noun}</b>（set 全局 scope，跨 tab 粘滞、可一键清）。
+        {isTheme ? ' theme 成员取自 point-in-time membership，指数非市值加权（exposure-weighted + cap，绝不让单票主导）。' : ''}
+        下表按 level 排序，<b>Δ4w=斜率</b>。as_of {active.as_of_date} · {active.count} {noun} · params n1={active.params.n1_ema}/n2=
+        {active.params.n2_window}/k={active.params.k}（透明 reconstruction，不复刻 StockCharts/de Kempenaer 数值）。
+      </div>
     </div>
   )
 }
