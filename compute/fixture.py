@@ -11,10 +11,11 @@ tool fabricates a deterministic universe / daily_bars / spx_daily / fundamentals
 ingest uses, so downstream `make compute` + the exporters read the real engine
 code path on reproducible inputs, with no network.
 
-It writes the five source tables (universe / daily_bars / spx_daily / fundamentals_q
-+ bucket_bars for M3 rotation). Run `make compute` (run.py + valuation.py) afterwards
-to fill derived_daily + valuation_daily with the real engine, then any exporter
-(export/board.py …). `make fixture-pipeline` chains fixture -> compute.
+It writes the five byte-stable source tables (universe / daily_bars / spx_daily /
+fundamentals_q + bucket_bars for M3 rotation) plus theme_membership (M4.1, point-in-time).
+Run `make compute` (run.py + valuation.py) afterwards to fill derived_daily +
+valuation_daily with the real engine, then any exporter (export/board.py …).
+`make fixture-pipeline` chains fixture -> compute.
 
 Edge cases baked in (so verification actually exercises the branchy paths the web
 surfaces care about — see m1-web-export-verification):
@@ -25,6 +26,8 @@ surfaces care about — see m1-web-export-verification):
   - one ticker with NO fundamentals     -> valuation coverage < universe count
   - a wide spread of drifts             -> wide composite spread, gap-free ranks
   - sectors/exchanges cycled            -> scope=sector group-by has something to bucket
+  - theme_membership over 2 as_of dates -> point-in-time members (M4): many-to-many, an
+                                           exposure restatement, a later join, a drop (exp=0)
 
 Determinism: every random draw comes from one numpy Generator seeded by --seed,
 consumed in a fixed order, and the calendar is anchored to --end-date (default a
@@ -196,8 +199,54 @@ def build_bucket_bars(con, rng: np.random.Generator, dates: list[date], days: in
     return n
 
 
+# M4.1: synthetic theme_membership plan — deterministic (NO rng), so the five source
+# tables stay byte-identical. Exercises every point-in-time mechanic AC-M4 checks:
+# >=4 themes, two as_of snapshots, a many-to-many ticker, an exposure restatement, a
+# member that joins later, and a drop-via-exposure=0. Tuples are
+# (ticker_index 0-based, theme, exposure, snapshot) with snapshot in {'early','late'};
+# only indices that exist at the chosen --tickers size are emitted.
+THEME_AS_OF_EARLY_FRAC = 0.25   # first snapshot ~1/4 into the calendar
+THEME_AS_OF_LATE_FRAC = 0.75    # restatement ~3/4 in
+THEME_PLAN = [
+    (0, "AI", 0.80, "early"),    # TT01 -> AI + SEMI  (many-to-many, never MECE)
+    (0, "SEMI", 0.50, "early"),
+    (1, "AI", 0.55, "early"),    # TT02 AI, restated UP at 'late'
+    (2, "AI", 0.70, "early"),
+    (3, "SEMI", 0.65, "early"),  # TT04 SEMI, DROPPED at 'late'
+    (4, "SEMI", 0.60, "early"),
+    (5, "ROBO", 0.62, "early"),
+    (6, "ROBO", 0.58, "early"),
+    (7, "CLOUD", 0.66, "early"),
+    (8, "CLOUD", 0.60, "early"),
+    (1, "AI", 0.85, "late"),     # TT02 exposure 0.55 -> 0.85 (pre-'late' history keeps 0.55)
+    (9, "AI", 0.72, "late"),     # TT10 joins AI only at 'late' (not a member before)
+    (3, "SEMI", 0.00, "late"),   # TT04 dropped: exposure=0 at 'late', pre-'late' still 0.65
+]
+
+
+def build_theme_membership(con, dates: list[date], tickers: int) -> dict:
+    """Land deterministic synthetic theme_membership (M4.1) from THEME_PLAN.
+
+    Called from build() AFTER every rng draw so it never perturbs the universe/bars/spx/
+    fundamentals/bucket byte stream. No rng of its own — fully deterministic from the
+    calendar + ticker count. The two as_of snapshots are real trading dates inside the
+    price history so the theme index (M4.2) can compose member closes at each. Returns a
+    summary dict."""
+    width = max(2, len(str(tickers)))
+    i_early = max(1, int(len(dates) * THEME_AS_OF_EARLY_FRAC))
+    i_late = min(len(dates) - 1, int(len(dates) * THEME_AS_OF_LATE_FRAC))
+    as_of = {"early": dates[i_early].isoformat(), "late": dates[i_late].isoformat()}
+    rows = [
+        (f"TT{idx + 1:0{width}d}", theme, float(exposure), as_of[snap], "seed", "fixture")
+        for idx, theme, exposure, snap in THEME_PLAN
+        if idx < tickers
+    ]
+    n = db.upsert_theme_membership(con, rows)
+    return {"rows": n, "themes": sorted({r[1] for r in rows}), "as_of": [as_of["early"], as_of["late"]]}
+
+
 def build(con, *, tickers: int, days: int, seed: int, end: date) -> dict:
-    """Populate the five source tables on `con` (incl. bucket_bars). Returns a summary dict."""
+    """Populate the source tables on `con` (5 byte-stable + theme_membership). Summary dict."""
     rng = np.random.default_rng(seed)
     dates = trading_days(end, days)
 
@@ -250,9 +299,13 @@ def build(con, *, tickers: int, days: int, seed: int, end: date) -> dict:
     db.upsert_spx(con, spx_bars)
     n_funda = sum(db.upsert_fundamentals(con, sym, rows) for sym, rows in funda_by_ticker if rows)
 
-    # M3.1: synthetic sector ETF series -> bucket_bars. Drawn LAST so the four tables
-    # above stay byte-identical; isolated from the universe cross-section (see docstring).
+    # M3.1: synthetic sector ETF series -> bucket_bars. Drawn LAST among rng consumers so
+    # the four tables above stay byte-identical; isolated from the universe cross-section.
     n_bucket = build_bucket_bars(con, rng, dates, days)
+
+    # M4.1: synthetic theme_membership — deterministic (no rng), so ALL five tables above
+    # stay byte-identical. Point-in-time multi-as_of membership for the offline M4 chain.
+    theme = build_theme_membership(con, dates, tickers)
 
     return {
         "tickers": tickers,
@@ -263,6 +316,9 @@ def build(con, *, tickers: int, days: int, seed: int, end: date) -> dict:
         "fundamentals": n_funda,
         "bucket_bars": n_bucket,
         "buckets": len(SECTORS),
+        "theme_membership": theme["rows"],
+        "themes": theme["themes"],
+        "theme_as_of": theme["as_of"],
         "profiles": profile_map,
     }
 
@@ -297,6 +353,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[fixture] seed={args.seed} tickers={s['tickers']} days={s['days']} ({lo} .. {hi})")
     print(f"[fixture] rows: daily_bars={s['bars']} spx_daily={s['spx']} "
           f"fundamentals_q={s['fundamentals']} bucket_bars={s['bucket_bars']} ({s['buckets']} sectors)")
+    print(f"[fixture] theme_membership={s['theme_membership']} "
+          f"({len(s['themes'])} themes: {', '.join(s['themes'])}; as_of {s['theme_as_of'][0]} .. {s['theme_as_of'][1]})")
     for prof in ("normal", "loss", "deep_loss", "stale", "overdue", "none"):
         syms = s["profiles"].get(prof, [])
         if syms:
