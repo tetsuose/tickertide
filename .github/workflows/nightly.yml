@@ -1,0 +1,72 @@
+name: nightly
+
+# EOD data pipeline (D.2, ROADMAP D 轨): real ingest -> compute -> export -> static
+# build -> artifact. The static client is worthless without fresh nightly data, so this
+# runs the REAL pipeline (D.1 proved the free sources reachable from a real host; this
+# job validates they're also reachable from a GitHub-hosted runner — the open risk
+# gate.yml flagged) and uploads the built site + data for D.3 (Cloudflare Pages) to
+# publish. NO secrets: EDGAR UA is a descriptive UA in ingest/edgar.py, the data sources
+# are public endpoints, and artifact upload uses the built-in GITHUB_TOKEN.
+# engine/index.py stays stdlib-only; only product deps (requirements.txt) are installed.
+
+on:
+  schedule:
+    # ~07:00 UTC Tue–Sat = ~02:00–03:00 ET the morning after each Mon–Fri close (EOD
+    # data settled; DST shifts ET ±1h — fine for an overnight run). Adjust freely.
+    - cron: "0 7 * * 2-6"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "top-N by mktcap for bars (D.1 AC ≥500; pass a small value for a quick smoke)"
+        default: "500"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install product deps (engine/index.py stays stdlib-only)
+        run: pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: web deps
+        run: cd web && npm ci
+
+      - name: real pipeline (ingest+sector_etf -> fundamentals -> compute -> check)
+        run: make pipeline PIPELINE_ARGS="--limit ${{ github.event.inputs.limit || '500' }}"
+
+      - name: export (board + ocean + rotation)
+        run: make export
+
+      - name: cross-surface C9 (rotation + ocean ↔ board)
+        run: |
+          make rotation-c9
+          make ocean-c9
+
+      - name: web build (static dist, data bundled from public/data)
+        run: cd web && npm run build
+
+      - name: upload site + data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tickertide-site
+          path: |
+            web/dist
+            web/public/data
+          if-no-files-found: error
+          retention-days: 7

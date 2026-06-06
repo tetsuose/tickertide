@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-06T04:46:43.007985+00:00",
+  "updated_at": "2026-06-06T04:52:13.899511+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -49,6 +49,18 @@
         "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖；其价值是 PR 上留客观健康记录并验证小写路径",
         "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK；gate 输出可见；board.json 作为 artifact 上传"
       }
+    },
+    {
+      "path": ".github/workflows/nightly.yml",
+      "kind": "config",
+      "module": ".github",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "夜间 EOD 数据管道(D.2)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact 供 D.3 发布",
+        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)、零 secret(EDGAR UA 明文于 edgar.py、artifact 用内置 GITHUB_TOKEN)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；workflow_dispatch input limit 可手测小规模；schedule 只产 artifact 不触发 deploy(D.3 才发布)；M4 theme export 未接 Makefile→nightly 暂不产 theme.json(M4 follow-up)",
+        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；engine 不装 deps"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -339,6 +351,7 @@
       }
     },
     {
+      "notes": "",
       "path": "docs/runtime/Real-Ingest-Notes.md",
       "kind": "doc",
       "module": "docs",
@@ -347,8 +360,7 @@
         "purpose": "D.1 真实 ingest 冒烟笔记：真实数据三源状态 + 坑/修复(sector 归一 / Yahoo 429 yfinance 库绕过 / EDGAR concept) + 规模时间 + D.2/D.3 解锁",
         "invariants": "记录首次真实数据端到端(2026-06-05)：AC-M0 真实 CHECK_OK + rotation-c9/ocean-c9 PASS；坑清单有明确消费者(D.2 nightly 配置 / 真实 ingest debug)；secrets 走 Actions secret 不入库；names/counts only 无 secrets",
         "verification": "对照 D.1 真实 pipeline+export 输出；nasdaq.py NASDAQ_TO_GICS 归一与本 note 表格一致"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1048,5 +1060,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "26862ad75d8e9fad7d0bf8fac1dbbb4bf2b9f096285f03e35ee6ed3b2d767ed7"
+  "last_structure_digest": "9a5647be51606469190d8f46fbc5356a59d90716f52cf4c68e956b4363731a84"
 }
