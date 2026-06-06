@@ -87,6 +87,13 @@ def upsert_bucket_bars(
     return len(payload)
 
 
+def clear_bucket_bars(con: duckdb.DuckDBPyConnection, bucket_type: str) -> None:
+    """Delete one bucket_type's bars (e.g. 'theme' before a full theme-index rebuild),
+    leaving the other type intact — sector ETF rows (M3) and theme index rows (M4) share
+    the table but are rebuilt by different steps."""
+    con.execute("DELETE FROM bucket_bars WHERE bucket_type = ?", [bucket_type])
+
+
 def count(con: duckdb.DuckDBPyConnection, table: str) -> int:
     return con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
 
@@ -179,8 +186,14 @@ def read_bucket_bars(con: duckdb.DuckDBPyConnection, bucket_type: str, bucket: s
     ).df()
 
 
-def clear_bucket_rrg(con: duckdb.DuckDBPyConnection) -> None:
-    con.execute("DELETE FROM bucket_rrg")
+def clear_bucket_rrg(con: duckdb.DuckDBPyConnection, bucket_type: str | None = None) -> None:
+    """Delete bucket_rrg rows. `bucket_type` scopes the wipe to one type so a theme
+    rebuild (M4.3) leaves the sector RS-Ratio series intact (both share the table);
+    None clears all (back-compat)."""
+    if bucket_type is None:
+        con.execute("DELETE FROM bucket_rrg")
+    else:
+        con.execute("DELETE FROM bucket_rrg WHERE bucket_type = ?", [bucket_type])
 
 
 def upsert_bucket_rrg(
@@ -200,3 +213,68 @@ def read_bucket_rrg(con: duckdb.DuckDBPyConnection, bucket_type: str = "sector")
         "SELECT bucket, date, rs, rs_ratio FROM bucket_rrg WHERE bucket_type = ? ORDER BY bucket, date",
         [bucket_type],
     ).df()
+
+
+# --- M4.1 theme membership (point-in-time; PRD §7 C3, §8.3) ---
+
+def upsert_theme_membership(con: duckdb.DuckDBPyConnection, rows: Sequence[Sequence]) -> int:
+    """INSERT OR REPLACE theme_membership. Each row =
+    (ticker, theme, exposure, as_of_date, source, approved_by). Point-in-time: a restated
+    membership is a NEW row at a NEW as_of_date for the same (ticker,theme), never an
+    in-place edit (C3) — REPLACE only overwrites a same-as_of correction, not history."""
+    if not rows:
+        return 0
+    payload = [tuple(r) for r in rows]
+    con.executemany(
+        "INSERT OR REPLACE INTO theme_membership VALUES (?, ?, ?, ?, ?, ?)", payload
+    )
+    return len(payload)
+
+
+def clear_theme_membership(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("DELETE FROM theme_membership")
+
+
+def theme_membership_asof(
+    con: duckdb.DuckDBPyConnection,
+    as_of,
+    *,
+    theme: str | None = None,
+    ticker: str | None = None,
+):
+    """Point-in-time theme membership as-of `as_of` — the SINGLE source of truth for
+    "who is in a theme at time t" (PRD §7 C3). Consumers: theme index (theme_index.py,
+    M4.2, narrow by theme=), Stock/Discovery chips (board.py, M4.4, narrow by ticker=).
+
+    Semantics (must not drift — fix here, not in callers):
+      per (ticker, theme) take the row with the latest as_of_date <= as_of, THEN keep it
+      only if exposure > 0. The exposure>0 filter is applied AFTER picking the latest row,
+      so an exposure=0 restatement at date X drops the member as-of X while the pre-X
+      snapshots still resolve to the old positive exposure (anti-retroactive history).
+
+    Returns a DataFrame[ticker, theme, exposure, as_of_date, source, approved_by],
+    ordered theme, exposure desc, ticker.
+    """
+    sql = (
+        "SELECT ticker, theme, exposure, as_of_date, source, approved_by FROM ("
+        "  SELECT ticker, theme, exposure, as_of_date, source, approved_by,"
+        "         row_number() OVER (PARTITION BY ticker, theme ORDER BY as_of_date DESC) AS rn"
+        "  FROM theme_membership WHERE as_of_date <= ?"
+        ") WHERE rn = 1 AND exposure > 0"
+    )
+    params: list = [as_of]
+    if theme is not None:
+        sql += " AND theme = ?"
+        params.append(theme)
+    if ticker is not None:
+        sql += " AND ticker = ?"
+        params.append(ticker)
+    sql += " ORDER BY theme, exposure DESC, ticker"
+    return con.execute(sql, params).df()
+
+
+def theme_keys(con: duckdb.DuckDBPyConnection) -> list[str]:
+    """Distinct theme keys present in theme_membership (any as_of)."""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT theme FROM theme_membership ORDER BY theme"
+    ).fetchall()]

@@ -5,7 +5,7 @@
 // NAMES (附录 C sector vars via ocean-draw); the SVG resolves var() itself, so no hex
 // palette is needed here (that was a canvas concern). UX contract: docs/equity-monitor-v2.jsx
 // RSRatioLines / SoloRSLine.
-import { SECTOR_VAR } from './ocean-draw'
+import { SECTOR_VAR, THEME_VAR } from './ocean-draw'
 
 export interface Geom {
   W: number
@@ -157,7 +157,8 @@ export function gridTicks(sc: LineScale, step = 2): number[] {
   return out
 }
 
-/** CSS-var name for a bucket's line color (附录 C sector vars; themes land M4). */
+/** CSS-var name for a bucket's line color: GICS sector name -> SECTOR_VAR, theme key ->
+ *  THEME_VAR (附录 C; sector names and theme keys don't collide). Fallback --dim2. */
 export function bucketColorVar(bucket: string): string {
-  return SECTOR_VAR[bucket] ?? '--dim2'
+  return SECTOR_VAR[bucket] ?? THEME_VAR[bucket] ?? '--dim2'
 }
