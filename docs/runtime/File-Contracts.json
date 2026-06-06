@@ -46,8 +46,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "advisory CI：每次 push/PR 在 Linux runner 跑 devtopology gate(make verify + make health) 与离线合成管道验证(fixture→compute→valuation→export→check)",
-        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖；其价值是 PR 上留客观健康记录并验证小写路径",
-        "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK；gate 输出可见；board.json 作为 artifact 上传"
+        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖；其价值是 PR 上留客观健康记录并验证小写路径；所用 actions 维持受 GitHub 支持的 Node24 runtime、不依赖已弃用的 node20 runtime",
+        "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK；gate 输出可见；board.json 作为 artifact 上传；workflow 运行无 Node20 runtime 弃用告警"
       }
     },
     {
@@ -58,8 +58,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "夜间 EOD 数据管道(D.2)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact 供 D.3 发布",
-        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)、零 secret(EDGAR UA 明文于 edgar.py、artifact 用内置 GITHUB_TOKEN)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；workflow_dispatch input limit 可手测小规模；schedule 只产 artifact 不触发 deploy(D.3 才发布)；M4 theme export 未接 Makefile→nightly 暂不产 theme.json(M4 follow-up)",
-        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；engine 不装 deps"
+        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)、零 secret(EDGAR UA 明文于 edgar.py、artifact 用内置 GITHUB_TOKEN)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；workflow_dispatch input limit 可手测小规模；schedule 只产 artifact 不触发 deploy(D.3 才发布)；M4 theme export 未接 Makefile→nightly 暂不产 theme.json(M4 follow-up)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
+        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；engine 不装 deps；workflow_dispatch 手测无 Node20 runtime 弃用告警"
       }
     },
     {
