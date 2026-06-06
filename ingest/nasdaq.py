@@ -29,6 +29,23 @@ def _num(s) -> float | None:
         return None
 
 
+# Nasdaq screener uses its own sector taxonomy; map the divergent names to the GICS-ish
+# names the rest of the spine uses, so universe.sector joins ingest/sector_etf_map.txt's
+# GICS buckets in the rotation league (a D.1 real-data finding — the four below diverge;
+# the other 7 already match GICS and pass through). "Miscellaneous" has no GICS sector →
+# kept as-is, so its tickers simply don't join any SPDR sector bucket.
+NASDAQ_TO_GICS = {
+    "Technology": "Information Technology",
+    "Finance": "Financials",
+    "Telecommunications": "Communication Services",
+    "Basic Materials": "Materials",
+}
+
+
+def _gics_sector(nasdaq_sector: str | None) -> str | None:
+    return NASDAQ_TO_GICS.get(nasdaq_sector, nasdaq_sector) if nasdaq_sector else None
+
+
 def fetch_universe(exchanges: tuple[str, ...] = EXCHANGES, timeout: int = 40) -> list[dict]:
     """Return deduped universe rows (keep the largest-mktcap dup of any ticker)."""
     by_ticker: dict[str, dict] = {}
@@ -45,7 +62,7 @@ def fetch_universe(exchanges: tuple[str, ...] = EXCHANGES, timeout: int = 40) ->
                 "ticker": sym,
                 "name": (r.get("name") or "").strip() or None,
                 "exchange": ex,
-                "sector": (r.get("sector") or "").strip() or None,
+                "sector": _gics_sector((r.get("sector") or "").strip() or None),
                 "industry": (r.get("industry") or "").strip() or None,
                 "country": (r.get("country") or "").strip() or None,
                 "mktcap": _num(r.get("marketCap")),

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T16:06:47.734944+00:00",
+  "updated_at": "2026-06-05T21:56:17.295164+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -327,6 +327,18 @@
       }
     },
     {
+      "path": "docs/runtime/Real-Ingest-Notes.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "D.1 真实 ingest 冒烟笔记：真实数据三源状态 + 坑/修复(sector 归一 / Yahoo 429 yfinance 库绕过 / EDGAR concept) + 规模时间 + D.2/D.3 解锁",
+        "invariants": "记录首次真实数据端到端(2026-06-05)：AC-M0 真实 CHECK_OK + rotation-c9/ocean-c9 PASS；坑清单有明确消费者(D.2 nightly 配置 / 真实 ingest debug)；secrets 走 Actions secret 不入库；names/counts only 无 secrets",
+        "verification": "对照 D.1 真实 pipeline+export 输出；nasdaq.py NASDAQ_TO_GICS 归一与本 note 表格一致"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "docs/runtime/Secrets-Inventory.example.yaml",
       "kind": "doc",
@@ -399,6 +411,7 @@
       }
     },
     {
+      "notes": "",
       "path": "export/check_rotation.py",
       "kind": "script",
       "module": "export",
@@ -407,8 +420,7 @@
         "purpose": "M3.5 C9 跨 surface 校验：rotation.json league 与 board.json 同 sector 成员聚合一致（仿 check_ocean，AC-M3 风险表「league 聚合与 Discovery 数字一致」）",
         "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 sector 成员数、composite_median==median(board 同 sector composite)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐 rotation/board，已注释标注)",
         "verification": "make rotation-c9：fixture-pipeline+export 后 GATE_PASS、member_count/composite_median 11 sector 逐一致；mismatch 退非 0"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
@@ -478,7 +490,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "从 Nasdaq screener download 端点拉取 US 股票 universe（含 sector/industry/mktcap）",
-        "invariants": "需 browser-like User-Agent 否则空响应；三交易所即 US-listed（ADR 允许）；按 ticker dedup 保留大 mktcap",
+        "invariants": "需 browser-like User-Agent 否则空响应；三交易所即 US-listed（ADR 允许）；按 ticker dedup 保留大 mktcap；sector 经 NASDAQ_TO_GICS 归一到 GICS 名(Technology→Information Technology 等 4 个分歧名、Miscellaneous 无对应保留)，使 universe.sector join rotation 的 sector_etf_map(GICS)、league 不断(D.1 真实数据修)",
         "verification": "fetch_universe 返回 ≥500 行且 sector/mktcap 多数非空；含 NASDAQ/NYSE/AMEX"
       }
     },
@@ -988,5 +1000,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "85d80d89d704db202f7357fcf3803e7f8432393a43187b05057c12b99bd5f909"
+  "last_structure_digest": "a595987466822e34660cdf59b6730bf56e81bd83677291111bf268032daea42e"
 }
