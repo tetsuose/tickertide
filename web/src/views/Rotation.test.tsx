@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import Rotation from './Rotation'
 import sample from '../lib/__fixtures__/rotation.sample.json'
+import themeSample from '../lib/__fixtures__/rotation.theme.sample.json'
 import type { RotationData, Scope } from '../types'
 import { multiScale, linePath, soloScale, soloSegments, endLabels } from '../lib/rotation-draw'
 
@@ -49,6 +50,35 @@ describe('Rotation drill (scope=sector)', () => {
   })
 
   it('offers the "see all members in Discovery" scope+jump action', () => {
+    expect(html).toContain('在 Discovery 看全部成员')
+  })
+})
+
+describe('Rotation theme mode (M4.4)', () => {
+  const themeData = themeSample as unknown as RotationData
+  const overview = renderToStaticMarkup(<Rotation initial={themeData} scope={ALL} />)
+
+  it('renders one RS-Ratio line per theme — not the old M4 placeholder', () => {
+    const paths = overview.match(/<path /g) ?? []
+    expect(paths.length).toBe(themeData.count)
+    expect(themeData.bucket_type).toBe('theme')
+    expect(overview).not.toContain('待 M4')
+  })
+
+  it('colors theme lines with THEME_VAR (--th-*) and lists each theme', () => {
+    expect(overview).toContain('--th-') // theme color vars, not sector --dim2 fallback
+    for (const b of themeData.buckets) expect(overview).toContain(b.bucket)
+  })
+
+  it('flags the point-in-time / non-market-cap basis (C3/C4)', () => {
+    expect(overview).toContain('非市值加权')
+  })
+
+  it('drills a theme (scope.kind=theme) → N=1 solo line + member preview', () => {
+    const th = themeData.buckets[0].bucket
+    const html = renderToStaticMarkup(<Rotation initial={themeData} scope={{ kind: 'theme', key: th }} />)
+    expect(html).toContain(th)
+    expect(html).toContain('单条放大')
     expect(html).toContain('在 Discovery 看全部成员')
   })
 })
