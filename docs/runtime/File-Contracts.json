@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-05T16:06:47.734944+00:00",
+  "updated_at": "2026-06-06T01:54:10.682632+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -141,9 +141,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写（M0–M3）",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、clear/upsert/read_bucket_rrg 管周线 RS-Ratio 序列)同隔离原则",
-        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等"
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1)",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、clear/upsert/read_bucket_rrg 管周线 RS-Ratio 序列)同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理",
+        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确"
       }
     },
     {
@@ -153,9 +153,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "合成 DuckDB fixture：确定性造 universe/daily_bars/spx_daily/fundamentals_q + bucket_bars(11 条合成 sector ETF 序列，供离线验证 M3 rotation)，供无网络环境（CI/sandbox，真实 ingest 依赖 api.nasdaq.com + Yahoo 常不可达）离线验证 compute/export/web —— 经 compute/db.py 真实 upsert 落库后喂真实引擎，验证的是生产读路径而非造数",
-        "invariants": "写五张源表(universe/daily_bars/spx_daily/fundamentals_q + bucket_bars)、绝不写 derived_daily/valuation_daily(那是引擎的活，须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；合成 11 sector ETF 经 db.upsert_bucket_bars 落 bucket_bars(bucket=GICS 名、与真实 sector_etf.py 同写入路径)、绝不进 universe 横截面、且造数放在所有现有 rng 消费之后(尾部 draw) → 不扰动既有 draw 顺序、daily_bars/spx_daily/fundamentals_q 保字节不变(M1/M2 提交版 fixture 依赖此)；内建边缘票 eps<0(P/E n.m.→P/S)·ebitda<0(EV/EBITDA n.m.→EV/S)·stale/overdue 申报(as-of freshness 分档)·无基本面票(valuation 覆盖缺口)，默认 30 票×320 日(≥25×≥260 暖 MA200/252d高/126d收益)；属产品代码用 venv 依赖(numpy/duckdb，非 engine stdlib-only 范畴)；是 dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)保证只含合成数据",
-        "verification": "make fixture 产出五源表非空(bucket_bars=11 sector×days)；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py 顶层 composite_recon_max_drift≈0(C9)；抽查 board.json：loss 票 pe=null 且 ps 非空、deep_loss ev_ebitda=null、stale/overdue/无基本面三类各现、rank 无缝 1..N、composite 降序、无 NaN/Infinity；同 seed 两次重建 board.json sha256 一致；扩 ETF 后三源表(daily_bars/spx/fundamentals)sha256 与扩前一致(回归)、ETF ticker 不在 universe/daily_bars(隔离)"
+        "purpose": "合成 DuckDB fixture：确定性造 universe/daily_bars/spx_daily/fundamentals_q + bucket_bars(11 条合成 sector ETF 序列,离线验证 M3 rotation) + theme_membership(多 as_of point-in-time membership,离线验证 M4),供无网络环境(CI/sandbox,真实 ingest 依赖 api.nasdaq.com + Yahoo 常不可达)离线验证 compute/export/web —— 经 compute/db.py 真实 upsert 落库后喂真实引擎,验证生产读路径而非造数",
+        "invariants": "写五张字节稳定源表(universe/daily_bars/spx_daily/fundamentals_q + bucket_bars) + theme_membership、绝不写 derived_daily/valuation_daily(那是引擎的活,须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；合成 11 sector ETF 经 db.upsert_bucket_bars 落 bucket_bars(bucket=GICS 名)、绝不进 universe 横截面、且造数放在所有现有 rng 消费之后(尾部 draw)；theme_membership 由 THEME_PLAN 确定性生成(无 rng draw)、置于 bucket_bars 之后 → 上述五表 daily_bars/spx_daily/fundamentals_q/bucket_bars/universe 保字节不变(M1/M2/M3 提交版 fixture 依赖此);theme 造数覆盖 AC-M4 全部 PIT 机制:≥4 theme、2 个 as_of、多对多(TT01∈AI+SEMI)、exposure restatement、late-join、drop-via-exposure=0,exposure∈[0,1] 连续、approved_by 必填(C6);内建边缘票 eps<0/ebitda<0/stale/overdue/无基本面,默认 30 票×320 日；属产品代码用 venv 依赖(numpy/duckdb,非 engine stdlib-only 范畴)；dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)只含合成数据",
+        "verification": "make fixture 产出五源表非空(bucket_bars=11 sector×days) + theme_membership(默认 13 行,4 theme,2 as_of)；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py composite_recon_max_drift≈0(C9)；同 seed 两次重建五表 sha256 一致、且扩 theme_membership 前后五表(universe/daily_bars/spx/fundamentals/bucket_bars)sha256 不变(回归);PIT 断言:db.theme_membership_asof 早快照=改写前 exposure、晚快照见 restatement/drop/late-join、未来 as_of 不污染早快照(C3)、exposure∈[0,1]、approved_by 非空"
       }
     },
     {
@@ -399,6 +399,7 @@
       }
     },
     {
+      "notes": "",
       "path": "export/check_rotation.py",
       "kind": "script",
       "module": "export",
@@ -407,8 +408,7 @@
         "purpose": "M3.5 C9 跨 surface 校验：rotation.json league 与 board.json 同 sector 成员聚合一致（仿 check_ocean，AC-M3 风险表「league 聚合与 Discovery 数字一致」）",
         "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 sector 成员数、composite_median==median(board 同 sector composite)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐 rotation/board，已注释标注)",
         "verification": "make rotation-c9：fixture-pipeline+export 后 GATE_PASS、member_count/composite_median 11 sector 逐一致；mismatch 退非 0"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
@@ -513,9 +513,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)",
-        "verification": "compute.db.connect 应用后九表存在(含 bucket_bars/bucket_rrg)；重复 connect 不报错"
+        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) + theme_membership(多对多 ticker↔theme 连续 exposure,point-in-time) 建表 DDL",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此",
+        "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错"
       }
     },
     {
@@ -585,9 +585,9 @@
       "module": ".",
       "stage": "implemented",
       "contract": {
-        "purpose": "产品运行时依赖声明（duckdb / yfinance / pandas / numpy）",
-        "invariants": "不含 engine/index.py 会 import 的依赖（gate 引擎须 stdlib only）；用 venv 安装",
-        "verification": "pip install -r 后 import duckdb / yfinance / pandas / numpy 成功"
+        "purpose": "产品运行时依赖声明（duckdb / yfinance / pandas / numpy / pyyaml）",
+        "invariants": "不含 engine/index.py 会 import 的依赖（gate 引擎须 stdlib only）；用 venv 安装；pyyaml 仅供 themes/(theme 定义解析)、engine 不 import 故零依赖约束不破",
+        "verification": "pip install -r 后 import duckdb / yfinance / pandas / numpy / yaml 成功"
       }
     },
     {
@@ -661,6 +661,30 @@
         "invariants": "point-in-time membership 硬要求；主题指数非市值加权；LLM 为候选生成器+抽取器，human-in-loop 审批",
         "verification": "方法与约束与 PRD §8、§7 一致；输出表对齐 §12"
       }
+    },
+    {
+      "path": "themes/seed.py",
+      "kind": "script",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "从 ingest/universe_seed.txt 的主题分组结构化出 bootstrap theme_membership(point-in-time 基线快照)：按 themes.yaml 的 seed_header 数据驱动把段头映射到 theme,写 exposure 初值 + 单一 baseline as_of + source=seed + approved_by=seed,经 compute/db.upsert_theme_membership 落库",
+        "invariants": "是 LLM/EDGAR 营收锚定(M4.5)前的确定性兜底、粗初值非权威：exposure=SEED_EXPOSURE 平值、approved_by='seed'(未经 human 审批的哨兵,C6)、单一 baseline as_of_date；映射纯数据驱动(seed_header)无代码硬编码观点,reset-on-comment 解析令未识别段头下的 ticker 显式 unmapped 而非静默误配；多对多由数据天然支持(同票列两段→两行),当前 seed 每票一段、真实 overlap(NVDA∈AI+SEMI)按设计留 M4.5 营收锚定;幂等(clear 后全量重写,source=seed 完全派生);依赖 PyYAML(产品代码,engine/index.py 仍 stdlib-only)",
+        "verification": "python3 themes/seed.py --dry-run 报 8 theme、universe_seed 48 票全部映射且零 unmapped；--db 写库后 db.theme_keys()=8、代表票各归位(NVDA∈AI / AMD∈SEMI / CRWD∈CYBR / RKLB∈SPACE / SNOW∈CLOUD / ISRG∈ROBO / COHR∈OPTIC / CEG∈NUKE)；全行 source=seed、approved_by=seed、exposure=0.6"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/themes.yaml",
+      "kind": "config",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "8 个 concept theme 定义的单一真源：key/name/color_var(--th-*)/cap/seed_header/description/keywords。被 themes/seed.py(据 seed_header 映射 universe_seed 分组 + 校验 key)、compute/theme_index.py(cap 限权,M4.2)、themes/extract.py(keywords 喂 LLM 候选,M4.5)、web theme.css/THEME_VAR(镜像 color_var→hex)消费",
+        "invariants": "8 theme = AI/ROBO/SPACE/OPTIC/SEMI/NUKE/CYBR/CLOUD(PRD §8.2 / 附录 C)；color_var 对齐 web theme.css 的 --th-*(本文件为权威,web 镜像)；cap=theme index 单票权重上限(非市值加权 C4,M4.2 消费)、当前 0.30、按真实成员 just-in-time 调(不回测 alpha 买 robustness)；seed_header 精确匹配 universe_seed.txt 段头(数据驱动映射,改段头须同步)；只定义 theme 不分配 ticker(membership 在 theme_membership 表,point-in-time)；多对多绝不 MECE",
+        "verification": "yaml.safe_load 得 themes 列表 8 条、每条含 key/name/color_var/cap/seed_header/description/keywords；color_var 均见 web/src/theme.css；themes/seed.py 据 seed_header 把 universe_seed.txt 48 票映射到 8 theme、零 unmapped"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -988,5 +1012,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "85d80d89d704db202f7357fcf3803e7f8432393a43187b05057c12b99bd5f909"
+  "last_structure_digest": "6bc29544be741a5cc8d0f6dbe71c6626eb72bd35f759adfcf6b87aee0dca16da"
 }

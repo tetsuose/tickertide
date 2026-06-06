@@ -123,6 +123,36 @@ CREATE TABLE IF NOT EXISTS segment_revenue (
   PRIMARY KEY (ticker, period_end, segment)
 );
 
+-- theme_membership: many-to-many ticker<->concept-theme with continuous exposure,
+-- point-in-time (M4.1). Theme keys + colour/cap defined in themes/themes.yaml
+-- (AI/ROBO/SPACE/OPTIC/SEMI/NUKE/CYBR/CLOUD). NVDA in both AI and SEMI is a feature,
+-- never forced MECE (PRD §8.2). Feeds the theme index (compute/theme_index.py, M4.2,
+-- bucket_bars[bucket_type='theme']) and Stock/Discovery chips (export/board.py, M4.4).
+--
+-- POINT-IN-TIME (C3, PRD §7) — the hard invariant:
+--   as_of_date carries history; the SAME (ticker,theme) gets a NEW row each time the
+--   membership is restated, NEVER an in-place edit. Member@t = per (ticker,theme) the
+--   row with the latest as_of_date <= t, KEPT only if its exposure > 0 (an exposure=0
+--   row at date X drops the member as-of X without rewriting the pre-X history). Editing
+--   a later as_of must never move an earlier snapshot, or theme RS-Ratio lines / Ocean
+--   trails become fiction. Canonical query lives once in compute/db.theme_membership_asof.
+--
+-- exposure  : continuous revenue-share weight in [0,1] (NOT binary; PRD §8.3). The theme
+--             index caps it per themes.yaml so one mega-cap can't dominate (C4) — capping
+--             is an index-build concern (M4.2), exposure itself stays the raw share here.
+-- source    : 'seed' (themes/seed.py from universe_seed groups) | 'llm' | 'manual'.
+-- approved_by: human-in-loop approver, REQUIRED (C6 — LLM is candidate generator, never
+--             the authority); 'seed' marks bootstrap rows not yet human-reviewed.
+CREATE TABLE IF NOT EXISTS theme_membership (
+  ticker       VARCHAR,
+  theme        VARCHAR,   -- theme key (see themes/themes.yaml)
+  exposure     DOUBLE,    -- continuous revenue-share weight, [0,1]
+  as_of_date   DATE,      -- point-in-time: reflects only info disclosed as-of this date
+  source       VARCHAR,   -- 'seed' | 'llm' | 'manual'
+  approved_by  VARCHAR,   -- human-in-loop approver (C6); 'seed' for bootstrap rows
+  PRIMARY KEY (ticker, theme, as_of_date)
+);
+
 -- valuation_daily: daily multiples = price/EV ÷ trailing-4Q financials (M0.4).
 -- ASOF-aligned on filed_date (point-in-time, anti-lookahead); numerator is daily,
 -- denominator steps at each filing. E<=0 -> n.m. (pe NULL, fall back to ps).

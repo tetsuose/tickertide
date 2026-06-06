@@ -1,0 +1,86 @@
+# themes/themes.yaml — concept-theme definitions (M4). SINGLE SOURCE OF TRUTH for the
+# 8 themes: their keys, display names, colours, index weight caps, LLM keywords, and how
+# they map onto the universe_seed.txt coverage groups.
+#
+# Consumers:
+#   themes/seed.py          — validates theme keys + maps universe_seed.txt sections to
+#                             themes via `seed_header`, emitting bootstrap theme_membership.
+#   compute/theme_index.py  — `cap` bounds each member's weight so the theme index is NOT
+#                             cap-weighted (C4): "AI" must not collapse to NVDA alone (M4.2).
+#   themes/extract.py       — `keywords` seed the LLM candidate generator / revenue
+#                             extractor over EDGAR business+segment text (M4.5).
+#   web (theme.css / ocean-draw THEME_VAR) — MIRRORS `color_var` -> hex; this file is the
+#                             authority, the web CSS vars must stay in sync (PRD 附录 C).
+#
+# Themes are many-to-many and never MECE: a ticker (e.g. NVDA) legitimately belongs to
+# several themes (AI + SEMI). Membership lives in theme_membership (point-in-time); this
+# file only DEFINES the themes, it does not assign tickers.
+#
+# `cap` = max single-stock weight in the theme index (exposure-weighted then capped, M4.2).
+# Default 0.30 across themes for now; per-theme tuning is a just-in-time decision (PRD §17),
+# calibrated on real membership, never backtested for alpha (buy robustness, not alpha).
+
+themes:
+  - key: AI
+    name: AI
+    color_var: --th-ai          # #2ec07a
+    cap: 0.30
+    seed_header: "AI / mega-cap platforms"
+    description: Artificial-intelligence compute, models, and platform exposure.
+    keywords: [artificial intelligence, machine learning, generative AI, large language model, inference, AI accelerator, neural network]
+
+  - key: ROBO
+    name: Robotics
+    color_var: --th-robo        # #ff5d57
+    cap: 0.30
+    seed_header: "Robotics / automation"
+    description: Robotics, surgical/industrial automation, and autonomous systems.
+    keywords: [robotics, automation, autonomous, surgical robot, industrial robot, actuator, motion control]
+
+  - key: SPACE
+    name: Space Compute
+    color_var: --th-space       # #5197ff
+    cap: 0.30
+    seed_header: "Space compute"
+    description: Launch, satellites, and space-based compute/observation.
+    keywords: [space, satellite, launch vehicle, orbital, earth observation, rocket, constellation]
+
+  - key: OPTIC
+    name: Optical
+    color_var: --th-optic       # #e0a02e
+    cap: 0.30
+    seed_header: "Optical / networking"
+    description: Optical interconnect, transceivers, and photonic networking.
+    keywords: [optical, photonics, transceiver, silicon photonics, datacenter interconnect, laser, fiber]
+
+  - key: SEMI
+    name: Semiconductors
+    color_var: --th-semi        # #7c6bff
+    cap: 0.30
+    seed_header: "Semiconductors"
+    description: Semiconductor design, fabrication, and equipment.
+    keywords: [semiconductor, foundry, wafer, lithography, chip, fabless, memory, EDA]
+
+  - key: NUKE
+    name: Nuclear
+    color_var: --th-nuke        # #2ec0a0
+    cap: 0.30
+    seed_header: "Nuclear / power"
+    description: Nuclear generation, SMRs, fuel, and power for compute.
+    keywords: [nuclear, reactor, small modular reactor, SMR, uranium, enrichment, baseload power]
+
+  - key: CYBR
+    name: Cybersecurity
+    color_var: --th-cybr        # #ff8f3f
+    cap: 0.30
+    seed_header: "Cybersecurity"
+    description: Cybersecurity platforms, endpoint, network, and cloud security.
+    keywords: [cybersecurity, endpoint, zero trust, threat detection, firewall, SASE, identity, security operations]
+
+  - key: CLOUD
+    name: Cloud
+    color_var: --th-cloud       # #9aa7b5
+    cap: 0.30
+    seed_header: "Cloud / data"
+    description: Cloud data platforms, observability, and databases.
+    keywords: [cloud, data platform, observability, database, data warehouse, SaaS, analytics]
