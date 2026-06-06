@@ -393,9 +393,9 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M1.1 导出：DuckDB 最新快照 → web/public/data/board.json（Discovery evidence-first 卡流数据，per-stock 一条）",
-        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；输出为派生物、gitignore、不含任何 key",
-        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev；抽查 E≤0 票 pe=null 且 ps 非空、freshness 分档正确、无 NaN token、rank 连续且 composite 降序"
+        "purpose": "M1.1 导出：DuckDB 最新快照 → web/public/data/board.json（Discovery evidence-first 卡流数据，per-stock 一条）+ theme chips（point-in-time，M4.4）",
+        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；theme chips 经 db.theme_membership_asof 取 as-of snapshot 的 point-in-time membership(per theme 最新 as_of≤snap 且 exposure>0、多对多、按 exposure 降序)、绝非旧 naive 全历史扫描(多 as_of 票每 theme 仅一条不重复)、exposure 存 [0,1] 份额卡渲染为 %；输出为派生物、gitignore、不含任何 key",
+        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev；抽查 E≤0 票 pe=null 且 ps 非空、freshness 分档正确、无 NaN token、rank 连续且 composite 降序；theme chips point-in-time：多 as_of 票每 theme 一条非重复、改写后取最新 exposure、drop(exposure=0)不出 chip、多对多(TT01∈AI+SEMI)"
       }
     },
     {
@@ -417,9 +417,9 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M3.5 C9 跨 surface 校验：rotation.json league 与 board.json 同 sector 成员聚合一致（仿 check_ocean，AC-M3 风险表「league 聚合与 Discovery 数字一致」）",
-        "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 sector 成员数、composite_median==median(board 同 sector composite)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐 rotation/board，已注释标注)",
-        "verification": "make rotation-c9：fixture-pipeline+export 后 GATE_PASS、member_count/composite_median 11 sector 逐一致；mismatch 退非 0"
+        "purpose": "C9 跨 surface 校验(AC-M3/AC-M4)：rotation league 与 board.json 成员聚合一致；按 rotation 文件 bucket_type 分组 board 成员(sector→universe.sector / theme→board theme chips)，gate sector(rotation.json)与 theme(rotation.theme.json)两导出",
+        "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 bucket 成员数、composite_median==median(board 同 bucket composite)；theme 分组按 board 每票 themes chips(多对多：一票计入其每个 PIT theme)、故 theme league PIT 成员须与 board PIT theme chips 一致(闭环 theme C9)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐，已注释标注)",
+        "verification": "make rotation-c9(sector)：GATE_PASS、member_count/composite_median 11 sector 逐一致；theme：python3 export/check_rotation.py --rotation web/public/data/rotation.theme.json GATE_PASS(4 theme member_count/composite_median 逐一致、members⊆board)；mismatch 退非 0"
       }
     },
     {
@@ -441,9 +441,9 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M3.3 导出：DuckDB → web/public/data/rotation.json（Rotation RS-Ratio 多线序列 + enriched league，每 bucket 一条，供多线图 + league 表 + 钻进）",
-        "invariants": "读 bucket_rrg(周线 RS-Ratio 序列)对齐共享 weeks[](最近 N 周 union、缺失补 null，仿 ocean pts)；league 量经 compute.rotation.league_table 取自 derived_daily/valuation_daily 成员(与 Discovery/Ocean/Stock 同源 C9)；members 仅 top-N ticker(成员卡走 board.json scope filter、不重复造 DRY)；etf 从 sector_etf_map.txt 附加(审计)；params 暴露 n1/n2/k(透明 reconstruction 不复刻 StockCharts)；inline self_check(rs_ratio 对齐 weeks、weeks 老→新、末值非空)；输出 gitignored 紧凑 JSON；同 fixture seed 字节级可复现",
-        "verification": "make fixture-pipeline 后 python3 export/rotation.py：rotation.json 11 bucket、weeks=52、4 态(LEADING/WEAKENING/IMPROVING/LAGGING)、params 暴露、rs_ratio 对齐 weeks、members 非空、etf 齐；same seed 重导出 byte 一致"
+        "purpose": "rotation 导出：DuckDB → web/public/data/rotation.json(sector,M3.3) / rotation.theme.json(theme,M4.4)（RS-Ratio 多线序列 + enriched league，每 bucket 一条，供多线图 + league 表 + 钻进）",
+        "invariants": "读 bucket_rrg(周线 RS-Ratio 序列)对齐共享 weeks[](最近 N 周 union、缺失补 null，仿 ocean pts)；league 量经 compute.rotation.league_table 取自 derived_daily/valuation_daily 成员(与 Discovery/Ocean/Stock 同源 C9)；members 经 rotation._bucket_members 取 top-N ticker(sector→universe.sector / theme→theme_membership point-in-time 多对多；成员卡走 board.json scope filter 不重复造 DRY)；sector 附 etf(sector_etf_map.txt 审计)、theme 无 etf(None)；sector 与 theme 各写一文件(各自 weeks 轴/params；theme index 从首个 as_of 起故 weeks 可少于 sector)、web 按 GICS↔Theme toggle 载对应文件；params 暴露 n1/n2/k(透明 reconstruction 不复刻 StockCharts)；inline self_check(rs_ratio 对齐 weeks、weeks 老→新、末值非空)；输出 gitignored 紧凑 JSON；同 fixture seed 字节级可复现",
+        "verification": "make fixture-pipeline(+theme_index) 后 python3 export/rotation.py [--bucket-type sector|theme]：sector→rotation.json 11 bucket weeks=52、theme→rotation.theme.json ≥4 theme(members 取自 theme PIT、无 etf)；4 态、params 暴露、rs_ratio 对齐 weeks；theme C9(check_rotation --rotation rotation.theme.json)GATE_PASS；same seed 重导出 byte 一致"
       }
     },
     {
