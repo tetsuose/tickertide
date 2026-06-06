@@ -186,8 +186,14 @@ def read_bucket_bars(con: duckdb.DuckDBPyConnection, bucket_type: str, bucket: s
     ).df()
 
 
-def clear_bucket_rrg(con: duckdb.DuckDBPyConnection) -> None:
-    con.execute("DELETE FROM bucket_rrg")
+def clear_bucket_rrg(con: duckdb.DuckDBPyConnection, bucket_type: str | None = None) -> None:
+    """Delete bucket_rrg rows. `bucket_type` scopes the wipe to one type so a theme
+    rebuild (M4.3) leaves the sector RS-Ratio series intact (both share the table);
+    None clears all (back-compat)."""
+    if bucket_type is None:
+        con.execute("DELETE FROM bucket_rrg")
+    else:
+        con.execute("DELETE FROM bucket_rrg WHERE bucket_type = ?", [bucket_type])
 
 
 def upsert_bucket_rrg(

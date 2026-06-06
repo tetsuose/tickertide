@@ -17,8 +17,14 @@ Constants (n1, n2, k) are a transparent reconstruction — de Kempenaer's exact 
 are unpublished, so this does NOT claim to replicate StockCharts numbers (PRD §10.4).
 They live in PARAMS so export/rotation.json can surface them for audit.
 
+M4.3: themes reuse this whole path unchanged — `--bucket-type theme` reads the theme index
+from bucket_bars(bucket_type='theme') (built point-in-time by compute/theme_index.py, M4.2)
+and computes the SAME RS-Ratio. The only theme-specific bit is the league's member source:
+sector members come from universe.sector, theme members from theme_membership (point-in-time).
+
 Usage:
     python3 compute/rotation.py [--db data/tickertide.duckdb] [--n1 10] [--n2 10] [--k 1.0]
+                                [--bucket-type sector|theme]
 """
 from __future__ import annotations
 
@@ -95,7 +101,7 @@ def compute_rotation(con, n1: int | None = None, n2: int | None = None,
             f"bucket_bars has no {bucket_type} rows — run sector ETF ingest / fixture first."
         )
 
-    db.clear_bucket_rrg(con)
+    db.clear_bucket_rrg(con, bucket_type)   # scope to this type: sector & theme rrg coexist
     n_buckets = n_rows = skipped = 0
     for b in buckets:
         bars = db.read_bucket_bars(con, bucket_type, b)
@@ -127,47 +133,72 @@ AT_HIGH_PROX = 0.99   # within 1% of the 252d high counts as "at 52-week high"
 REL_HORIZONS = {"rel_ret_1m": 21, "rel_ret_3m": 63, "rel_ret_6m": 126}  # trading days
 
 
-def _member_aggregates(con, latest_date) -> pd.DataFrame:
-    """Per-sector member breadth / #at-52w-high / composite median on `latest_date`.
-    Joins derived_daily (signals) to daily_bars (close, for the close>MA breadth) and
-    universe (sector membership)."""
+def _bucket_members(con, bucket_type: str, as_of) -> pd.DataFrame:
+    """(ticker, bucket) membership for the league, by bucket_type. sector -> universe.sector
+    (static); theme -> theme_membership AS-OF `as_of` (point-in-time, exposure>0; db's
+    canonical PIT query). Many-to-many for themes is intended: a ticker in AI+SEMI counts
+    in both league rows — same per-stock data, just grouped differently (C9)."""
+    if bucket_type == "theme":
+        m = db.theme_membership_asof(con, as_of)
+        return m[["ticker", "theme"]].rename(columns={"theme": "bucket"})
     return con.execute(
-        """
-        WITH m AS (
-          SELECT u.sector AS bucket, d.composite,
-                 CASE WHEN b.close > d.ma50  THEN 1.0 ELSE 0.0 END AS gt50,
-                 CASE WHEN b.close > d.ma200 THEN 1.0 ELSE 0.0 END AS gt200,
-                 CASE WHEN d.high_prox >= ? THEN 1 ELSE 0 END      AS athigh
-          FROM derived_daily d
-          JOIN universe u   ON u.ticker = d.ticker
-          JOIN daily_bars b ON b.ticker = d.ticker AND b.date = d.date
-          WHERE d.date = ?
-        )
-        SELECT bucket, count(*) AS member_count,
-               100.0*avg(gt50)  AS breadth_ma50,
-               100.0*avg(gt200) AS breadth_ma200,
-               sum(athigh)      AS at_high,
-               median(composite) AS composite_median
-        FROM m GROUP BY bucket
-        """,
-        [AT_HIGH_PROX, latest_date],
+        "SELECT ticker, sector AS bucket FROM universe WHERE sector IS NOT NULL"
     ).df()
 
 
-def _agg_valuation(con) -> pd.DataFrame:
-    """Per-sector aggregate EV/S = median(evs) of members on the latest valuation date.
+def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
+    """Per-bucket member breadth / #at-52w-high / composite median on `latest_date`, over
+    the bucket's MEMBERS (sector: universe.sector; theme: theme_membership PIT). The member
+    numbers come from derived_daily / daily_bars — the SAME per-stock source as Discovery /
+    Ocean / Stock, so the league traces back (C9)."""
+    mem = _bucket_members(con, bucket_type, latest_date)
+    con.register("mem_rel", mem)
+    try:
+        return con.execute(
+            """
+            WITH m AS (
+              SELECT mr.bucket AS bucket, d.composite,
+                     CASE WHEN b.close > d.ma50  THEN 1.0 ELSE 0.0 END AS gt50,
+                     CASE WHEN b.close > d.ma200 THEN 1.0 ELSE 0.0 END AS gt200,
+                     CASE WHEN d.high_prox >= ? THEN 1 ELSE 0 END      AS athigh
+              FROM derived_daily d
+              JOIN mem_rel mr   ON mr.ticker = d.ticker
+              JOIN daily_bars b ON b.ticker = d.ticker AND b.date = d.date
+              WHERE d.date = ?
+            )
+            SELECT bucket, count(*) AS member_count,
+                   100.0*avg(gt50)  AS breadth_ma50,
+                   100.0*avg(gt200) AS breadth_ma200,
+                   sum(athigh)      AS at_high,
+                   median(composite) AS composite_median
+            FROM m GROUP BY bucket
+            """,
+            [AT_HIGH_PROX, latest_date],
+        ).df()
+    finally:
+        con.unregister("mem_rel")
+
+
+def _agg_valuation(con, bucket_type: str, as_of) -> pd.DataFrame:
+    """Per-bucket aggregate EV/S = median(evs) of members on the latest valuation date.
+    Members by bucket_type (sector: universe; theme: theme_membership PIT as-of `as_of`).
     median is robust; a cap-weighted aggregate (Σ EV / Σ sales) is a later refinement
     (PRD §17). Reads valuation_daily.evs (same column Ocean/Valuation use, C9)."""
-    return con.execute(
-        """
-        WITH latest AS (SELECT max(date) d FROM valuation_daily)
-        SELECT u.sector AS bucket, median(v.evs) AS agg_evs
-        FROM valuation_daily v
-        JOIN universe u ON u.ticker = v.ticker
-        WHERE v.date = (SELECT d FROM latest) AND v.evs IS NOT NULL
-        GROUP BY u.sector
-        """
-    ).df()
+    mem = _bucket_members(con, bucket_type, as_of)
+    con.register("mem_rel", mem)
+    try:
+        return con.execute(
+            """
+            WITH latest AS (SELECT max(date) d FROM valuation_daily)
+            SELECT mr.bucket AS bucket, median(v.evs) AS agg_evs
+            FROM valuation_daily v
+            JOIN mem_rel mr ON mr.ticker = v.ticker
+            WHERE v.date = (SELECT d FROM latest) AND v.evs IS NOT NULL
+            GROUP BY mr.bucket
+            """
+        ).df()
+    finally:
+        con.unregister("mem_rel")
 
 
 def _rel_returns(con, bucket_type: str) -> pd.DataFrame:
@@ -192,9 +223,10 @@ def _rel_returns(con, bucket_type: str) -> pd.DataFrame:
 def league_table(con, bucket_type: str = BUCKET_TYPE) -> pd.DataFrame:
     """Enriched per-bucket league for Rotation (PRD §9.4), sorted by RS-Ratio. One row per
     bucket: RS-Ratio level + Δ4w + state (from bucket_rrg) PLUS member aggregates (breadth /
-    #at-52w-high / composite median / agg EV-S) from the bucket's universe members (C9) PLUS
-    the bucket ETF's relative return vs SPX. Member evidence cards are NOT built here —
-    export filters board.json by scope=sector (DRY/C9). Returns empty if rotation未算."""
+    #at-52w-high / composite median / agg EV-S) from the bucket's members — sector:
+    universe.sector, theme: theme_membership point-in-time (C9) — PLUS the bucket's relative
+    return vs SPX. Member evidence cards are NOT built here — export filters board.json by
+    scope (DRY/C9). Returns empty if rotation未算."""
     rrg = db.read_bucket_rrg(con, bucket_type)
     if len(rrg) == 0:
         return pd.DataFrame()
@@ -209,9 +241,9 @@ def league_table(con, bucket_type: str = BUCKET_TYPE) -> pd.DataFrame:
 
     latest = con.execute("SELECT max(date) FROM derived_daily").fetchone()[0]
     if latest is not None:
-        league = league.merge(_member_aggregates(con, latest), on="bucket", how="left")
+        league = league.merge(_member_aggregates(con, latest, bucket_type), on="bucket", how="left")
     if con.execute("SELECT count(*) FROM valuation_daily").fetchone()[0] > 0:
-        league = league.merge(_agg_valuation(con), on="bucket", how="left")
+        league = league.merge(_agg_valuation(con, bucket_type, latest), on="bucket", how="left")
     league = league.merge(_rel_returns(con, bucket_type), on="bucket", how="left")
     return league.sort_values("rs_ratio", ascending=False).reset_index(drop=True)
 
@@ -222,16 +254,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--n1", type=int, default=None, help=f"EMA span for M (default {PARAMS['n1_ema']})")
     ap.add_argument("--n2", type=int, default=None, help=f"SMA/std window for z-score (default {PARAMS['n2_window']})")
     ap.add_argument("--k", type=float, default=None, help=f"z-score scale (default {PARAMS['k']})")
+    ap.add_argument("--bucket-type", default=BUCKET_TYPE, choices=["sector", "theme"],
+                    help="'sector' (11 SPDR ETF, M3) or 'theme' (theme index, M4.3)")
     args = ap.parse_args(argv)
 
     con = db.connect(args.db)
-    stats = compute_rotation(con, args.n1, args.n2, args.k)
-    print(f"[rotation] buckets={stats['buckets']} rows={stats['rows']} skipped={stats['skipped']} "
-          f"params={stats['params']}")
+    stats = compute_rotation(con, args.n1, args.n2, args.k, bucket_type=args.bucket_type)
+    print(f"[rotation] bucket_type={args.bucket_type} buckets={stats['buckets']} rows={stats['rows']} "
+          f"skipped={stats['skipped']} params={stats['params']}")
 
-    lt = league_table(con, BUCKET_TYPE)
+    lt = league_table(con, args.bucket_type)
     if len(lt):
-        latest_wk = db.read_bucket_rrg(con, BUCKET_TYPE)["date"].max()
+        latest_wk = db.read_bucket_rrg(con, args.bucket_type)["date"].max()
         print(f"[rotation] latest week = {latest_wk}; enriched league by RS-Ratio:")
         show = lt.copy()
         for c in ("rs_ratio", "slope_4w", "breadth_ma50", "breadth_ma200",
