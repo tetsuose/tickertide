@@ -127,3 +127,19 @@ npx wrangler pages deployment list --project-name=tickertide   # 看历史部署
 | Access 不生效 / 能绕过 | 漏配预览子域 | Access application 加 `*.tickertide.pages.dev` |
 | 部署陈旧数据 | 不会：deploy 在全绿后 | pipeline/C9 失败会中断 job；陈旧另有 D.4 badge |
 | sandbox 出站被 block | 本地 wrangler 部署需联网 | 本 harness 下 `wrangler deploy` 走 `dangerouslyDisableSandbox=true`；CI 无此限 |
+
+## 10. 已执行的 go-live 记录（2026-06-10，DONE）
+
+首次上线**没有**走第 2~5 节的「dashboard 手建 token / wrangler login」路径，而是用 **AWS SSM 里的 token-minting seed 凭证全自动完成**（密钥已迁 SSM）。复现/DR 按此：
+
+**前提**：`aws sso login --profile codex-admin`（acct 504508176569、ap-northeast-1、SSO Identity Center）。CF 资源在 SSM `ap-northeast-1`。
+
+1. **凭证（mint 而非手建）**：SSM `/agentops/global/cloudflare/agent-seed-token` 是 token-minting 凭证（有 `User>API Tokens` 权限）。用它经 CF API `POST /user/tokens` mint 一个**最小权限** token（permission group `Pages Write` `8d28297797f24fb8a0c332fe0866ec89`，scoped 到账号），存进 SSM `/cyberbridge/prod/cloudflare/tickertide-pages-token`（SecureString）。**全程不打印 token 值**（临时文件 600 + 用后删）。account-id 取 SSM `/cyberbridge/prod/discovery/cloudflare/account-id`（CF 账号 = cyberbri）。
+2. **gh secret**：`CLOUDFLARE_API_TOKEN`（= 上面 minted token）/`CLOUDFLARE_ACCOUNT_ID` 经 `printf %s | gh secret set`（stdin，不入 argv）。
+3. **Pages 项目**：`wrangler pages project create tickertide --production-branch=main`。
+4. **私有锁（Cloudflare Access，API 全自动）**：账号原本未启用 Zero Trust → 用 seed token mint 一个 Access-setup token（`Apps and Policies Write` + `Organizations/IdP/Groups Write`）→ `POST access/organizations` 启用 ZT（team **`cyberbrid.cloudflareaccess.com`**）→ 建 self-hosted app（`tickertide.pages.dev` + `*.tickertide.pages.dev`）→ allow policy（email `sejonep@gmail.com`，One-time PIN）→ 回读验证 → **撤销 Access-setup token**（一次性、最小留存）。脚本范式见 session 记录。
+5. **首次部署**：`gh workflow run nightly.yml -f limit=500`（真实数据，走 nightly 的 deploy step）。**注意**：mid-week 跑曾因 rotation `as_of_date` 取周线 Friday 标签 → C9 GATE_FAIL（已修，PR #42：as_of 改用 `max(derived_daily.date)`）。
+6. **验证（AC-D 全过）**：`curl -I tickertide.pages.dev/` 与 `/data/manifest.json` 均 **302 → cyberbrid.cloudflareaccess.com**（未登录被挡、数据不公开）；production deployment = main `5fce5e8`；deploy 日志 token 显示 `***`（无泄露）；deploy 仅在 pipeline+C9+build 全绿后跑（前一 run C9 失败→deploy 被挡，验证「陈旧不发布」）。
+7. **最后人工 check（用户）**：浏览器开 https://tickertide.pages.dev → OTP 登录 `sejonep@gmail.com` → 确认 Discovery/Ocean/Rotation 渲染 + D.4 新鲜度 badge 显当日 as_of。
+
+> 轮换：minted Pages token 无 expiry；轮换 = 重跑第 1~2 步覆盖 SSM + gh secret（Overwrite=True）。Access 改邮箱 = ZT dashboard 或重跑第 4 步 policy。
