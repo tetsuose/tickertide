@@ -141,7 +141,12 @@ def build_rotation(con, bucket_type: str = BUCKET_TYPE, n_weeks: int = DEFAULT_W
 
     return {
         "schema_version": SCHEMA_VERSION,
-        "as_of_date": week_iso[-1] if week_iso else None,
+        # Freshness = the actual last trading day (== board/ocean, same max(derived_daily.date)),
+        # NOT week_iso[-1]: the weekly RS-Ratio axis labels the in-progress week by its Friday
+        # week-end, which runs ahead of the data mid-week (e.g. Tue data -> Fri label). Using that
+        # future label here broke C9 (board as_of != rotation as_of) on any mid-week run and would
+        # surface a future date in the D.4 freshness badge. weeks[] keeps the Friday axis labels.
+        "as_of_date": pd.Timestamp(latest).strftime("%Y-%m-%d") if latest is not None else None,
         "benchmark": "SPX",
         "bucket_type": bucket_type,
         "params": {
