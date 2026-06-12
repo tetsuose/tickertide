@@ -20,7 +20,7 @@ US-only 过滤下，每日(EOD)拉取四类源，落地到 DuckDB 原始表（`d
 
 ## 规格来源
 
-PRD §3（数据源）、§12（schema）、BUILD-PLAN §3。Licensing：个人不分发 → 当前合规；公开前须复核（Stooq/EDGAR 最友好，其余多禁 redistribute）。
+PRD §3（数据源）、§12（schema）、BUILD-PLAN §3。Licensing：公开展示 / 再分发 / 商业化前须复核数据源条款（Stooq/EDGAR 最友好，其余多禁 redistribute）。
 
 ## 未来文件（实现时登记进 File-Contracts）
 

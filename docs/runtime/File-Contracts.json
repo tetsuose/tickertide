@@ -321,7 +321,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "D.3 部署操作 runbook：Cloudflare Pages 私有上线的凭证两条路、建项目、首次 go-live、Cloudflare Access 私有锁、CI 自动部署、AC-D 验收清单、回滚",
-        "invariants": "只记操作步骤与凭证位置(names-only)，绝不含 token/account 值；私有访问硬线(Cloudflare Access email 白名单，不对外分发数据 SCOPE/§6.2/NFR-7)；部署只在 nightly 全绿后(陈旧/失败不发布)；与 Credentials-Management.md / nightly.yml / wrangler.jsonc 三者一致",
+        "invariants": "只记操作步骤与凭证位置(names-only)，绝不含 token/account 值；私有访问硬线(Cloudflare Access email 白名单)；数据源条款复核按 PRD §6.2/NFR-7；部署只在 nightly 全绿后(陈旧/失败不发布)；与 Credentials-Management.md / nightly.yml / wrangler.jsonc 三者一致",
         "verification": "按 runbook 走通首次 go-live + 私有访问验证(AC-D 清单可全勾)；grep 确认无 secret 值入库"
       },
       "notes": ""
@@ -514,7 +514,7 @@
       "stage": "planned",
       "contract": {
         "purpose": "数据拉取模块规划：Stooq + Nasdaq screener + SEC EDGAR (+yfinance fallback)",
-        "invariants": "US-only 过滤；个人不分发的 licensing 前提；输出表 schema 对齐 PRD §12",
+        "invariants": "US-only 过滤；公开展示 / 再分发 / 商业化前复核数据源条款；输出表 schema 对齐 PRD §12",
         "verification": "职责/源/输出与 PRD §6、§12 一致；未来文件清单明确"
       }
     },
