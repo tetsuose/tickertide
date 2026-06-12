@@ -802,7 +802,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "应用 shell：固定顶部控制栏（5 tab + early⟷reliable 旋钮 + 权重条 + scope chip）+ 中央 surface 面板 + 全局 scope/pinned 单一真源",
-        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条 + 透传 Discovery 实时重排；discovery 渲染 <Discovery k scope pinned>、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余占位；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；权重曲线来自 composite.ts(C9)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab/k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜",
+        "invariants": "5 surface 固定顺序、默认 Discovery；旋钮 k 驱动权重条 + 透传 Discovery 实时重排；discovery 渲染 <Discovery k scope pinned limit=DISCOVERY_LIMIT(20)>（board 上限 top-20，bounded/decide §9.3）、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余占位；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；权重曲线来自 composite.ts(C9)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab/k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜",
         "verification": "npm run build 通过；SSR app chrome 含 wbars/wbfill + RELIABLE/EARLY；旋钮改 k → Discovery 重排；ocean tab 渲染 Ocean canvas；scope≠all 显 chip + 可清"
       }
     },
@@ -1018,7 +1018,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Discovery board（PRD §9.3）：2 列 evidence-card 网格、respect 全局 scope 后按 composite(c_*,k) 降序",
-        "invariants": "先按全局 scope filter(all/sector/theme/pinned 由 App 透传，§9.3 先 filter 再排序 C10)再按前端重算 composite(组件,k) 降序——旋钮 k 改即实时重排(C9、绝不重算引擎)；卡片 weights/score 用 composite.ts 在当前 k 算；loading/error/empty 三态；initial 注入便于 SSR/测试；可选 limit prop slice top-N(供 Rotation 钻进成员预览复用、scope=sector，board.json 单源 C9)",
+        "invariants": "先按全局 scope filter(all/sector/theme/pinned 由 App 透传，§9.3 先 filter 再排序 C10)再按前端重算 composite(组件,k) 降序——旋钮 k 改即实时重排(C9、绝不重算引擎)；卡片 weights/score 用 composite.ts 在当前 k 算；loading/error/empty 三态；initial 注入便于 SSR/测试；可选 limit prop slice top-N(Discovery 本体由 App 传 20 设上限；Rotation 钻进成员预览传更小 N、scope=sector，board.json 单源 C9)",
         "verification": "SSR：k=0 与 k=1 排序不同、≥18 卡、top badge=composite(top,k)；scope=sector/pinned 仅留对应卡、scope=all 全显；build 通过"
       }
     },
