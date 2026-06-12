@@ -75,8 +75,8 @@ export default function Discovery({
     .filter((s) => inScope(s, scope, pinned))
     .map((s) => ({ s, score: composite(s.components, kEff) }))
     .sort((a, b) => b.score - a.score)
-  // Rotation's drill drawer reuses Discovery as the member preview (scope=sector) and
-  // caps it to a top-N (PRD §9.4); the full set is one click away in Discovery proper.
+  // Callers bound the board to a top-N: Discovery proper caps at App's DISCOVERY_LIMIT
+  // (PRD §9.3 bounded/decide); Rotation's drill drawer previews fewer still (PRD §9.4).
   const shown = limit != null ? scored.slice(0, limit) : scored
 
   return (

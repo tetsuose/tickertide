@@ -18,6 +18,10 @@ const SURFACES: { id: SurfaceId; label: string }[] = [
   { id: 'stock', label: 'Stock' },
 ]
 
+// Discovery proper shows the top-N composite candidates (PRD §9.3 bounded/decide) —
+// the board stays a bounded shortlist, not the full universe dump.
+const DISCOVERY_LIMIT = 20
+
 const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb: string }> = {
   ocean: {
     scale: 'wide · explore',
@@ -166,7 +170,7 @@ export default function App() {
             <span className="khint">{info.milestone}</span>
           </div>
           {tab === 'discovery' ? (
-            <Discovery k={k} scope={scope} pinned={pinned} />
+            <Discovery k={k} scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} />
           ) : tab === 'ocean' ? (
             <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} />
           ) : tab === 'rotation' ? (
