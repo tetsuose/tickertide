@@ -22,7 +22,7 @@
 
 ### 1.1 一句话定义
 
-TickerTide 是一个 **个人自用、盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
+TickerTide 是一个 **盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
 
 ### 1.2 脊柱（产品成立的前提）
 
@@ -32,7 +32,6 @@ TickerTide 是一个 **个人自用、盘后(EOD)、美股专属** 的 momentum 
 ### 1.3 SCOPE（不可越界）
 
 - **仅限美股**：US-listed（NYSE / Nasdaq / NYSE American）。ADR 因在美上市可纳入；非美上市标的一律 out。
-- **个人工具，不对外分发数据** —— 这决定了数据源选择与 licensing（见 §6）。
 - 中文 / cross-language 标的判定本期 **不做**（显式 descoped）；主题语义判定只读英文 EDGAR filings。
 
 ### 1.4 不解决什么（摘要，详见 §15）
@@ -115,7 +114,7 @@ Client (canvas + duckdb-wasm): renders Ocean (thousands of points) + boards; scr
 
 ### 5.2 关键架构决策
 
-- **默认无常驻 server、无托管 DB、不向 client 暴露任何 key。** GitHub Actions = cron。与 SCOPE（个人、不分发）一致。
+- **默认无常驻 server、无托管 DB、不向 client 暴露任何 key。** GitHub Actions = cron。与 SCOPE 的零后端 spine 一致。
 - **DuckDB 选型理由**：列存 OLAP（rolling window / 聚合 / 横截面 percentile 是全列扫描型 workload）+ 嵌入式（single-writer、offline batch，不需要 Postgres 的 client-server/MVCC/并发写）+ 原生 `ASOF JOIN` / `QUALIFY` / `PIVOT` + 整库单文件可移植 + duckdb-wasm 可在浏览器查 Parquet。
 - **演进边界**：若以后变多用户事务型 app 才考虑 Postgres —— 那是另一个 ontology，不在本期。
 - **Web 技术栈（已定，2026-06）**：客户端用 **React + Vite + TypeScript**（视觉效果优先 + 与 UX 合同 `equity-monitor-v2.jsx` 同源，迁移直接）；视图用 SVG/DOM 组件，Ocean 用 canvas。

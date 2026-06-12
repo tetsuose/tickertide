@@ -7,12 +7,11 @@
 
 ## 0. 一句话定义 / Scope
 
-一个 **个人自用、盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
+一个 **盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
 **Spine:** 一个 stock-level composite 引擎 → 五个 lens,两个尺度(wide explore / bounded decide),零常驻 backend。
 
 **SCOPE — 不可越界:**
 - **仅限美股(US-listed:NYSE / Nasdaq / NYSE American)。** ADR 因在美上市可纳入;非美上市标的一律 out。
-- 个人工具,**不对外分发数据**(决定了数据源选择与 licensing,见 §3)。
 - 中文/cross-language 标的判定本期 **不做**(已显式 descoped);主题语义判定只读 **英文 EDGAR filings**。
 
 ---
@@ -42,7 +41,7 @@ Client (canvas + duckdb-wasm):  renders Ocean (thousands of points) + boards; sc
 (optional) private Streamlit cockpit for server-side interactive work
 ```
 
-- **无常驻 server、无托管 DB、不向 client 暴露任何 key。** GitHub Actions = cron。这与 SCOPE(个人、不分发)一致,也复用既有 Cloudflare/Actions 经验。
+- **无常驻 server、无托管 DB、不向 client 暴露任何 key。** GitHub Actions = cron。这与 SCOPE 的零后端 spine 一致,也复用既有 Cloudflare/Actions 经验。
 - DuckDB 选型理由:列存 OLAP(rolling window / 聚合 / 横截面 percentile 是全列扫描型 workload)+ 嵌入式(single-writer、offline batch,不需要 Postgres 的 client-server/MVCC/并发写)+ 原生 `ASOF JOIN`/`QUALIFY`/`PIVOT` + 整库单文件可移植 + duckdb-wasm 可在浏览器查 Parquet。**(若以后变多用户事务型 app 才考虑 Postgres——那是另一个 ontology。)**
 
 ---

@@ -5,10 +5,10 @@
 
 ## 0. 这是什么
 
-一个 **个人自用、盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
+一个 **盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
 **脊柱：一个 stock-level composite 引擎 → 五个 lens，两个尺度(wide explore / bounded decide)，零常驻 backend。**
 
-**SCOPE（不可越界）：** 仅限美股(NYSE/Nasdaq/AMEX，ADR 可纳入)；个人工具、不对外分发数据；中文/cross-language 标的判定本期不做。
+**SCOPE（不可越界）：** 仅限美股(NYSE/Nasdaq/AMEX，ADR 可纳入)；中文/cross-language 标的判定本期不做。
 
 ## 1. 脊柱原则（贯穿所有 surface，code 不要翻案）
 
