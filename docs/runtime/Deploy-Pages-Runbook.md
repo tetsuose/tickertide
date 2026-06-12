@@ -1,7 +1,7 @@
-# Deploy Runbook — D.3 Cloudflare Pages 私有上线
+# Deploy Runbook — D.3 Cloudflare Pages 公开上线
 
-> 何时读：首次 go-live、配置/排查 nightly 自动部署、设置私有访问、回滚。
-> 范围：D 轨终点。把 D.2 nightly 产出的静态站点（`web/dist`，数据 bundled 自 `web/public/data`）发布到 **Cloudflare Pages**，并用 **Cloudflare Access** 限私有访问；数据源条款复核按 PRD §6.2 / NFR-7 处理。
+> 何时读：首次 go-live、配置/排查 nightly 自动部署、调整生产/预览访问控制、回滚。
+> 范围：D 轨终点。把 D.2 nightly 产出的静态站点（`web/dist`，数据 bundled 自 `web/public/data`）发布到 **Cloudflare Pages**；生产域 `tickertide.pages.dev` 公开无登录，预览 wildcard 可用 **Cloudflare Access** 保护；数据源条款复核按 PRD §6.2 / NFR-7 处理。
 > 配套：`docs/runtime/Credentials-Management.md`（凭证硬线）· `.github/workflows/nightly.yml`（部署接线）· `web/wrangler.jsonc`（Pages 配置）。
 
 ## 0. 第一性原理
@@ -64,24 +64,23 @@ make web-build
 cd web && npx wrangler pages deploy --branch=main
 ```
 
-部署完打印 `https://tickertide.pages.dev`（及一次性 deployment 子域）。此时站点**公开可访问** —— 立刻做第 5 步上私有锁，再对外暴露任何 URL。
+部署完打印 `https://tickertide.pages.dev`（及一次性 deployment 子域）。生产域应公开返回 200；如需保护预览部署，走第 5 步只锁 `*.tickertide.pages.dev`。
 
-## 5. 私有访问 —— Cloudflare Access（Zero Trust）
+## 5. 预览访问保护 —— Cloudflare Access（Zero Trust）
 
-> wrangler **不管** Access policy；Access 是 Zero Trust 的 dashboard/API 能力。个人自用最简：self-hosted application + email 白名单 + One-time PIN（邮箱 OTP）。⚠️ One-time PIN **本身就是一个 login method/IdP，必须显式启用**——纯 API 启用 Zero Trust org 不会自动开任何 login method，漏掉则登录页报「no login methods available」。
+> wrangler **不管** Access policy；Access 是 Zero Trust 的 dashboard/API 能力。当前生产域公开；若保护 Pages 预览子域，self-hosted application 只覆盖 `*.tickertide.pages.dev`，不要覆盖 `tickertide.pages.dev`。One-time PIN **本身就是一个 login method/IdP，必须显式启用**——纯 API 启用 Zero Trust org 不会自动开任何 login method，漏掉则登录页报「no login methods available」。
 
 dashboard 步骤：
 
 1. Cloudflare dashboard → **Zero Trust** → Access → **Applications** → Add an application → **Self-hosted**。
 2. Application domain：
-   - `tickertide.pages.dev`（生产）
-   - 再加一条 `*.tickertide.pages.dev`（覆盖每次部署的一次性预览子域，否则可绕过锁）。
+   - `*.tickertide.pages.dev`（覆盖每次部署的一次性预览子域；生产 `tickertide.pages.dev` 不加，保持公开）。
 3. Identity providers：启用 **One-time PIN**（邮箱验证码）。**必须至少启用一个 login method**，否则登录页报「no login methods available」。dashboard 的 Enable Access 通常会引导建 OTP；纯 API 启用 ZT 则需单独建（见第 10 节）。
 4. Policies → Add a policy：
    - Action = **Allow**
    - Include = **Emails** → 填允许的邮箱（本人）。
    - 其余身份默认拒绝（Access 默认 deny 未匹配者）。
-5. Save。之后访问站点会先跳 Access 登录页，仅白名单邮箱收 OTP 后可进 → **私有**。
+5. Save。之后访问预览部署会先跳 Access 登录页，仅白名单邮箱收 OTP 后可进；生产域仍公开。
 
 > 注：免费 Zero Trust 含 Access ≤50 用户，个人足够。Access 配置不入本仓库（dashboard 侧），与 secrets 同理。
 
@@ -98,7 +97,8 @@ gh run watch                                  # 跟踪；看 deploy 步骤是否
 
 ## 7. AC-D 验收清单（D 轨完成）
 
-- [ ] 站点**私有**可访问：白名单邮箱 OTP 后能进；其它邮箱被 Access 挡。
+- [ ] 生产站点**公开**可访问：未登录 `curl -I https://tickertide.pages.dev/` 返回 200。
+- [ ] 预览 wildcard（如启用 Access）仍被保护：未登录访问预览子域返回 Access 登录页。
 - [ ] Vite `base='./'` 路径正常：JS/CSS 资源在 `tickertide.pages.dev` 下无 404。
 - [ ] 数据 fetch 正常：`/data/manifest.json`、`board.json`、`ocean.json`、`rotation.json` 均 200，Discovery/Ocean/Rotation 渲染。
 - [ ] 最新 `as_of` 可见：D.4 新鲜度 badge 显示当晚数据龄。
@@ -124,7 +124,8 @@ npx wrangler pages deployment list --project-name=tickertide   # 看历史部署
 | `Missing account` / 选错账号 | 未给 account id | CI 设 `CLOUDFLARE_ACCOUNT_ID` secret；本地 `wrangler whoami` 核对 |
 | 资源 404（白屏） | 部署目录错 / base 不对 | 确认直传的是 `web/dist`（含 `index.html` + `data/`）；`vite.config.ts` base 仍 `'./'` |
 | 数据 404 | export 没跑 | `make export` 须在 `npm run build` 前（nightly 已排序；本地走 `make web-build`） |
-| Access 不生效 / 能绕过 | 漏配预览子域 | Access application 加 `*.tickertide.pages.dev` |
+| 生产域仍跳登录 | Access application 仍覆盖 `tickertide.pages.dev` | 从 Access application destinations 移除生产域，只保留 `*.tickertide.pages.dev` |
+| 预览未被保护 | 漏配预览 wildcard | Access application 加 `*.tickertide.pages.dev` |
 | 部署陈旧数据 | 不会：deploy 在全绿后 | pipeline/C9 失败会中断 job；陈旧另有 D.4 badge |
 | 登录页 `no login methods available` | ZT org 无 login method（API 启用 ZT 不自动建 IdP） | 建 One-time PIN IdP：`POST accounts/{id}/access/identity_providers {name,"type":"onetimepin","config":{}}`（或 dashboard Zero Trust → Settings → Authentication 加 One-time PIN）；app `allowed_idps` 留空=允许全部 IdP |
 | sandbox 出站被 block | 本地 wrangler 部署需联网 | 本 harness 下 `wrangler deploy` 走 `dangerouslyDisableSandbox=true`；CI 无此限 |
@@ -145,3 +146,16 @@ npx wrangler pages deployment list --project-name=tickertide   # 看历史部署
 7. **最后人工 check（用户）**：浏览器开 https://tickertide.pages.dev → OTP 登录 `sejonep@gmail.com` → 确认 Discovery/Ocean/Rotation 渲染 + D.4 新鲜度 badge 显当日 as_of。
 
 > 轮换：minted Pages token 无 expiry；轮换 = 重跑第 1~2 步覆盖 SSM + gh secret（Overwrite=True）。Access 改邮箱 = ZT dashboard 或重跑第 4 步 policy。
+
+## 11. 公开访问变更记录（2026-06-12，DONE）
+
+用户要求 `tickertide.pages.dev` 向公众开放、无须登录。执行方式：
+
+1. Cloudflare Access app 从覆盖 `tickertide.pages.dev` + `*.tickertide.pages.dev` 改为只覆盖 `*.tickertide.pages.dev`。
+2. app 名称改为 `TickerTide preview protection`，保留原 allow policy，用于预览部署保护。
+3. 验证：
+   - `curl -I https://tickertide.pages.dev/` → 200
+   - `curl -I https://tickertide.pages.dev/data/manifest.json` → 200
+   - Cloudflare Access app destinations 只剩 `*.tickertide.pages.dev`
+
+回滚为私有生产：把 `tickertide.pages.dev` 重新加入同一个 Access app destinations，并将 app primary domain 改回 `tickertide.pages.dev`。

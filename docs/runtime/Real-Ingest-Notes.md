@@ -24,4 +24,4 @@
 - top-100 mktcap + 48 seed 样本里 Real Estate / Utilities 成员少或无 → rotation league member agg `NaN` → export 转 `null` → 前端显 `—`。全量 ≥500 自然有成员；`check_rotation.py` 对无成员 sector skip、不误报。
 
 ## 解锁
-D.1 硬 gate 过 → **D.2（nightly GitHub Action）+ D.3（Cloudflare Pages 私有上线）可启动**。secrets（EDGAR UA 邮箱、Cloudflare API token）走 Actions secret / env（见 `Credentials-Management.md`），**绝不入库 / PR / 日志**。首次 go-live + 启用 auto-deploy 是 hard stop（需用户点头）。
+D.1 硬 gate 过 → **D.2（nightly GitHub Action）+ D.3（Cloudflare Pages 生产上线）可启动**。secrets（EDGAR UA 邮箱、Cloudflare API token）走 Actions secret / env（见 `Credentials-Management.md`），**绝不入库 / PR / 日志**。首次 go-live + 启用 auto-deploy 是 hard stop（需用户点头）。

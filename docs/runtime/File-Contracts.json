@@ -57,7 +57,7 @@
       "module": ".github",
       "stage": "implemented",
       "contract": {
-        "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 私有上线",
+        "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 生产公开上线",
         "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；M4 theme export 未接 Makefile→暂不产 theme.json(M4 follow-up)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
         "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；设 secret 后 deploy 步骤执行、未设时 skip 不报错；run log 不含 token 值；engine 不装 deps、无 Node20 弃用告警"
       }
@@ -320,9 +320,9 @@
       "module": "docs",
       "stage": "implemented",
       "contract": {
-        "purpose": "D.3 部署操作 runbook：Cloudflare Pages 私有上线的凭证两条路、建项目、首次 go-live、Cloudflare Access 私有锁、CI 自动部署、AC-D 验收清单、回滚",
-        "invariants": "只记操作步骤与凭证位置(names-only)，绝不含 token/account 值；私有访问硬线(Cloudflare Access email 白名单)；数据源条款复核按 PRD §6.2/NFR-7；部署只在 nightly 全绿后(陈旧/失败不发布)；与 Credentials-Management.md / nightly.yml / wrangler.jsonc 三者一致",
-        "verification": "按 runbook 走通首次 go-live + 私有访问验证(AC-D 清单可全勾)；grep 确认无 secret 值入库"
+        "purpose": "D.3 部署操作 runbook：Cloudflare Pages 生产公开上线的凭证两条路、建项目、首次 go-live、可选预览 Access 保护、CI 自动部署、AC-D 验收清单、回滚",
+        "invariants": "只记操作步骤与凭证位置(names-only)，绝不含 token/account 值；生产 tickertide.pages.dev 公开无登录，预览 wildcard 可由 Cloudflare Access email 白名单保护；数据源条款复核按 PRD §6.2/NFR-7；部署只在 nightly 全绿后(陈旧/失败不发布)；与 Credentials-Management.md / nightly.yml / wrangler.jsonc 三者一致",
+        "verification": "按 runbook 走通首次 go-live + 公开生产访问验证(AC-D 清单可全勾)；grep 确认无 secret 值入库"
       },
       "notes": ""
     },
@@ -369,7 +369,7 @@
       "module": "docs",
       "stage": "implemented",
       "contract": {
-        "purpose": "D.1 真实 ingest 冒烟笔记：真实数据三源状态 + 坑/修复(sector 归一 / Yahoo 429 yfinance 库绕过 / EDGAR concept) + 规模时间 + D.2/D.3 解锁",
+        "purpose": "D.1 真实 ingest 冒烟笔记：真实数据三源状态 + 坑/修复(sector 归一 / Yahoo 429 yfinance 库绕过 / EDGAR concept) + 规模时间 + D.2/D.3 生产上线解锁",
         "invariants": "记录首次真实数据端到端(2026-06-05)：AC-M0 真实 CHECK_OK + rotation-c9/ocean-c9 PASS；坑清单有明确消费者(D.2 nightly 配置 / 真实 ingest debug)；secrets 走 Actions secret 不入库；names/counts only 无 secrets",
         "verification": "对照 D.1 真实 pipeline+export 输出；nasdaq.py NASDAQ_TO_GICS 归一与本 note 表格一致"
       }
@@ -1112,8 +1112,8 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Cloudflare Pages 配置(D.3)：声明项目名 + 构建产物目录，供 `wrangler pages deploy` 直传 web/dist 私有上线",
-        "invariants": "纯静态站点(无 Functions/bindings/vars)；绝不含 secret(token 走 wrangler login OAuth 或 CI secret)；name=tickertide(改名同步 Deploy-Pages-Runbook.md)；pages_build_output_dir=dist(相对 web/，即 web/dist)；私有访问由 Cloudflare Access 带外强制、不在此声明",
+        "purpose": "Cloudflare Pages 配置(D.3)：声明项目名 + 构建产物目录，供 `wrangler pages deploy` 直传 web/dist 生产公开上线",
+        "invariants": "纯静态站点(无 Functions/bindings/vars)；绝不含 secret(token 走 wrangler login OAuth 或 CI secret)；name=tickertide(改名同步 Deploy-Pages-Runbook.md)；pages_build_output_dir=dist(相对 web/，即 web/dist)；生产访问公开，预览 Access 保护由 Cloudflare Zero Trust 带外配置、不在此声明",
         "verification": "`cd web && npx wrangler pages deploy --branch=main` 读本文件 name+output dir 直传成功；grep 确认无 token/account 值入库"
       },
       "notes": ""

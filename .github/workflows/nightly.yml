@@ -5,8 +5,8 @@ name: nightly
 # nightly data, so this runs the REAL pipeline (D.1 proved the free sources reachable
 # from a real host; this job validates they're also reachable from a GitHub-hosted
 # runner — the open risk gate.yml flagged), uploads the built site + data artifact, and
-# then publishes it to Cloudflare Pages (D.3 — private host enforced out-of-band by
-# Cloudflare Access). The deploy step self-skips until the CLOUDFLARE_API_TOKEN secret is
+# then publishes it to Cloudflare Pages (D.3 — production is public; optional preview
+# protection is enforced out-of-band by Cloudflare Access). The deploy step self-skips until the CLOUDFLARE_API_TOKEN secret is
 # set, so this workflow is safe to run before go-live. Deploy runs only after the
 # pipeline + C9 gates + web build succeed (a failed step stops the job first), so
 # stale/failed data is never published. Secrets: the deploy token lives ONLY in a GitHub
@@ -77,12 +77,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # D.3: publish web/dist to Cloudflare Pages (production, private). The gate step
+      # D.3: publish web/dist to Cloudflare Pages (production, public). The gate step
       # checks the secret WITHOUT printing it (echoes only a boolean); the deploy step
       # self-skips when CLOUDFLARE_API_TOKEN is unset so this is safe pre-go-live. Auth +
       # account come from secrets via env (wrangler reads them); never interpolated into
       # the run script. wrangler.jsonc (web/) carries name + output dir. --branch=main =>
-      # production deploy. Private access is Cloudflare Access — see Deploy-Pages-Runbook.md.
+      # production deploy. Access policy, if any, is out-of-band — see Deploy-Pages-Runbook.md.
       - name: detect deploy secret (no value printed)
         id: deploy_gate
         env:
@@ -95,7 +95,7 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: deploy to Cloudflare Pages (production, private)
+      - name: deploy to Cloudflare Pages (production, public)
         if: steps.deploy_gate.outputs.enabled == 'true'
         working-directory: web
         env:

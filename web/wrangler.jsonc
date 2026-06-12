@@ -4,7 +4,8 @@
   // The nightly Action builds web/dist (data bundled from public/data) and runs
   // `wrangler pages deploy` from this dir; auth comes from CLOUDFLARE_API_TOKEN
   // (CI secret) or `wrangler login` (local) — NEVER stored in this file.
-  // Private access is enforced out-of-band by Cloudflare Access (Zero Trust);
+  // Production tickertide.pages.dev is public; optional preview protection is
+  // enforced out-of-band by Cloudflare Access (Zero Trust);
   // see docs/runtime/Deploy-Pages-Runbook.md.
   "name": "tickertide",
   "pages_build_output_dir": "dist",
