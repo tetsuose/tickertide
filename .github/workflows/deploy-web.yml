@@ -1,0 +1,114 @@
+name: deploy-web
+
+# Fast web-only deploy lane. nightly.yml is the only full pipeline (ingest 500
+# Stooq EOD + EDGAR + compute, 21–29 min); a pure front-end change should not
+# wait for it. This workflow reuses the data from the most recent successful
+# nightly run instead of recomputing it: download the `tickertide-site`
+# artifact (uploaded by nightly with paths web/dist + web/public/data, so the
+# artifact root is the common ancestor `web/` stripped — layout inside is
+# `dist/` + `public/data/`), stage `public/data/` into web/public/data, run
+# only `npm ci && npm run build`, and publish web/dist with the exact same
+# wrangler/Pages deploy steps as nightly (secrets CLOUDFLARE_API_TOKEN /
+# CLOUDFLARE_ACCOUNT_ID; wrangler.jsonc carries name + output dir;
+# --branch=main => production tickertide.pages.dev).
+#
+# Degradation: nightly uploads with retention-days: 7, so if no recent
+# successful nightly run still holds a live (non-expired) artifact, this job
+# fails early with an explicit "run nightly first" error instead of deploying
+# a site without data. It never falls back to a full pipeline run here —
+# recompute stays nightly's job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # needed to list nightly runs + download their artifact
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: locate latest live nightly artifact
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          found=""
+          for run_id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow nightly.yml --status success --limit 10 --json databaseId --jq '.[].databaseId'); do
+            live=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+              --jq '[.artifacts[] | select(.name == "tickertide-site" and .expired == false)] | length')
+            if [ "$live" -ge 1 ]; then
+              found="$run_id"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "::error::No live tickertide-site artifact in the last 10 successful nightly runs (nightly retention is 7 days). Run the nightly workflow first (gh workflow run nightly.yml), wait for it to finish, then re-run this deploy."
+            exit 1
+          fi
+          echo "using artifact from nightly run $found"
+          echo "run_id=$found" >> "$GITHUB_OUTPUT"
+
+      - name: download nightly site+data artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "${{ steps.nightly.outputs.run_id }}" --repo "$GITHUB_REPOSITORY" --name tickertide-site --dir .nightly-artifact
+
+      - name: stage nightly data into web/public/data
+        run: |
+          src=".nightly-artifact/public/data"
+          if [ ! -d "$src" ]; then
+            echo "::error::Unexpected tickertide-site artifact layout — expected public/data at the artifact root. Actual layout:"
+            find .nightly-artifact -maxdepth 3 -type d -print
+            exit 1
+          fi
+          rm -rf web/public/data
+          mkdir -p web/public
+          cp -R "$src" web/public/data
+          echo "staged $(find web/public/data -type f | wc -l) data files"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: web build (fresh front-end, reused nightly data)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      # Same deploy gate + step as nightly.yml: the gate checks the secret
+      # WITHOUT printing it (echoes only a boolean); deploy self-skips when
+      # CLOUDFLARE_API_TOKEN is unset.
+      - name: detect deploy secret (no value printed)
+        id: deploy_gate
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$CF_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "CLOUDFLARE_API_TOKEN unset — skipping Cloudflare Pages deploy (build still validated)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: deploy to Cloudflare Pages (production, public)
+        if: steps.deploy_gate.outputs.enabled == 'true'
+        working-directory: web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 pages deploy --branch=main

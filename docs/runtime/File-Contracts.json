@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-06T06:06:43.116228+00:00",
+  "updated_at": "2026-06-12T12:26:31.181736+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -37,6 +37,18 @@
         "invariants": "文本一律 eol=lf；*.parquet/*.duckdb 标记为 binary",
         "verification": "git check-attr 对源文件返回 text；Linux CI checkout 后无 EOL 噪音 diff"
       }
+    },
+    {
+      "path": ".github/workflows/deploy-web.yml",
+      "kind": "config",
+      "module": ".github",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "快速纯前端部署通道：push 到 main 且只动 web/**(或本文件、或 workflow_dispatch)时，不重跑 21–29min 数据管线，而是从最近一次成功 nightly run 下载 tickertide-site artifact、把其中 public/data/ 放回 web/public/data、只跑 npm ci+build，再用与 nightly 完全相同的 wrangler Pages 步骤发布到生产 tickertide.pages.dev",
+        "invariants": "数据只来自 nightly artifact(本通道永不 ingest/compute——重算仍是 nightly 的职责)；artifact 布局依赖 nightly upload 的最小公共祖先 web/ 被剥离(根下为 dist/+public/data/)，nightly 改 upload paths 时本文件须同步；nightly retention=7 天——近 10 次成功 run 都无未过期 artifact 时 fail-early 并提示先跑 nightly，绝不部署无数据站点；deploy gate 与 nightly 一致(只 echo 布尔不打印 token、secret 未设自动 skip)；token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)；permissions 含 actions:read(列 run+下载 artifact)；concurrency 同组取消旧 run",
+        "verification": "workflow_dispatch 手测：有近期 nightly artifact 时全流程绿、tickertide.pages.dev 数据 as_of 与该 nightly 一致且前端为新代码；artifact 全过期场景 locate 步骤红且错误信息含 run nightly first；run log 不含 token 值"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -315,6 +327,7 @@
       }
     },
     {
+      "notes": "",
       "path": "docs/runtime/Deploy-Pages-Runbook.md",
       "kind": "doc",
       "module": "docs",
@@ -323,8 +336,7 @@
         "purpose": "D.3 部署操作 runbook：Cloudflare Pages 生产公开上线的凭证两条路、建项目、首次 go-live、可选预览 Access 保护、CI 自动部署、AC-D 验收清单、回滚",
         "invariants": "只记操作步骤与凭证位置(names-only)，绝不含 token/account 值；生产 tickertide.pages.dev 公开无登录，预览 wildcard 可由 Cloudflare Access email 白名单保护；数据源条款复核按 PRD §6.2/NFR-7；部署只在 nightly 全绿后(陈旧/失败不发布)；与 Credentials-Management.md / nightly.yml / wrangler.jsonc 三者一致",
         "verification": "按 runbook 走通首次 go-live + 公开生产访问验证(AC-D 清单可全勾)；grep 确认无 secret 值入库"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1107,18 +1119,18 @@
       }
     },
     {
+      "notes": "",
       "path": "web/wrangler.jsonc",
-      "kind": "config",
+      "kind": "asset",
       "module": "web",
       "stage": "implemented",
       "contract": {
         "purpose": "Cloudflare Pages 配置(D.3)：声明项目名 + 构建产物目录，供 `wrangler pages deploy` 直传 web/dist 生产公开上线",
         "invariants": "纯静态站点(无 Functions/bindings/vars)；绝不含 secret(token 走 wrangler login OAuth 或 CI secret)；name=tickertide(改名同步 Deploy-Pages-Runbook.md)；pages_build_output_dir=dist(相对 web/，即 web/dist)；生产访问公开，预览 Access 保护由 Cloudflare Zero Trust 带外配置、不在此声明",
         "verification": "`cd web && npx wrangler pages deploy --branch=main` 读本文件 name+output dir 直传成功；grep 确认无 token/account 值入库"
-      },
-      "notes": ""
+      }
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "f9b672befe4c774b3b9cff25b73dfa77a0f9007d82161999c74a2451d8c8a599"
+  "last_structure_digest": "7c10812c197c82097c94214b942449b4b1d84342117eebecc807b3f86dbea4c0"
 }
