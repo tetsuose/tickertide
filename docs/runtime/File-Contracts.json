@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-12T12:26:31.181736+00:00",
+  "updated_at": "2026-06-12T12:53:09.324807+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -39,6 +39,7 @@
       }
     },
     {
+      "notes": "",
       "path": ".github/workflows/deploy-web.yml",
       "kind": "config",
       "module": ".github",
@@ -47,8 +48,7 @@
         "purpose": "快速纯前端部署通道：push 到 main 且只动 web/**(或本文件、或 workflow_dispatch)时，不重跑 21–29min 数据管线，而是从最近一次成功 nightly run 下载 tickertide-site artifact、把其中 public/data/ 放回 web/public/data、只跑 npm ci+build，再用与 nightly 完全相同的 wrangler Pages 步骤发布到生产 tickertide.pages.dev",
         "invariants": "数据只来自 nightly artifact(本通道永不 ingest/compute——重算仍是 nightly 的职责)；artifact 布局依赖 nightly upload 的最小公共祖先 web/ 被剥离(根下为 dist/+public/data/)，nightly 改 upload paths 时本文件须同步；nightly retention=7 天——近 10 次成功 run 都无未过期 artifact 时 fail-early 并提示先跑 nightly，绝不部署无数据站点；deploy gate 与 nightly 一致(只 echo 布尔不打印 token、secret 未设自动 skip)；token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)；permissions 含 actions:read(列 run+下载 artifact)；concurrency 同组取消旧 run",
         "verification": "workflow_dispatch 手测：有近期 nightly artifact 时全流程绿、tickertide.pages.dev 数据 as_of 与该 nightly 一致且前端为新代码；artifact 全过期场景 locate 步骤红且错误信息含 run nightly first；run log 不含 token 值"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -69,9 +69,9 @@
       "module": ".github",
       "stage": "implemented",
       "contract": {
-        "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→compute→check) + export(board/ocean/rotation) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 生产公开上线",
-        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；M4 theme export 未接 Makefile→暂不产 theme.json(M4 follow-up)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
-        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/ocean-c9 在 CI 真实数据上 PASS；设 secret 后 deploy 步骤执行、未设时 skip 不报错；run log 不含 token 值；engine 不装 deps、无 Node20 弃用告警"
+        "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→themes→compute→check) + export(board/ocean/rotation/theme) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 生产公开上线",
+        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；theme 链路随 make pipeline/export 产 rotation.theme.json 并过 theme-c9(M4.6)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
+        "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/theme-c9/ocean-c9 在 CI 真实数据上 PASS；设 secret 后 deploy 步骤执行、未设时 skip 不报错；run log 不含 token 值；engine 不装 deps、无 Node20 弃用告警"
       }
     },
     {
@@ -118,8 +118,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)、export 含 rotation(rotation.json)、rotation-c9 跑 check_rotation(AC-M3 C9 league↔board)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
-        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9 端到端可跑；make verify GATE_PASS"
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；pipeline=ingest→fundamentals→themes(seed 幂等重播,nightly 重建 DB 故每轮必跑)→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
+        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme 端到端可跑；make verify GATE_PASS"
       }
     },
     {
@@ -157,6 +157,18 @@
         "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E",
         "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
       }
+    },
+    {
+      "path": "compute/check_theme.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M4 验收抽查（M4.6，PRD §14）：pipeline 跑完后校验 theme 链路三性质——membership 形状(≥4 theme、exposure∈[0,1]、approved_by 必填 C6)、C3 晚到重述不回溯改写 index 历史、C4 权重 exposure-based 且 cap-bound(非市值加权)，外加 bucket_bars/bucket_rrg theme 序列落地的接线检查",
+        "invariants": "对 DB 无净写入：C3 探针在 BEGIN/ROLLBACK 事务内插入 exposure=0 重述并用纯读的 build_theme_index 对比前后段（重述日前逐字节不变、重述日后必须分叉）；theme_membership 为空时 SKIP 且 exit 0（裸 DB 上 make compute 不得硬挂）；任一硬检查失败 exit 非 0（CI 友好）",
+        "verification": "make check-theme 对 fixture DB 输出 CHECK_OK 且 9 项全 PASS；清空 theme_membership 后输出 SKIP 且 exit 0；make check 串入本检查"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -285,7 +297,7 @@
       "module": "docs",
       "stage": "implemented",
       "contract": {
-        "purpose": "M0–M6 开发方案：PRD §13 里程碑的执行展开（M0 与 M1 详细到可 task-open 执行，M2–M6 纲要）",
+        "purpose": "M0–M6 开发方案：PRD §13 里程碑的执行展开（M0–M4 + D 轨详细到可 task-open 执行，M5–M6 纲要）；进度行是各 M/PR 完成态的 SoT",
         "invariants": "引用 PRD/BUILD-PLAN 不复制；M0–M1 拆解可追溯到 §13/§14、M2–M6 纲要；just-in-time 临近再细化、不提前承诺 §17 未决决策；冲突以 PRD §16 为准",
         "verification": "M0–M1 各 task 与对应 AC 一致；M2–M6 纲要指向 PRD §14；依赖链自洽"
       }
@@ -477,8 +489,8 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "D.4 新鲜度 manifest：读 board/ocean/rotation.json → manifest.json(最新 as_of + 各 surface count)，供 web as_of badge 免 load 全量 JSON + D.3 deploy gate",
-        "invariants": "读 export 已写的 board/ocean/rotation；as_of_date 取各 surface 最新；缺 surface→None(部分 export 可见、非静默当完整)；Makefile export 末尾跑(在三 export 后)；输出 gitignored 紧凑 JSON",
+        "purpose": "D.4 新鲜度 manifest：读 board/ocean/rotation/rotation.theme.json → manifest.json(最新 as_of + 各 surface count)，供 web as_of badge 免 load 全量 JSON + D.3 deploy gate",
+        "invariants": "读 export 已写的 board/ocean/rotation/rotation.theme(M4.6)；as_of_date 取各 surface 最新；缺 surface→None(部分 export 可见、非静默当完整)；Makefile export 末尾跑(在三 export 后)；输出 gitignored 紧凑 JSON",
         "verification": "make export 后 manifest.json 含 as_of+surfaces counts；as_of==max(各 surface as_of)；缺文件→对应 surface=None"
       }
     },
@@ -1006,7 +1018,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1) + ocean.json(M2.1) + rotation.json(M3.3) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts，D.4)",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts 含 rotation.theme，D.4/M4.6)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
@@ -1132,5 +1144,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "7c10812c197c82097c94214b942449b4b1d84342117eebecc807b3f86dbea4c0"
+  "last_structure_digest": "62a344777367fbbac663a547450584ed12e8d7caa52816b3ad0171bd3394721e"
 }

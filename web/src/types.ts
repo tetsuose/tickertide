@@ -175,5 +175,5 @@ export interface ManifestData {
   schema_version: number
   as_of_date: string | null
   generated_at: string
-  surfaces: { board: number | null; ocean: number | null; rotation: number | null }
+  surfaces: { board: number | null; ocean: number | null; rotation: number | null; 'rotation.theme': number | null }
 }

@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals compute export ocean-c9 rotation-c9 serve pipeline check \
+        ingest fundamentals themes compute export ocean-c9 rotation-c9 theme-c9 serve pipeline check check-theme \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -46,14 +46,16 @@ help:
 	@echo "    make writeback-apply WRITE=1   Sync File-Contracts.json"
 	@echo "    make enforce-fill MODULE=...   Restrict changes to one module"
 	@echo ""
-	@echo "  Data Pipeline (M0-M1 live — see docs/PRD.md §13)"
+	@echo "  Data Pipeline (M0-M4 live — see docs/PRD.md §13)"
 	@echo "    make ingest                   Nasdaq universe + price bars (yfinance)"
 	@echo "    make fundamentals             SEC EDGAR companyfacts -> fundamentals_q"
-	@echo "    make compute                  DuckDB: derived_daily (composite) + valuation_daily"
-	@echo "    make check                    AC-M0 acceptance check on the DB"
-	@echo "    make pipeline                 ingest -> fundamentals -> compute -> check (M0 end-to-end)"
-	@echo "    make export                   M1/M2 board.json + ocean.json -> web/public/data"
+	@echo "    make themes                   Seed theme_membership (M4.1 bootstrap; M4.5 adds LLM+review)"
+	@echo "    make compute                  DuckDB: composite + valuation + theme index + RS-Ratio (sector/theme)"
+	@echo "    make check                    AC-M0 + AC-M4 acceptance checks on the DB"
+	@echo "    make pipeline                 ingest -> fundamentals -> themes -> compute -> check"
+	@echo "    make export                   board + ocean + rotation(+theme) + manifest -> web/public/data"
 	@echo "    make ocean-c9                 AC-M2 C9: ocean.json positions == board/Stock numbers"
+	@echo "    make theme-c9                 AC-M4 C9: rotation.theme.json league == board PIT theme chips"
 	@echo ""
 	@echo "  Web Client (M1/M2 — Vite + React + TS; run web-install once)"
 	@echo "    make web-install              Install web/ npm deps"
@@ -144,20 +146,35 @@ ingest:
 fundamentals:
 	@python3 ingest/edgar.py $(PIPELINE_ARGS)
 
+# M4.1 seed bootstrap (idempotent: clears + reseeds source='seed' rows). The nightly DB
+# is rebuilt from scratch, so membership must be re-landed every pipeline run; the M4.5
+# LLM+human path will append on top of this baseline.
+themes:
+	@python3 themes/seed.py
+
 compute:
 	@python3 compute/run.py
 	@python3 compute/valuation.py
+	@python3 compute/theme_index.py
 	@python3 compute/rotation.py
+	@python3 compute/rotation.py --bucket-type theme
 
-check:
+check: check-theme
 	@python3 compute/check.py
+
+# AC-M4 (PRD §14): PIT membership shape + C3 no-retro + C4 cap-bound weights.
+# Skips cleanly (exit 0) when theme_membership is empty — `make compute` on a bare DB
+# must not hard-fail before `make themes` ran.
+check-theme:
+	@python3 compute/check_theme.py
 
 export:
 	@python3 export/board.py $(PIPELINE_ARGS)
 	@python3 export/ocean.py
 	@python3 export/rotation.py
+	@python3 export/rotation.py --bucket-type theme
 	@python3 export/manifest.py
-	@echo "[export] board + ocean + rotation + manifest -> web/public/data/ (M5 adds Parquet shards)."
+	@echo "[export] board + ocean + rotation(+theme) + manifest -> web/public/data/ (M5 adds Parquet shards)."
 
 # C9 cross-surface check (AC-M2): ocean.json positions trace to board/Stock numbers.
 ocean-c9:
@@ -167,10 +184,14 @@ ocean-c9:
 rotation-c9:
 	@python3 export/check_rotation.py
 
+# C9 cross-surface check (AC-M4): theme league PIT members trace to board theme chips.
+theme-c9:
+	@python3 export/check_rotation.py --rotation web/public/data/rotation.theme.json
+
 serve: web-dev
 
-pipeline: ingest fundamentals compute check
-	@echo "[pipeline] M0 end-to-end complete: ingest -> fundamentals -> compute -> check (nightly cron body)"
+pipeline: ingest fundamentals themes compute check
+	@echo "[pipeline] end-to-end complete: ingest -> fundamentals -> themes -> compute -> check (nightly cron body)"
 
 # --- Offline Verification Fixture ---
 # Synthetic, deterministic DuckDB for verifying compute/export/web WITHOUT network

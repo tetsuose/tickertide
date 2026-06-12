@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = ROOT / "web" / "public" / "data"
 SCHEMA_VERSION = 1
-SURFACES = ("board", "ocean", "rotation")
+SURFACES = ("board", "ocean", "rotation", "rotation.theme")
 
 
 def build_manifest(data_dir: Path, generated_at: str | None = None) -> dict:
