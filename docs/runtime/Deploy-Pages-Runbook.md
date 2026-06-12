@@ -1,7 +1,7 @@
 # Deploy Runbook — D.3 Cloudflare Pages 私有上线
 
 > 何时读：首次 go-live、配置/排查 nightly 自动部署、设置私有访问、回滚。
-> 范围：D 轨终点。把 D.2 nightly 产出的静态站点（`web/dist`，数据 bundled 自 `web/public/data`）发布到 **Cloudflare Pages**，并用 **Cloudflare Access** 限私有访问（个人自用、不对外分发数据 —— SCOPE / PRD §6.2 / NFR-7 硬线）。
+> 范围：D 轨终点。把 D.2 nightly 产出的静态站点（`web/dist`，数据 bundled 自 `web/public/data`）发布到 **Cloudflare Pages**，并用 **Cloudflare Access** 限私有访问；数据源条款复核按 PRD §6.2 / NFR-7 处理。
 > 配套：`docs/runtime/Credentials-Management.md`（凭证硬线）· `.github/workflows/nightly.yml`（部署接线）· `web/wrangler.jsonc`（Pages 配置）。
 
 ## 0. 第一性原理

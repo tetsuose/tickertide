@@ -56,7 +56,7 @@ Client (canvas + duckdb-wasm):  renders Ocean (thousands of points) + boards; sc
 | **(opt) Tiingo** | 干净补缺 | 便宜付费;yfinance 仅作 fallback(非官方、ToS 灰、会断) |
 
 - **US-only 过滤**:Nasdaq screener 限 NYSE/Nasdaq/AMEX 上市;EDGAR 天然是 US filers。
-- **Licensing:** 个人不分发 → 当前合规。**若未来公开**:Stooq/EDGAR 条款最友好;其余多数禁止 redistribute,需 display license。
+- **Licensing:** 公开展示 / 再分发 / 商业化前必须复核数据源条款：Stooq/EDGAR 条款最友好;其余多数禁止 redistribute,需 display license。
 - **IEX Cloud 已退役(2024-08),勿用。** 别信仍在列它的旧对比文。
 
 ---
