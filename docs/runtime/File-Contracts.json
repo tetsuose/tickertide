@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T11:56:07.087487+00:00",
+  "updated_at": "2026-06-13T13:42:15.706826+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -135,6 +135,7 @@
       }
     },
     {
+      "notes": "negative-then-refined 结果:钉出 Discovery 应为『持续点火』榜而非瞬时;下一步落地 compute/ignition.py + persistence",
       "path": "analysis/precision_ignition.py",
       "kind": "script",
       "module": "analysis",
@@ -143,8 +144,7 @@
         "purpose": "ignition 精度回看(precision pass):在中性的 Nasdaq habitat 池($0.3B-$100B 随机 800 只)上量化 ignition top-decile 点亮后的延续 vs 假阳性。核心发现=瞬时点火 lift≈0(证伪『Discovery 直接改 ignition 排序』),唯『持续点火』(连续在 top decile)把 60-120d 中位 LIFT 转正;一次性分析脚本,非 nightly 管线",
         "invariants": "ignition 复用 analysis/verify_ignition.py 的 ignition_metrics 同一套数学;universe 来自 ingest/nasdaq.fetch_universe 真实美股(非手挑、降幸存者挑选偏差);核心度量是『event 减 base 的 LIFT』而非绝对收益(抗 2023-26 牛市底噪);只读 yfinance,产出仅落 gitignore 的 data/;幸存者偏差(死票缺失)在输出显式标注、不掩饰",
         "verification": "跑 .venv/bin/python analysis/precision_ignition.py 输出 4 变体(top10/5/1% 进入 + top10%持续5d)× 3 窗口的 median LIFT vs base 表 + 4 target 的 recall;唯持续过滤变体 LIFT 显著为正"
-      },
-      "notes": "negative-then-refined 结果:钉出 Discovery 应为『持续点火』榜而非瞬时;下一步落地 compute/ignition.py + persistence"
+      }
     },
     {
       "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进",
@@ -177,9 +177,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "AC-M0 验收抽查：pipeline 跑完后 sanity-check DuckDB（PRD §14）",
-        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E",
-        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
+        "purpose": "AC-M0+AC-M7 验收抽查：pipeline 跑完后 sanity-check DuckDB（PRD §14/§10.8）",
+        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E / ignition 已生成且 ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(C9 同源 derived_daily)",
+        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS（含 ignition 三项）；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
       }
     },
     {
@@ -219,6 +219,18 @@
       }
     },
     {
+      "path": "compute/ignition.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "per-stock ignition 信号数学（早期发现引擎，PRD §10.8.1，与 composite 并列的第二台）：5 个短窗口分量（动量加速 ret10/10-ret50/50 / 波动收缩-扩张 |Δp|10/60 / 放量 vol5/60 / 突破收复 close/max60·1[>MA50] / RS 拐点 slope10-slope30/3）",
+        "invariants": "pandas 算 per-stock 时序、分量皆 self-relative（横截面 percentile-rank 在 run.py 做）；与 signals.py 共用同一份 bars 与同一 benchmark 对齐口径（C9，spx.close=adj_close basis、ffill 到本票交易日）；用 adj_close 作价；early⟷reliable 旋钮不触 ignition（PRD §10.8/P7），精度靠 persistence 非权重；窗口短于 composite（10/50/60 vs 63/126/252）测加速度/拐点非水平",
+        "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "compute/rotation.py",
       "kind": "script",
@@ -237,9 +249,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "M0.3 compute 编排：daily_bars + spx_daily → derived_daily（横截面 rs_pct + composite）",
-        "invariants": "pandas 算 per-stock、DuckDB 算横截面 PERCENT_RANK/rank；分量 c_* 存原始供 client 按任意 k 重配权，composite 仅默认 k 快照；clear+重算幂等",
-        "verification": "compute_all 后 derived_daily 非空；5 分量∈[0,1]；composite∈[0,100]；smoke top-by-composite 方向合理"
+        "purpose": "M0.3+M7.1 compute 编排：daily_bars + spx_daily → derived_daily（横截面 rs_pct + composite + ignition）",
+        "invariants": "pandas 算 per-stock（signals 长窗 + ignition 短窗，共用同一份 bars，C9）、DuckDB 算横截面 PERCENT_RANK/rank；composite 分量 c_* 存原始供 client 按任意 k 重配权、composite 仅默认 k 快照；ignition=100·mean(5 分量各自横截面 percentile-rank)、ign_pct=ignition 的横截面 percentile、ign_persist_days=连续(含当日)ign_pct≥90 的天数(islands 技法,非 lit 行=0)；clear+重算幂等",
+        "verification": "compute_all 后 derived_daily 非空；composite 5 分量∈[0,1]、composite∈[0,100]；ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0；smoke 打印 top-by-composite 与 top-by-ignition 方向合理"
       }
     },
     {
@@ -670,8 +682,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) + theme_membership(多对多 ticker↔theme 连续 exposure,point-in-time) 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此",
-        "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错"
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)",
+        "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错；derived_daily 含 ig_*/ignition/ign_pct/ign_persist_days 列"
       }
     },
     {
@@ -1444,5 +1456,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "d57543f5be7d28028e595036c65601bbfce470a2e5699436ba6f4eab59571258"
+  "last_structure_digest": "bfe013bbe9cff8e36b94f56b91bb301bb89c6f34ec4f99aeed41188ce8c2dcfc"
 }
