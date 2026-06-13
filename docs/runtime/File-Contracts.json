@@ -754,8 +754,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M4.5 demo 交付：NVDA 人审主题 membership(durable SoT，nightly land 重播)",
-        "invariants": "入 git 持久(DB 夜间重建后由 land.py 重播)；rows=AI 0.90 + SEMI 1.00(营收锚定，源 FY2026 10-K Data Center 占比/全营收皆芯片)，approved_by=sejonep(C6 人审)，as_of_date=2026-06-13(C3)；AI/SEMI 重叠是 PRD §8.2 多对多 feature 非 bug；provenance 记 LLM model/filing/per-row llm_exposure 供审计",
-        "verification": "make themes(land) 后 NVDA 的 AI/SEMI 进 theme_membership；make check-land PIT 优先级 PASS；export/board.py 后 NVDA 卡带 AI/SEMI chip(真实 pipeline)"
+        "invariants": "入 git 持久(DB 夜间重建后由 land.py 重播)；rows=AI 0.90 + SEMI 1.00(营收锚定，源 FY2026 10-K Data Center 占比/全营收皆芯片)，approved_by=sejonep(C6 人审 2026-06-13)，as_of_date=2026-02-25(=10-K filing 日，PIT 信息可得日；使最新 EOD board 即显 approved 而非回落 seed)；AI/SEMI 重叠是 PRD §8.2 多对多 feature 非 bug；provenance 记 LLM model/filing/per-row llm_exposure 供审计",
+        "verification": "make themes(land) 后 NVDA 的 AI/SEMI 进 theme_membership；make check-land PIT 优先级 PASS；board PIT(as_of≥2026-02-25)解析 NVDA→AI 0.90+SEMI 1.00(非 seed 0.6)；export/board.py 后 NVDA 卡带 approved AI/SEMI chip"
       }
     },
     {
@@ -802,8 +802,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M4.5 human-in-loop 审批：candidates → themes/approved/<TICKER>.json(人审后的 durable SoT)",
-        "invariants": "human 是权威(C6)：审批可自由覆盖 LLM exposure、删候选、补 LLM 漏的主题；--by<approver> 必填(具体人名非 bot)、缺则报错；审批日=as_of_date(C3 point-in-time，再审写新状态、绝不原地改史)；approved 文件自含 provenance(model/filing/per-row llm_exposure)；写 git 持久而非 DB(夜间重建)",
-        "verification": "review --approve \"AI=0.9,SEMI=1.0\" --by sejonep 产 approved/NVDA.json，rows 含 exposure+approved_by+llm_exposure；缺 --by 报错 exit；无 --approve 仅展示候选不写盘"
+        "invariants": "human 是权威(C6)：审批可自由覆盖 LLM exposure、删候选、补 LLM 漏的主题；--by<approver> 必填(具体人名非 bot)、缺则报错；as_of_date 默认=candidate 的 10-K filing 日(PIT 信息可得日，非审批操作日：否则 today 日审批在最新 EOD board[as_of=前一交易日]要等下个 session 才解析)、可 --as-of 覆盖(C3 point-in-time，再审写新状态、绝不原地改史)；approved 文件自含 provenance(model/filing/per-row llm_exposure)；写 git 持久而非 DB(夜间重建)",
+        "verification": "review --approve \"AI=0.9,SEMI=1.0\" --by sejonep 产 approved/NVDA.json，rows 含 exposure+approved_by+llm_exposure、as_of=filing 日；board PIT(≥filing 日)即解析到 approved；缺 --by 报错 exit；无 --approve 仅展示候选不写盘"
       }
     },
     {

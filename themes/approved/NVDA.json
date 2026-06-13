@@ -1,9 +1,9 @@
 {
   "ticker": "NVDA",
   "approved_by": "sejonep",
-  "as_of_date": "2026-06-13",
+  "as_of_date": "2026-02-25",
   "source": "llm",
-  "note": "FY2026 10-K: Data Center $193.7B/total $215.9B=AI 0.90; fabless, 100% revenue semiconductor=SEMI 1.00. AI/SEMI overlap intentional (PRD 8.2 many-to-many).",
+  "note": "FY2026 10-K: Data Center $193.7B/total $215.9B=AI 0.90; fabless, 100% revenue semiconductor=SEMI 1.00. AI/SEMI overlap intentional (PRD 8.2 many-to-many). as_of = 10-K filing date (PIT info-available day); approved 2026-06-13 by sejonep.",
   "provenance": {
     "candidates_generated_on": "2026-06-13",
     "model": "claude-haiku-4-5-20251001",
