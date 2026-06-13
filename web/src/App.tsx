@@ -3,6 +3,8 @@ import type { SurfaceId, Scope, Components, ManifestData } from './types'
 import Discovery from './views/Discovery'
 import Ocean from './views/Ocean'
 import Rotation from './views/Rotation'
+import Valuation from './views/Valuation'
+import Stock from './views/Stock'
 import { weights } from './lib/composite'
 import { loadManifest } from './lib/data'
 import { dataAgeDays, freshness, ageLabel } from './lib/freshness'
@@ -40,13 +42,13 @@ const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb:
   },
   valuation: {
     scale: 'wide · explore',
-    milestone: 'M5',
-    blurb: 'duckdb-wasm 浏览器横截面 screener；as-of 新鲜度三档上色 + common-vintage percentile。',
+    milestone: 'M5 · 预览',
+    blurb: '横截面 screener：as-of 新鲜度三档上色 + common-vintage percentile + scope 写入口。预览读 board.json；正式 M5 走 duckdb-wasm 全 universe + PEG/margin。',
   },
   stock: {
     scale: 'narrow · detail',
-    milestone: 'M5',
-    blurb: 'price ↔ fundamentals 时间轴对齐 stack（K线 + MA + 成交量 + 季度营收 bars + P/S over time）。',
+    milestone: 'M5 · 预览',
+    blurb: 'per-name 面板：头部 + 价格/MA/成交量图 + 6 估值倍数 + 5 分量（board.json 同源）。正式 M5 补 price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
   },
 }
 
@@ -61,6 +63,13 @@ export default function App() {
   // pinned ticker set — Ocean click pins (trail); lasso bulk-selects + focuses.
   // Lives in App so scope='pinned' can filter every surface by it.
   const [pinned, setPinned] = useState<string[]>([])
+  // selected ticker for the per-name Stock surface (PRD §9.6). Lives in App so any
+  // surface (a Discovery card / a Valuation row) can open a name: set ticker + switch tab.
+  const [selected, setSelected] = useState<string | null>(null)
+  const openStock = (t: string) => {
+    setSelected(t)
+    setTab('stock')
+  }
   // D.4 freshness: load the tiny manifest for the header as_of badge (data age + 陈旧色),
   // so stale / failed nightly data is VISIBLE, never silently served as fresh.
   const [manifest, setManifest] = useState<ManifestData | null>(null)
@@ -170,22 +179,15 @@ export default function App() {
             <span className="khint">{info.milestone}</span>
           </div>
           {tab === 'discovery' ? (
-            <Discovery k={k} scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} />
+            <Discovery k={k} scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} onOpen={openStock} />
           ) : tab === 'ocean' ? (
             <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} />
           ) : tab === 'rotation' ? (
             <Rotation scope={scope} setScope={setScope} onJumpTab={setTab} k={k} />
+          ) : tab === 'valuation' ? (
+            <Valuation scope={scope} setScope={setScope} pinned={pinned} onOpen={openStock} />
           ) : (
-            <>
-              <div className="placeholder">
-                <div className="ph-tag">{info.milestone} · SCAFFOLD</div>
-                <div className="ph-msg">{info.blurb}</div>
-              </div>
-              <div className="foot">
-                脊柱骨架：单一 composite 引擎 → 5 个 lens，两个尺度（wide explore / bounded decide），零常驻
-                backend。旋钮 k = {k.toFixed(2)} 已驱动 Discovery 实时重排（权重条见上）；此 surface 待后续 milestone。
-              </div>
-            </>
+            <Stock ticker={selected} setTicker={setSelected} k={k} />
           )}
         </section>
       </div>
