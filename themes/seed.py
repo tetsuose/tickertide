@@ -41,9 +41,21 @@ SEED_FILE = ROOT / "ingest" / "universe_seed.txt"
 
 # Bootstrap constants (deliberately coarse — real values come from M4.5):
 SEED_EXPOSURE = 0.6          # flat revenue-share placeholder for every seeded membership
-SEED_AS_OF = "2026-06-06"    # baseline curation date; one point-in-time snapshot
+SEED_AS_OF = "2024-01-01"    # fallback baseline when the DB has no bars to anchor to
 SEED_SOURCE = "seed"
 SEED_APPROVED_BY = "seed"    # sentinel: auto-seeded, NOT human-reviewed (C6)
+
+
+def baseline_as_of(con) -> str:
+    """The seed membership's point-in-time as_of. The theme index (compute/theme_index.py)
+    is built FORWARD from a theme's first as_of, so a seed sitting at a recent date yields
+    only a few days of index — far too short for the weekly RS-Ratio (theme Rotation comes
+    up empty). The seed is a COARSE long-standing baseline ("these reps have long been in
+    these themes"), so anchor it at the earliest available price bar: the index then spans
+    the full ~2y of history and RS-Ratio emits. PIT is preserved — a later M4.5 approval at
+    its own as_of still wins forward. Falls back to SEED_AS_OF on a bars-less DB."""
+    r = con.execute("SELECT CAST(min(date) AS VARCHAR) FROM daily_bars").fetchone()
+    return (r[0] if r and r[0] else None) or SEED_AS_OF
 
 
 def load_themes(path: Path = THEMES_YAML) -> list[dict]:
@@ -107,7 +119,9 @@ def build_rows(memberships: list[tuple[str, str]], as_of: str) -> list[tuple]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Seed theme_membership from universe_seed.txt groups.")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
-    ap.add_argument("--as-of", default=SEED_AS_OF, help=f"baseline as_of_date (ISO; default {SEED_AS_OF})")
+    ap.add_argument("--as-of", default=None,
+                    help="baseline as_of_date (ISO); default = earliest daily_bars date so the theme "
+                         f"index spans full history (fallback {SEED_AS_OF} on a bars-less DB)")
     ap.add_argument("--dry-run", action="store_true", help="print rows, do not write the DB")
     args = ap.parse_args(argv)
 
@@ -116,7 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     valid = {t["key"] for t in themes}
 
     memberships, unmapped = parse_seed_groups(SEED_FILE.read_text(), hdr2key)
-    rows = build_rows(memberships, args.as_of)
+
+    con = db.connect(args.db)
+    as_of = args.as_of or baseline_as_of(con)
+    rows = build_rows(memberships, as_of)
 
     # Per-theme tally for a legible summary + an at-a-glance coverage check.
     by_theme: dict[str, int] = {}
@@ -124,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         by_theme[theme] = by_theme.get(theme, 0) + 1
 
     print(f"[seed] themes.yaml: {len(valid)} themes; universe_seed groups -> {len(rows)} memberships "
-          f"as_of={args.as_of} exposure={SEED_EXPOSURE} source={SEED_SOURCE}")
+          f"as_of={as_of} exposure={SEED_EXPOSURE} source={SEED_SOURCE}")
     for key in sorted(by_theme):
         print(f"    {key:6} {by_theme[key]:3}")
     if unmapped:
@@ -132,10 +149,10 @@ def main(argv: list[str] | None = None) -> int:
               + ", ".join(unmapped[:12]) + (" …" if len(unmapped) > 12 else ""))
 
     if args.dry_run:
+        con.close()
         print("[seed] --dry-run: no DB write.")
         return 0
 
-    con = db.connect(args.db)
     db.clear_theme_membership(con)   # idempotent reseed (source='seed' is fully derived)
     n = db.upsert_theme_membership(con, rows)
     con.close()
