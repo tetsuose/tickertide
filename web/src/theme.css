@@ -180,7 +180,7 @@ body {
   vertical-align: middle;
 }
 
-/* --- control bar: tabs + knob + scope --- */
+/* --- control bar: tabs + engine note + scope --- */
 .ctrl {
   display: flex;
   justify-content: space-between;
@@ -218,58 +218,33 @@ body {
   background: var(--accent);
 }
 
-.knobwrap {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-width: 320px;
-  flex: 1;
-  max-width: 420px;
-}
-.knoblabels {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-family: var(--disp);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  font-size: 10.5px;
-  color: var(--dim2);
-}
-.kactive {
-  color: var(--accent);
-}
 .khint {
   color: var(--dim2);
   font-family: var(--mono);
   font-size: 9px;
 }
-.knob {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--blu), var(--grn));
-  outline: none;
-  cursor: pointer;
+
+/* engine note — replaces the dropped early⟷reliable knob (PRD §9.0/§16): ignition is
+   the core discovery engine with no tunable parameter, composite a fixed-weight side-read. */
+.enginenote {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-end;
 }
-.knob::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--txt);
-  border: 3px solid var(--bg);
-  box-shadow: 0 0 0 1px var(--line2);
-  cursor: grab;
+.enginelead {
+  font-family: var(--disp);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+  color: var(--accent);
 }
-.knob::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--txt);
-  border: 3px solid var(--bg);
-  cursor: grab;
+.enginehint {
+  color: var(--dim2);
+  font-family: var(--mono);
+  font-size: 9.5px;
 }
 
 /* --- scope chip (only rendered when scope != all) --- */
@@ -562,39 +537,6 @@ body {
 }
 .ec-ignev-d {
   font-style: normal;
-  color: var(--dim2);
-}
-
-/* early⟷reliable weight bars beside the knob (PRD §9.1.1), transcribed from UX contract */
-.wbars {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-.wb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-}
-.wbtrack {
-  width: 100%;
-  height: 24px;
-  background: var(--bg2);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  display: flex;
-  align-items: flex-end;
-  overflow: hidden;
-}
-.wbfill {
-  width: 100%;
-  background: linear-gradient(180deg, var(--accent), var(--grn));
-  transition: height 0.25s;
-}
-.wbl {
-  font-size: 8.5px;
   color: var(--dim2);
 }
 

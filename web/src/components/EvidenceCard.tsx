@@ -35,7 +35,7 @@ function fmtMktcap(v: number | null): string {
 const pct = (v: number | null): string =>
   v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%'
 
-// 5 components in weight-curve order, with display labels (PRD §9.1.1 / §10.6).
+// 5 components in fixed-weight order, with display labels (PRD §9.1.1 / §10.6).
 const COMPONENTS: { key: keyof Components; label: string }[] = [
   { key: 'rs', label: 'RS' },
   { key: 'high', label: '52WH' },
@@ -55,9 +55,9 @@ export default function EvidenceCard({
   defaultOpen = false,
 }: {
   stock: Stock
-  /** weights at the current knob k (live — re-weighted by the early⟷reliable knob). */
+  /** fixed composite weights (WEIGHTS, no knob) — shown per component for informed consent. */
   weights: Components
-  /** composite recomputed at the current k (composite.ts, C9). Drives badge + sort. */
+  /** the engine's composite at the fixed weighting (stock.composite, C9). Side-read badge. */
   score: number
   onOpen?: (ticker: string) => void
   defaultOpen?: boolean
@@ -65,9 +65,9 @@ export default function EvidenceCard({
   const [open, setOpen] = useState(defaultOpen)
   const e = stock.evidence
   const ign = stock.ignition
-  // d/d: the engine's day-over-day composite move at the default weighting.
-  // prev-day components aren't exported, so this is a snapshot fact (it does not
-  // track the knob); at the default k it lines up with the badge.
+  // d/d: the engine's day-over-day composite move at the fixed weighting. Both the
+  // badge (score = stock.composite) and this delta are the engine's exported composite
+  // (no knob, PRD §16), so the delta lines up with the badge exactly.
   const dd =
     stock.composite != null && stock.composite_prev != null
       ? stock.composite - stock.composite_prev
@@ -112,7 +112,7 @@ export default function EvidenceCard({
               setOpen(!open)
             }}
             aria-expanded={open}
-            title="composite（已确认副读，按 early⟷reliable 旋钮重算；非点火榜排序）"
+            title="composite（已确认副读，固定权重；非点火榜排序）"
           >
             {score.toFixed(0)} <i>▾</i>
           </button>

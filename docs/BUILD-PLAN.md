@@ -25,7 +25,7 @@
 - **两个尺度**(产品成立的前提):
   - **wide / explore**:Ocean、Valuation screener —— 数千只,用来逛。
   - **bounded / decide**:Leaders(固定 top-N)、Rotation(~10–12 桶)—— 用来动手。
-- `early ⟷ reliable` 旋钮 = 一个标量 `k∈[0,1]`,在 composite 各 component 间 **重分配权重**,不删任何 component。
+- composite = 辅助确认引擎,用 **固定权重**(`k=0.5`,§4.6),不删任何 component、5 分量原始值可展开看。曾经的 `early ⟷ reliable` 旋钮 **已取消**(诊断为假 early——只在 composite 那些都滞后的分量间重配权;核心是 ignition、ignition 无可调参,PRD §16/§17)。
 
 ---
 
@@ -102,12 +102,12 @@ Client (canvas + duckdb-wasm):  renders Ocean (thousands of points) + boards; sc
 
 **4.6 composite**
 - `score = 100 · Σ w_i · component_i`,components ∈[0,1]:`rs_pct`、`high_proximity=close/rolling_max(close,252)`、`trend_quality`、`volume`(`SMA(vol,50)/SMA(vol,200)` 抬升 **AND** up-vol>down-vol;另加快脉冲 `today_vol>1.5×SMA(vol,50)`)、`rs_accel`(`rs_pct[t]−rs_pct[t−21]`)。
-- **旋钮** `k`:`w_high,w_trend` 随 k↓(reliable 要确认);`w_accel,w_rs` 随 k↑(early 抓加速)。两端各自归一到 Σ=1。
+- **固定权重(无旋钮)**:权重曲线 `w_high,w_trend` 随 k↓、`w_accel,w_rs` 随 k↑(Σ=1 全 k),但 `early⟷reliable` 旋钮 **已取消**,k **固定 0.5**(compute/run.py 默认 `--k 0.5`)→ `rs=.215,high=.22,trend=.17,vol=.12,accel=.275`。前端读引擎导出的 composite、不重算(C9);这条固定曲线只用来在角标里显每分量权重 %。
 
 **4.7 (optional) Kalman level+slope**:要日间稳定/无丑跳变时再上;`rs≈level`,`rs_accel≈slope` 变化,`slope/√var` 做 z-score。
 
 **4.8 ignition 引擎(早期发现,第二台引擎;2026-06-13 立项,权威规格见 PRD §10.8)**
-- **动机**:composite(§4.6)是趋势确认,长窗口(rs 63/126、high 252、trend 63、vol 50/200)系统性滞后;`early⟷reliable` 旋钮只在滞后分量间重配权,k=1「early」仍滞后。早期发现 = 不同物理量(加速/拐点 vs 水平)→ 第二台并列引擎。
+- **动机**:composite(§4.6)是趋势确认,长窗口(rs 63/126、high 252、trend 63、vol 50/200)系统性滞后;曾经的 `early⟷reliable` 旋钮只在滞后分量间重配权,k=1「early」仍滞后(=诊断出的假 early)。早期发现 = 不同物理量(加速/拐点 vs 水平)→ 第二台并列引擎。**定调(2026-06-14)**:ignition 升为项目核心(无可调参)、composite 退辅助确认(固定 k=0.5),假 early 旋钮取消。
 - **5 短窗口分量**(per-stock → 每日横截面 percentile → 等权):加速 `ret10/10−ret50/50`、波动收缩→扩张 `mean(|Δp|,10)/mean(|Δp|,60)`、放量 `vol5/vol60`、突破收复 `clamp(close/max(close,60))·1[close>MA50]`、RS 拐点 `slope10−slope30/3`(of `P/P_spx`)。
 - **persistence = 精度关键**:点火 = `ign_pct` 跨入 top decile;**瞬时点火无 lift(≈随机入场),唯连续 ~5 日仍在 top decile 把 60–120d 中位 LIFT 转正 +2.5~3.1pp**(实证 `analysis/precision_ignition.py`,中性 800 只 Nasdaq habitat 池)。机理:真突破赖在强势区、假突破速熄。
 - **三级漏斗**:ignition 触发(recall,早)→ persistence 确认(precision,去假突破)→ 翻财报终筛(human)。**Discovery = 「持续点火」榜(非 composite 排序)。**
@@ -135,7 +135,7 @@ Client (canvas + duckdb-wasm):  renders Ocean (thousands of points) + boards; sc
 ## 6. 五个 Surface(对照 `equity-monitor-v2.jsx`)
 
 1. **Ocean**(canvas,wide):数千只;**轴固定 x=RS pct,y=Valuation pct(底=便宜)**,color=sector/theme,size=mktcap;**时间 scrubber(周度快照,无 autoplay)**;**点击 pin → 画箭头 trail**(仅 pinned,不全量)。"右移 + 留在低估区(绿象限)" = cheap & strengthening = 要找的 emerging leader。(**RRG-axes 模式已砍**:per-stock RRG 散点冗余、1800 点是噪音云,且 Rotation 已改折线;momentum 维度在 composite / Rotation / Stock 已有。`rsr`/`rsm` 一并删。)
-2. **Discovery**(原 "Emerging Leaders"):**evidence-first 证据卡流**(非分数榜),**按 ignition「持续点火」排序**(§4.8:跨入横截面 top decile 且持续 ~5 日;**非 composite 排序**)。候选池 = 三级漏斗前两级(ignition 触发 → persistence 确认)+ AI 兜底筛;bound = 持续点火名单,非硬 top-20。每卡 = **Stock 的 collapsed 态**,头部露点火证据(突破/放量/步速/MA50 收复)+ composite 角标作「是否已确认」副读;旋钮调候选池松紧;d/d 仍标。
+2. **Discovery**(原 "Emerging Leaders"):**evidence-first 证据卡流**(非分数榜),**按 ignition「持续点火」排序**(§4.8:跨入横截面 top decile 且持续 ~5 日;**非 composite 排序**)。候选池 = 三级漏斗前两级(ignition 触发 → persistence 确认)+ AI 兜底筛;bound = 持续点火名单,非硬 top-20。每卡 = **Stock 的 collapsed 态**,头部露点火证据(突破/放量/步速/MA50 收复)+ composite 角标作「是否已确认」副读(固定权重,无旋钮);候选池阈值离线定死(ignition 无可调参);d/d 仍标。
 3. **Rotation**(narrow):**所有 sector/theme 的 RS-Ratio 多线图(非散点)** + **enriched league 表**(rank、RS-Ratio level、**Δ(=斜率/momentum)**、**breadth %>MA50 / %>MA200**、#at-52w-high、member composite 中位数、agg EV/S、多 horizon relative return,按 level 排序);**GICS↔Theme 切换**。**点表行/线 → set scope + 钻进该 bucket**(N=1 RS-Ratio 单线放大 + 成员 evidence-cards,见 §6.1)。
 4. **Valuation**(screener,wide):cross-sectional 表 P/E·P/S·EV/S·EV/EBITDA·PEG·Rule-of-40·growth·margin + **sector/theme 内 percentile**;可排序筛选(duckdb-wasm 在浏览器查 Parquet)。
 5. **Stock**(narrow,= evidence-card 的 expanded 态):**核心 = 时间轴对齐的 price↔fundamentals stack** —— 日线 K 线 + MA50/150/200 + 成交量 / **季度营收 bars** / **P/S over time**,各格共用同一 x 轴对齐(季度网格线贯穿),直接可视化 P/S expansion(价↑营收平 = 变贵无基本面)vs 赚到这波(价↑营收↑)。下接估值快照(P/S·EV/S·EV/EBITDA·P/E·growth·Rule40)+ composite component 序列 + theme memberships+exposure + 最新 filing AI 摘要。**保留为独立 tab**:既是 card 点开的落地详情,也支持按 ticker 直接查。
@@ -205,7 +205,7 @@ spx_daily(date, close);
 ## 9. 建议构建顺序(milestones)
 
 - **M0 — 数据 + 引擎(先窄):** Stooq+Nasdaq+EDGAR ingest → DuckDB → 对 ~500 只(S&P 500 + 人工种子清单)算 composite + valuation。先证明数据拉得动、composite 直观。
-- **M1 — Leaders + digest:** bounded top-N board + 旋钮 + d/d + 每日 email digest(保证你真的会看)。
+- **M1 — Leaders + digest:** bounded top-N board + d/d + 每日 email digest(保证你真的会看)。(M1 期建过 early⟷reliable 旋钮,M7 后取消——核心转 ignition、composite 退固定权重确认。)
 - **M2 — Ocean:** canvas + scrubber + pin→trail,轴固定 valuation×RS(无 RRG 模式);respect global scope(非 scope 点变淡)。
 - **M3 — Rotation:** 11 SPDR ETF 的 RS-Ratio 多线图 + RS-rank 表 + breadth;点 bucket → N=1 单线 + 成员。
 - **M4 — 主题分类:** EDGAR + LLM 营收锚定 membership(point-in-time,human-in-loop)→ theme RS-Ratio 线 / theme 上色。
@@ -236,9 +236,9 @@ intraday / real-time;auth / 多用户 / 支付;**非美上市标的**;**中文 c
 - spine:**2 台 per-stock 引擎(composite 确认 + ignition 发现,§4.8/PRD §10.8)→ 5 surface → 2 scale → 零持久后端**(§0)。
 - 数据源:Stooq(EOD)+ Nasdaq screener(universe/mktcap/GICS/PE)+ EDGAR(权威基本面)+ yfinance(脆弱兜底)(§2)。
 - 5 surface 行为 + evidence-first(默认露原始证据,composite 只是可展开角标,永不给 buy/target)(§6、§6.2)。
-- 数学:vol-normalized EWMAC、RS=双窗超额收益的横截面百分位、trend=KER/OLS t 值、composite=Σwᵢ·分量 由 early↔reliable **一个旋钮**重配权(§4)。
-- **ignition(§4.8/PRD §10.8,已定)**:早期发现第二台引擎,5 短窗口分量→横截面 top decile;**瞬时无精度,唯 persistence(持续 ~5 日)有 lift**(实证 analysis/) → Discovery=「持续点火」榜;三级漏斗 = 触发→持续→翻财报。
-- **权重是观点不是事实**:不回测优化、买 robustness 不买 alpha,全程暴露旋钮+分量条(§4.6)。
+- 数学:vol-normalized EWMAC、RS=双窗超额收益的横截面百分位、trend=KER/OLS t 值、composite=Σwᵢ·分量,权重 **固定 k=0.5**(曾经的 early↔reliable **旋钮已取消**——核心是 ignition、ignition 无可调参,§4/PRD §16)。
+- **ignition(§4.8/PRD §10.8,已定;2026-06-14 定调为项目核心)**:早期发现第二台引擎、**项目核心技术指标**,5 短窗口分量→横截面 top decile;**瞬时无精度,唯 persistence(持续 ~5 日)有 lift**(实证 analysis/) → Discovery=「持续点火」榜;三级漏斗 = 触发→持续→翻财报。**无任何可调参**(刻意=买 robustness 不买 alpha);composite 退辅助确认(固定权重)。
+- **核心是 ignition、composite 退辅助确认**:不回测优化、买 robustness 不买 alpha;ignition 无可调参、composite 用固定权重,全程暴露 composite 分量条(可看不可拨,§4.6),旋钮已取消。
 - 估值统一规则:price ÷ trailing-4Q,日频(分母季度 ASOF、分子日频),`E≤0→n.m.` 退 P/S,无 forward;**百分位用 common-vintage**(只在当期 cohort 内排名,stale 不进)(§4.5)。
 - Rotation = **RS-Ratio 多线(非散点)**;Ocean 轴固定 RS×估值(**RRG-axes 已砍**)(§4.4、§6)。
 - 全局 scope(all|sector|theme|pinned)单一真源、跨 tab 粘滞、可见可一键清,Discovery/Valuation/Rotation/**Ocean** 全respond(§6.1、§7 item 10)。
