@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-12T12:53:09.324807+00:00",
+  "updated_at": "2026-06-13T02:06:32.134133+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -58,8 +58,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "advisory CI：每次 push/PR 在 Linux runner 跑 devtopology gate(make verify + make health) 与离线合成管道验证(fixture→compute→valuation→export→check)",
-        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖；其价值是 PR 上留客观健康记录并验证小写路径；所用 actions 维持受 GitHub 支持的 Node24 runtime、不依赖已弃用的 node20 runtime",
-        "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK；gate 输出可见；board.json 作为 artifact 上传；workflow 运行无 Node20 runtime 弃用告警"
+        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖、并跑 check-land(M4.5 land+PIT 优先级离线验收)；其价值是 PR 上留客观健康记录并验证小写路径；所用 actions 维持受 GitHub 支持的 Node24 runtime、不依赖已弃用的 node20 runtime",
+        "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK(含 check-land)；gate 输出可见；board.json 作为 artifact 上传；workflow 运行无 Node20 runtime 弃用告警"
       }
     },
     {
@@ -82,7 +82,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "排除生成物、产品数据产物与凭证文件，使版本库只跟踪源与规格",
-        "invariants": "必须含 .index/、__pycache__/、data/、*.duckdb、*.parquet、secrets/、*.env、.wrangler/、.dev.vars(Cloudflare 本地 state/secret)；保留 *.env.example 与 docs/runtime 的 .example 模板",
+        "invariants": "必须含 .index/、__pycache__/、data/、*.duckdb、*.parquet、secrets/、*.env、.wrangler/、.dev.vars(Cloudflare 本地 state/secret)；排除 themes/candidates/(M4.5 LLM 中间产物,可重跑)、保留 themes/approved/(人审 SoT)；保留 *.env.example 与 docs/runtime 的 .example 模板",
         "verification": "git status 不出现生成物/数据/密钥/wrangler 本地态；clone 后无被忽略文件被跟踪"
       }
     },
@@ -118,8 +118,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；pipeline=ingest→fundamentals→themes(seed 幂等重播,nightly 重建 DB 故每轮必跑)→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
-        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme 端到端可跑；make verify GATE_PASS"
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
+        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS"
       }
     },
     {
@@ -159,6 +159,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/check_theme.py",
       "kind": "script",
       "module": "compute",
@@ -167,8 +168,7 @@
         "purpose": "AC-M4 验收抽查（M4.6，PRD §14）：pipeline 跑完后校验 theme 链路三性质——membership 形状(≥4 theme、exposure∈[0,1]、approved_by 必填 C6)、C3 晚到重述不回溯改写 index 历史、C4 权重 exposure-based 且 cap-bound(非市值加权)，外加 bucket_bars/bucket_rrg theme 序列落地的接线检查",
         "invariants": "对 DB 无净写入：C3 探针在 BEGIN/ROLLBACK 事务内插入 exposure=0 重述并用纯读的 build_theme_index 对比前后段（重述日前逐字节不变、重述日后必须分叉）；theme_membership 为空时 SKIP 且 exit 0（裸 DB 上 make compute 不得硬挂）；任一硬检查失败 exit 非 0（CI 友好）",
         "verification": "make check-theme 对 fixture DB 输出 CHECK_OK 且 9 项全 PASS；清空 theme_membership 后输出 SKIP 且 exit 0；make check 串入本检查"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -747,6 +747,78 @@
       }
     },
     {
+      "path": "themes/approved/NVDA.json",
+      "kind": "config",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M4.5 demo 交付：NVDA 人审主题 membership(durable SoT，nightly land 重播)",
+        "invariants": "入 git 持久(DB 夜间重建后由 land.py 重播)；rows=AI 0.90 + SEMI 1.00(营收锚定，源 FY2026 10-K Data Center 占比/全营收皆芯片)，approved_by=sejonep(C6 人审)，as_of_date=2026-06-13(C3)；AI/SEMI 重叠是 PRD §8.2 多对多 feature 非 bug；provenance 记 LLM model/filing/per-row llm_exposure 供审计",
+        "verification": "make themes(land) 后 NVDA 的 AI/SEMI 进 theme_membership；make check-land PIT 优先级 PASS；export/board.py 后 NVDA 卡带 AI/SEMI chip(真实 pipeline)"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/check_land.py",
+      "kind": "script",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "AC-M4.5 验收：land + point-in-time 优先级离线自检(over themes/approved/*.json)",
+        "invariants": "自包含(临时 DB，db.connect 自动建 schema)→CI 无网可跑；对每条 approved 行验 C6(approved_by 非空且 source≠seed) + C3 forward(审批日 PIT 解析出 approved 值即便存在更早 seed 行) + C3 backward(审批前一日仍解析旧 seed、不回溯)；任一失败 CHECK_FAIL exit 1",
+        "verification": "make check-land 对 approved/NVDA.json 输出 CHECK_OK 全 PASS；gate.yml offline-pipeline 在 fixture 链后跑此检查"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/extract.py",
+      "kind": "script",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M4.5 LLM 主题抽取：拉 EDGAR 最新 10-K business/segment 文本 → claude CLI(print 模式,订阅 plan 额度) → 候选主题 + 营收锚定 exposure → themes/candidates/<TICKER>.json",
+        "invariants": "LLM 是候选生成器+营收抽取器、绝非权威(C6)：输出仅候选待人审(themes/review.py)；exposure=营收归因份额∈[0,1]、segment 太粗→confidence='low' 且不编造数字；只接受 themes.yaml 合法 theme key、越界/未知项丢弃；backend=claude -p(不接 API key)→这是 operator 步骤、绝不进 nightly CI；候选写 candidates/(gitignore 的中间产物,可重跑)",
+        "verification": "make theme-extract TICKER=NVDA 产 candidates/NVDA.json，≥1 候选且每项 theme∈themes.yaml、exposure∈[0,1]、confidence∈{high,medium,low}；非法 key/越界 exposure 被丢弃并告警"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/land.py",
+      "kind": "script",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M4.5 落库：themes/approved/*.json → theme_membership upsert(每轮 pipeline 重播)",
+        "invariants": "approved 文件是 human membership 的 durable SoT(DB 夜间从头重建)；make themes 内在 seed.py 之后跑→PIT 解析(db.theme_membership_asof)处 approved 晚 as_of 胜过 seed 基线(C3)；校验 theme key∈themes.yaml + exposure∈[0,1] + approved_by 非空(C6)，违则硬报错；幂等(INSERT OR REPLACE)",
+        "verification": "make themes 后 theme_membership 含 approved 行(source=llm、approved_by 人名)；land --dry-run 列行不写库；坏 key/越界 exposure/空 approver 硬报错 exit"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/review.py",
+      "kind": "script",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M4.5 human-in-loop 审批：candidates → themes/approved/<TICKER>.json(人审后的 durable SoT)",
+        "invariants": "human 是权威(C6)：审批可自由覆盖 LLM exposure、删候选、补 LLM 漏的主题；--by<approver> 必填(具体人名非 bot)、缺则报错；审批日=as_of_date(C3 point-in-time，再审写新状态、绝不原地改史)；approved 文件自含 provenance(model/filing/per-row llm_exposure)；写 git 持久而非 DB(夜间重建)",
+        "verification": "review --approve \"AI=0.9,SEMI=1.0\" --by sejonep 产 approved/NVDA.json，rows 含 exposure+approved_by+llm_exposure；缺 --by 报错 exit；无 --approve 仅展示候选不写盘"
+      },
+      "notes": ""
+    },
+    {
+      "path": "themes/run.py",
+      "kind": "script",
+      "module": "themes",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M4.5 编排：extract → review → land 三步单入口，per ticker",
+        "invariants": "review 保持交互 BY DESIGN(C6：人必须先看候选才能入库)→无 --approve 时只 extract+展示、绝不自动批准；--approve+--by 才 forward review+land；薄 glue、不复制三步逻辑",
+        "verification": "run --ticker NVDA 跑 extract+展示候选；run --ticker NVDA --approve ... --by ... 跑 review+land；--skip-extract 复用现有候选文件"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "themes/seed.py",
       "kind": "script",
@@ -1144,5 +1216,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "62a344777367fbbac663a547450584ed12e8d7caa52816b3ad0171bd3394721e"
+  "last_structure_digest": "7db075aec10e2fa569d6f3c6802aac26fe75b6f15570a903d9eb93042e1087f3"
 }
