@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 serve pipeline check check-theme check-land \
+        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 ignition-c9 serve pipeline check check-theme check-land \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -57,6 +57,7 @@ help:
 	@echo "    make export                   board + ocean + rotation(+theme) + manifest -> web/public/data"
 	@echo "    make ocean-c9                 AC-M2 C9: ocean.json positions == board/Stock numbers"
 	@echo "    make theme-c9                 AC-M4 C9: rotation.theme.json league == board PIT theme chips"
+	@echo "    make ignition-c9              AC-M7 C9: board.json ignition same-source + candidate gate"
 	@echo ""
 	@echo "  Web Client (M1/M2 — Vite + React + TS; run web-install once)"
 	@echo "    make web-install              Install web/ npm deps"
@@ -208,6 +209,10 @@ theme-c9:
 # C9 cross-surface check (AC-M5): valuation.parquet + stock bundles trace to board.json.
 valuation-c9:
 	@python3 export/check_valuation.py
+
+# C9 self-check (AC-M7): board.json ignition block same-source (candidate gate + vsurge trace).
+ignition-c9:
+	@python3 export/check_ignition.py
 
 serve: web-dev
 
