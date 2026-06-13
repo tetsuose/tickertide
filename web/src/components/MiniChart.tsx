@@ -1,10 +1,15 @@
+import { useState } from 'react'
 import type { ChartSeries } from '../types'
+import { viewBoxXFromClient, bandIndexAt, axisTickIndices, tickDate } from '../lib/chart-hover'
+import CursorReadout from './ChartCursor'
 
 // Pure SVG mini-chart (PRD §9.3): ~90d candlesticks + MA50/150/200 + volume +
-// 52w-high dashed line. Props-only, no DOM measurement, so it renders identically
-// under SSR and in the browser. Geometry transcribed from the UX contract.
+// 52w-high dashed line, a resident MM/DD date axis, and a hover time-cursor reading the
+// close at the cursored day. The cursor is a hover-only overlay (hoverIndex null at rest)
+// so the chart still renders identically under SSR (Discovery.test asserts the markup).
 const W = 440
-const H = 148
+const AX_H = 16 // resident date-axis strip below the volume band
+const H = 148 + AX_H
 const PL = 4
 const PR = 4
 const PT = 4
@@ -13,6 +18,7 @@ const GAP = 8
 const VOL_H = 30
 
 export default function MiniChart({ chart }: { chart: ChartSeries }) {
+  const [hi, setHi] = useState<number | null>(null)
   const n = chart.close.length
   if (n === 0) return <svg viewBox={`0 0 ${W} ${H}`} width="100%" />
 
@@ -67,9 +73,22 @@ export default function MiniChart({ chart }: { chart: ChartSeries }) {
   }
 
   const yh = chart.high_52w != null ? PY(chart.high_52w) : null
+  const hc = hi != null ? chart.close[hi] : null
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      style={{ display: 'block' }}
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        setHi(bandIndexAt(viewBoxXFromClient(e.clientX, r.left, r.width, W), PL, PR, W, n))
+      }}
+      onMouseLeave={() => setHi(null)}
+    >
+      {/* transparent catcher so the whole plot area emits onMouseMove, not just drawn marks */}
+      <rect x={PL} y={PT} width={W - PL - PR} height={volBase - PT} fill="transparent" />
+
       {yh != null && (
         <line x1={PL} y1={yh} x2={W - PR} y2={yh} stroke="var(--dim2)" strokeDasharray="3 3" strokeWidth="1" />
       )}
@@ -119,6 +138,33 @@ export default function MiniChart({ chart }: { chart: ChartSeries }) {
           />
         )
       })}
+
+      {/* resident date axis: compact MM/DD ticks under the volume band */}
+      {axisTickIndices(n, 3).map((i, k, arr) => (
+        <text
+          key={'ax' + i}
+          className="chax"
+          x={X(i)}
+          y={volBase + 11}
+          textAnchor={k === 0 ? 'start' : k === arr.length - 1 ? 'end' : 'middle'}
+        >
+          {tickDate(chart.dates[i])}
+        </text>
+      ))}
+
+      {/* hover time-cursor: vertical line + close marker + date·close readout */}
+      {hi != null && (
+        <>
+          <line className="chcur-line" x1={X(hi)} y1={PT} x2={X(hi)} y2={volBase} />
+          {hc != null && <circle className="chcur-dot" cx={X(hi)} cy={PY(hc)} r={2.5} fill="var(--txt)" />}
+          <CursorReadout
+            x={X(hi)}
+            y={PT + 1}
+            viewW={W}
+            text={`${tickDate(chart.dates[hi])}  ${hc != null ? hc.toFixed(2) : '—'}`}
+          />
+        </>
+      )}
     </svg>
   )
 }

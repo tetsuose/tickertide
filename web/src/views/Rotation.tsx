@@ -5,6 +5,10 @@ import {
   MULTI, SOLO, multiScale, soloScale, linePath, soloSegments, endLabels, gridTicks,
   bucketColorVar,
 } from '../lib/rotation-draw'
+import {
+  viewBoxXFromClient, viewBoxYFromClient, pointIndexAt, nearestSeriesAt, axisTickIndices, tickDate,
+} from '../lib/chart-hover'
+import CursorReadout from '../components/ChartCursor'
 import Discovery from './Discovery'
 
 // Rotation (PRD §9.4): the narrow-decide surface. Overview = every bucket's RS-Ratio on
@@ -32,16 +36,18 @@ function fmtPct(v: number | null): string {
 }
 
 /** Overview multi-line chart (jsx RSRatioLines): all sectors' RS-Ratio, y=100 baseline,
- *  hover dims the rest, right-edge labels stacked by last value. */
+ *  hover dims the rest, right-edge labels stacked by last value. A week time-cursor reads
+ *  the line nearest the pointer at the cursored week; a resident MM/DD axis sits below. */
 function RSRatioLines({
-  buckets, hover, setHover, onPick,
+  buckets, weeks, hover, setHover, onPick,
 }: {
   buckets: RotationBucket[]
+  weeks: string[]
   hover: string | null
   setHover: (k: string | null) => void
   onPick: (bucket: string) => void
 }) {
-  const { W, H, padL, padR } = MULTI
+  const { W, H, padL, padR, padT, padB } = MULTI
   const sc = multiScale(buckets.map((b) => b.rs_ratio))
   const n = buckets[0]?.rs_ratio.length ?? 0
   const lines = buckets.map((b) => ({
@@ -50,8 +56,33 @@ function RSRatioLines({
   const ends = endLabels(lines, sc)
   const ticks = gridTicks(sc)
   const y100 = sc.Y(100)
+  const [hi, setHi] = useState<number | null>(null)
+
+  // svg-level move drives BOTH the highlight (line nearest the pointer) and the week cursor,
+  // so reading a value no longer needs pixel-hunting the thin path. Outside the plot (e.g.
+  // the right-edge label gutter) the end-label hover takes over; the cursor just hides.
+  const onMove = (e: React.MouseEvent) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const idx = pointIndexAt(viewBoxXFromClient(e.clientX, r.left, r.width, W), padL, padR, W, n)
+    setHi(idx)
+    if (idx == null) return
+    const vy = viewBoxYFromClient(e.clientY, r.top, r.height, H)
+    const s = nearestSeriesAt(buckets.map((b) => b.rs_ratio), idx, vy, sc.Y)
+    setHover(s >= 0 ? buckets[s].bucket : null)
+  }
+  const onLeave = () => {
+    setHi(null)
+    setHover(null)
+  }
+
+  // the highlighted line's value at the cursored week → the readout
+  const hb = hover != null ? buckets.find((b) => b.bucket === hover) : undefined
+  const hv = hi != null && hb ? hb.rs_ratio[hi] : null
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="rrgsvg" role="img" aria-label="sector RS-Ratio lines">
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="rrgsvg" role="img" aria-label="sector RS-Ratio lines"
+      onMouseMove={onMove} onMouseLeave={onLeave} onClick={() => hover && onPick(hover)} style={{ cursor: 'pointer' }}>
+      <rect x={padL} y={padT} width={W - padL - padR} height={H - padT - padB} fill="transparent" />
       {ticks.map((t) => (
         <g key={t}>
           <line x1={padL} y1={sc.Y(t)} x2={W - padR} y2={sc.Y(t)}
@@ -64,16 +95,14 @@ function RSRatioLines({
         const on = hover === null || hover === l.key
         return (
           <path key={l.key} d={linePath(l.series, sc)} fill="none" stroke={`var(${l.colorVar})`}
-            strokeWidth={hover === l.key ? 2.6 : 1.5} strokeOpacity={on ? 1 : 0.1}
-            onMouseEnter={() => setHover(l.key)} onMouseLeave={() => setHover(null)}
-            onClick={() => onPick(l.key)} style={{ cursor: 'pointer' }} />
+            strokeWidth={hover === l.key ? 2.6 : 1.5} strokeOpacity={on ? 1 : 0.1} />
         )
       })}
       {ends.map((e) => {
         const on = hover === null || hover === e.key
         return (
           <g key={e.key} opacity={on ? 1 : 0.18} onMouseEnter={() => setHover(e.key)}
-            onMouseLeave={() => setHover(null)} onClick={() => onPick(e.key)} style={{ cursor: 'pointer' }}>
+            onMouseLeave={() => setHover(null)} style={{ cursor: 'pointer' }}>
             <line x1={sc.X(n - 1, n)} y1={sc.Y(e.v)} x2={W - padR + 7} y2={e.y}
               stroke={`var(${e.colorVar})`} strokeWidth={0.7} strokeOpacity={0.5} />
             <text x={W - padR + 10} y={e.y + 3} style={{ fill: `var(${e.colorVar})`, fontSize: '9.5px', fontFamily: 'var(--mono)' }}>
@@ -82,17 +111,41 @@ function RSRatioLines({
           </g>
         )
       })}
-      <text x={padL} y={H - 7} className="axt" textAnchor="start">← {n} weeks</text>
-      <text x={W - padR} y={H - 7} className="axt" textAnchor="end">now</text>
+      {/* resident date axis: MM/DD week ticks */}
+      {axisTickIndices(n, 6).map((i, k, arr) => (
+        <text key={'ax' + i} className="chax" x={sc.X(i, n)} y={H - 7}
+          textAnchor={k === 0 ? 'start' : k === arr.length - 1 ? 'end' : 'middle'}>
+          {tickDate(weeks[i])}
+        </text>
+      ))}
+      {/* week time-cursor: vertical line + nearest-line marker + bucket·date·RS readout */}
+      {hi != null && (
+        <>
+          <line className="chcur-line" x1={sc.X(hi, n)} y1={padT} x2={sc.X(hi, n)} y2={H - padB} />
+          {hv != null && hb && (
+            <circle className="chcur-dot" cx={sc.X(hi, n)} cy={sc.Y(hv)} r={3} fill={`var(${bucketColorVar(hb.bucket)})`} />
+          )}
+          {hv != null && hb && (
+            <CursorReadout x={sc.X(hi, n)} y={padT + 1} viewW={W} color={`var(${bucketColorVar(hb.bucket)})`}
+              text={`${hb.bucket} ${tickDate(weeks[hi])} ${hv.toFixed(1)}`} />
+          )}
+        </>
+      )}
     </svg>
   )
 }
 
 /** N=1 single line (jsx SoloRSLine): color = short-window slope (↑green/↓red = momentum),
- *  since with one line the color channel is free for the slope. */
-function SoloRSLine({ bucket }: { bucket: RotationBucket }) {
-  const { W, H, padL, padR } = SOLO
-  const series = bucket.rs_ratio.filter((v): v is number => v != null)
+ *  since with one line the color channel is free for the slope. A time-cursor reads the
+ *  RS-Ratio at the cursored week; a resident MM/DD axis sits below. */
+function SoloRSLine({ bucket, weeks }: { bucket: RotationBucket; weeks: string[] }) {
+  const { W, H, padL, padR, padT, padB } = SOLO
+  // keep each non-null point's ORIGINAL week index so the date axis + cursor stay aligned
+  // (soloScale/soloSegments still see the compact, gap-free value series, as before).
+  const pts = bucket.rs_ratio
+    .map((v, wk) => ({ v, wk }))
+    .filter((q): q is { v: number; wk: number } => q.v != null)
+  const series = pts.map((q) => q.v)
   const sc = soloScale(series)
   const n = series.length
   const segs = soloSegments(series, sc)
@@ -100,8 +153,17 @@ function SoloRSLine({ bucket }: { bucket: RotationBucket }) {
   const lvl = n ? series[n - 1] : 100
   const slope4 = bucket.slope_4w ?? 0
   const y100 = sc.Y(100)
+  const [hi, setHi] = useState<number | null>(null)
+
+  const onMove = (e: React.MouseEvent) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setHi(pointIndexAt(viewBoxXFromClient(e.clientX, r.left, r.width, W), padL, padR, W, n))
+  }
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="rrgsvg" role="img" aria-label={`${bucket.bucket} RS-Ratio`}>
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="rrgsvg" role="img" aria-label={`${bucket.bucket} RS-Ratio`}
+      onMouseMove={onMove} onMouseLeave={() => setHi(null)}>
+      <rect x={padL} y={padT} width={W - padL - padR} height={H - padT - padB} fill="transparent" />
       {ticks.map((t) => (
         <g key={t}>
           <line x1={padL} y1={sc.Y(t)} x2={W - padR} y2={sc.Y(t)}
@@ -119,8 +181,22 @@ function SoloRSLine({ bucket }: { bucket: RotationBucket }) {
       <text x={W - padR + 4} y={sc.Y(lvl) + 3} style={{ fill: `var(${bucketColorVar(bucket.bucket)})`, fontSize: '11px', fontFamily: 'var(--mono)' }}>
         {lvl.toFixed(1)}
       </text>
-      <text x={padL} y={H - 8} className="axt" textAnchor="start">← {n} weeks</text>
-      <text x={W - padR} y={H - 8} className="axt" textAnchor="end">now</text>
+      {/* resident date axis: MM/DD week ticks (mapped back to original weeks) */}
+      {axisTickIndices(n, 6).map((i, k, arr) => (
+        <text key={'ax' + i} className="chax" x={sc.X(i, n)} y={H - 8}
+          textAnchor={k === 0 ? 'start' : k === arr.length - 1 ? 'end' : 'middle'}>
+          {tickDate(weeks[pts[i].wk])}
+        </text>
+      ))}
+      {/* time-cursor: vertical line + RS marker + date·RS readout */}
+      {hi != null && n > 0 && (
+        <>
+          <line className="chcur-line" x1={sc.X(hi, n)} y1={padT} x2={sc.X(hi, n)} y2={H - padB} />
+          <circle className="chcur-dot" cx={sc.X(hi, n)} cy={sc.Y(series[hi])} r={3} fill={`var(${bucketColorVar(bucket.bucket)})`} />
+          <CursorReadout x={sc.X(hi, n)} y={padT + 1} viewW={W} color={`var(${bucketColorVar(bucket.bucket)})`}
+            text={`${tickDate(weeks[pts[hi].wk])} ${series[hi].toFixed(1)}`} />
+        </>
+      )}
     </svg>
   )
 }
@@ -218,7 +294,7 @@ export default function Rotation({
           </span>
           <button className="seg" onClick={() => setScope?.({ kind: 'all', key: null })}>← all {noun}s</button>
         </div>
-        <SoloRSLine bucket={drilled} />
+        <SoloRSLine bucket={drilled} weeks={active.weeks} />
         <div className="rot-summary">
           <div><span className="dim">RS-Ratio</span><b>{drilled.level?.toFixed(1) ?? '—'}</b></div>
           <div><span className="dim">Δ4w</span><b style={{ color: (drilled.slope_4w ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{(drilled.slope_4w ?? 0) >= 0 ? '▲' : '▼'}{Math.abs(drilled.slope_4w ?? 0).toFixed(1)}</b></div>
@@ -253,7 +329,7 @@ export default function Rotation({
         <span>ROTATION — {noun} RS-Ratio vs SPY · 高度=level，斜率=momentum</span>
         {toggle}
       </div>
-      <RSRatioLines buckets={active.buckets} hover={hover} setHover={setHover} onPick={(b) => setScope?.({ kind: bucketType, key: b })} />
+      <RSRatioLines buckets={active.buckets} weeks={active.weeks} hover={hover} setHover={setHover} onPick={(b) => setScope?.({ kind: bucketType, key: b })} />
       <div className="rleague">
         <div className="rlhead">
           <div className="r">#</div><div>{colName}</div><div className="r">RS-Ratio</div><div className="r">Δ4w</div>

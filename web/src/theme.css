@@ -713,6 +713,37 @@ body {
   color: var(--dim2);
 }
 
+/* Shared hover time-cursor + resident date axis (Discovery MiniChart / Rotation / Stock).
+   `.chcur` is a hover-only overlay (pointer-events:none so it never eats the svg's own
+   onMouseMove); `.chax` ticks are static and SSR-rendered. */
+.chax {
+  font-family: var(--mono);
+  font-size: 8px;
+  fill: var(--dim2);
+}
+.chcur {
+  pointer-events: none;
+}
+.chcur-line {
+  stroke: var(--dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.chcur-dot {
+  stroke: var(--bg);
+  stroke-width: 1;
+}
+.chcur-bg {
+  fill: var(--panel);
+  stroke: var(--line2);
+  stroke-width: 1;
+}
+.chcur-txt {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--txt);
+}
+
 /* Rotation (M3.4): RS-Ratio multi-line SVG + league table + N=1 drill drawer. */
 .rot {
   display: flex;

@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import type { StockBundle } from '../types'
+import { viewBoxXFromClient, bandIndexAt, axisTickIndices, tickDate } from '../lib/chart-hover'
+import CursorReadout from './ChartCursor'
 
 // M5.4 the time-aligned price↔fundamentals stack (PRD §9.6): four panes sharing ONE x axis
 // (the ~2y daily date axis) with quarter gridlines running through all of them, so you read
@@ -7,8 +10,10 @@ import type { StockBundle } from '../types'
 //   VOLUME  daily bars (up green / down red)
 //   REVENUE quarterly TTM bars (YoY up green / down red), placed at each period_end
 //   P/S     daily P/S line
-// The point (PRD §9.6): price↑ revenue flat ⇒ P/S expands = "expensive with no fundamentals";
-// price↑ revenue↑ = "earning the move". Pure SVG, props-only, identical under SSR.
+// A resident MM/DD date axis runs beneath, and a hover time-cursor spans all four panes —
+// reading close / volume / TTM-revenue / P/S at the cursored day off one vertical, which is
+// the stack's whole point. The cursor is a hover-only overlay (hoverIndex null at rest) so
+// the stack still renders identically under SSR (Stock.test asserts the markup).
 const W = 880
 const PL = 50
 const PR = 10
@@ -23,12 +28,23 @@ const priceTop = PT
 const volTop = priceTop + PRICE_H + GAP
 const revTop = volTop + VOL_H + GAP
 const psTop = revTop + REV_H + GAP
-const H = psTop + PS_H + 16
+const axisY = psTop + PS_H + 14 // resident date-axis baseline
+const H = psTop + PS_H + 26
 
 const fmtRev = (v: number): string =>
   v >= 1e9 ? (v / 1e9).toFixed(0) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(0) + 'M' : v.toFixed(0)
 
+const fmtVol = (v: number): string =>
+  v >= 1e9
+    ? (v / 1e9).toFixed(1) + 'B'
+    : v >= 1e6
+      ? (v / 1e6).toFixed(1) + 'M'
+      : v >= 1e3
+        ? (v / 1e3).toFixed(0) + 'K'
+        : v.toFixed(0)
+
 export default function StockStack({ bundle }: { bundle: StockBundle }) {
+  const [hi, setHi] = useState<number | null>(null)
   const p = bundle.price
   const n = p.dates.length
   if (n === 0) return <svg viewBox={`0 0 ${W} ${H}`} width="100%" />
@@ -127,8 +143,34 @@ export default function StockStack({ bundle }: { bundle: StockBundle }) {
     [psTop, PS_H, 'P/S'],
   ]
 
+  // values at the cursored day (hover overlay only; null when a series has no point there)
+  const hClose = hi != null ? p.close[hi] : null
+  const hVol = hi != null ? p.volume[hi] : null
+  const hPs = hi != null ? psPts.find((q) => q.i === hi)?.ps ?? null : null
+  // TTM revenue effective at the cursored day = the latest quarter whose period_end ≤ that day
+  let hRev: number | null = null
+  if (hi != null) {
+    for (const r of revs) {
+      const xi = idxOnOrBefore(r.period_end)
+      if (xi != null && xi <= hi && r.revenue_ttm != null) hRev = r.revenue_ttm as number
+    }
+  }
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }} className="stk-stack">
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      style={{ display: 'block' }}
+      className="stk-stack"
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        setHi(bandIndexAt(viewBoxXFromClient(e.clientX, r.left, r.width, W), PL, PR, W, n))
+      }}
+      onMouseLeave={() => setHi(null)}
+    >
+      {/* transparent catcher so the whole stack emits onMouseMove, not just drawn marks */}
+      <rect x={PL} y={priceTop} width={W - PL - PR} height={psTop + PS_H - priceTop} fill="transparent" />
+
       {/* quarter gridlines through all four panes (period_end of each quarter) */}
       {revs.map((r, k) => {
         const xi = X(idxOnOrBefore(r.period_end) as number)
@@ -237,6 +279,43 @@ export default function StockStack({ bundle }: { bundle: StockBundle }) {
         >
           {psPts[psPts.length - 1].ps.toFixed(1)}×
         </text>
+      )}
+
+      {/* resident date axis: MM/DD ticks shared by all four panes */}
+      {axisTickIndices(n, 6).map((i, k, arr) => (
+        <text
+          key={'ax' + i}
+          className="chax"
+          x={X(i)}
+          y={axisY}
+          textAnchor={k === 0 ? 'start' : k === arr.length - 1 ? 'end' : 'middle'}
+        >
+          {tickDate(p.dates[i])}
+        </text>
+      ))}
+
+      {/* hover time-cursor spanning all four panes; each pane reads its own series */}
+      {hi != null && (
+        <>
+          <line className="chcur-line" x1={X(hi)} y1={priceTop} x2={X(hi)} y2={psTop + PS_H} />
+          {hClose != null && <circle className="chcur-dot" cx={X(hi)} cy={priceY(hClose)} r={2.5} fill="var(--txt)" />}
+          {hPs != null && <circle className="chcur-dot" cx={X(hi)} cy={psY(hPs)} r={2.5} fill="var(--blu)" />}
+          <CursorReadout
+            x={X(hi)}
+            y={priceTop + 2}
+            viewW={W}
+            text={`${tickDate(p.dates[hi])}  ${hClose != null ? hClose.toFixed(2) : '—'}`}
+          />
+          <CursorReadout x={X(hi)} y={volTop + 2} viewW={W} text={hVol != null ? fmtVol(hVol) : '—'} />
+          <CursorReadout x={X(hi)} y={revTop + 2} viewW={W} text={hRev != null ? fmtRev(hRev) : '—'} />
+          <CursorReadout
+            x={X(hi)}
+            y={psTop + 2}
+            viewW={W}
+            color="var(--blu)"
+            text={hPs != null ? hPs.toFixed(1) + '×' : '—'}
+          />
+        </>
       )}
     </svg>
   )
