@@ -1,44 +1,38 @@
 import { useEffect, useState } from 'react'
-import type { BoardData, Scope, Stock } from '../types'
-import { loadBoard } from '../lib/data'
+import type { Scope, ValuationRow } from '../types'
+import { queryValuation, VALUATION_METRICS, type MetricKey } from '../lib/duckdb'
 import { num, pct } from '../lib/format'
 
-// Valuation screener (PRD §9.5, M5 preview). The real M5 surface queries Parquet via
-// duckdb-wasm over the full universe; this preview reads the same board.json the other
-// surfaces use (C9 — one engine, one snapshot) and renders the cross-section as a
-// sortable table. PEG / margin / the duckdb-wasm path land with M5 proper.
-//
-// Three contract behaviours are real here, not stubbed:
-//  - as-of freshness 三档上色 (C7, §10.5): green fresh ≤95d / amber stale ≤160d / red
-//    overdue >160d (row dims). The colour is board.py's per-row `freshness`.
-//  - common-vintage percentile (§10.5): the pctile column ranks ONLY within the fresh
-//    cohort; stale/overdue rows show `vint` and never enter the denominator.
-//  - respect + WRITE global scope (§9.1.2): the dropdown is Valuation's scope writer
-//    (the 3rd, after Ocean lasso + Rotation click); rows filter to scope BEFORE ranking,
-//    so scope changes the percentile denominator.
+// Valuation screener (PRD §9.5, M5.2). The FULL-universe cross-section, read from
+// valuation.parquet by duckdb-wasm in the browser (lib/duckdb.ts): duckdb does the metric
+// ORDER BY, this view does scope filter + common-vintage percentile + as-of tri-color.
+// `initial` injects rows for SSR/tests (no wasm); there the sort runs in JS so the same
+// table renders identically. Same valuation_daily as board.json (C9); PEG/Mgn% are the two
+// columns the #53 preview couldn't show (board.json never exported them).
 
-type MetricKey = 'ps' | 'pe' | 'evs' | 'ev_ebitda' | 'growth' | 'rule40'
-
-// cheapAsc: cheap-on-top multiples ascend; quality metrics (growth, rule40) descend.
-const METRICS: { key: MetricKey; label: string; cheapAsc: boolean }[] = [
-  { key: 'ps', label: 'P/S', cheapAsc: true },
-  { key: 'pe', label: 'P/E', cheapAsc: true },
-  { key: 'evs', label: 'EV/S', cheapAsc: true },
-  { key: 'ev_ebitda', label: 'EV/EBITDA', cheapAsc: true },
-  { key: 'growth', label: 'Grw%', cheapAsc: false },
-  { key: 'rule40', label: 'R40', cheapAsc: false },
-]
-
-function inScope(s: Stock, scope: Scope | undefined, pinned: string[]): boolean {
+function inScope(r: ValuationRow, scope: Scope | undefined, pinned: string[]): boolean {
   if (!scope || scope.kind === 'all') return true
-  if (scope.kind === 'sector') return s.sector === scope.key
-  if (scope.kind === 'theme') return s.themes.some((t) => t.theme === scope.key)
-  if (scope.kind === 'pinned') return pinned.includes(s.ticker)
+  if (scope.kind === 'sector') return r.sector === scope.key
+  if (scope.kind === 'theme') return r.themes ? r.themes.split(',').includes(scope.key) : false
+  if (scope.kind === 'pinned') return pinned.includes(r.ticker)
   return true
 }
 
-const mval = (s: Stock, k: MetricKey): number | null => (s.valuation ? s.valuation[k] : null)
-const isFresh = (s: Stock): boolean => s.valuation?.freshness === 'fresh'
+const mval = (r: ValuationRow, k: MetricKey): number | null => (r[k] as number | null) ?? null
+
+/** Pure JS sort matching buildValuationSql (cheap-asc / quality-desc, NULLs last). Used in
+ *  the injected/SSR path; the duckdb path returns rows already sorted by the same rule. */
+function sortRows(rows: ValuationRow[], metric: MetricKey): ValuationRow[] {
+  const m = VALUATION_METRICS.find((x) => x.key === metric) ?? VALUATION_METRICS[0]
+  return [...rows].sort((a, b) => {
+    const av = mval(a, metric)
+    const bv = mval(b, metric)
+    if (av == null && bv == null) return a.ticker < b.ticker ? -1 : 1
+    if (av == null) return 1
+    if (bv == null) return -1
+    return m.cheapAsc ? av - bv : bv - av
+  })
+}
 
 export default function Valuation({
   initial,
@@ -47,69 +41,62 @@ export default function Valuation({
   onOpen,
   pinned = [],
 }: {
-  initial?: BoardData
+  initial?: ValuationRow[]
   scope?: Scope
   setScope?: (s: Scope) => void
   onOpen?: (ticker: string) => void
   pinned?: string[]
 }) {
-  const [board, setBoard] = useState<BoardData | null>(initial ?? null)
+  const [metric, setMetric] = useState<MetricKey>('ps')
+  const [rows, setRows] = useState<ValuationRow[] | null>(initial ?? null)
   const [err, setErr] = useState<string | null>(null)
-  const [metricKey, setMetricKey] = useState<MetricKey>('ps')
 
   useEffect(() => {
-    if (initial) return
-    const ac = new AbortController()
-    loadBoard(ac.signal)
-      .then(setBoard)
-      .catch((e) => {
-        if (!ac.signal.aborted) setErr(String(e))
-      })
-    return () => ac.abort()
-  }, [initial])
+    if (initial) return // injected (SSR/tests): skip duckdb-wasm
+    let alive = true
+    setRows(null)
+    queryValuation(metric)
+      .then((r) => alive && setRows(r))
+      .catch((e) => alive && setErr(String(e)))
+    return () => {
+      alive = false
+    }
+  }, [initial, metric])
 
   if (err)
     return (
       <div className="placeholder">
         <div className="ph-tag">NO DATA</div>
         <div className="ph-msg">
-          board.json 未就绪（{err}）。先跑 <code>make fixture-pipeline</code> 或 <code>make pipeline</code> 再{' '}
-          <code>python export/board.py</code>。
+          valuation.parquet 未就绪（{err}）。先跑 <code>make export</code> 产出 web/public/data/valuation.parquet。
         </div>
       </div>
     )
-  if (!board)
+  if (!rows)
     return (
       <div className="placeholder">
         <div className="ph-tag">LOADING</div>
-        <div className="ph-msg">读取 Valuation 横截面…</div>
+        <div className="ph-msg">duckdb-wasm 读取 Valuation 横截面…</div>
       </div>
     )
 
-  const metric = METRICS.find((m) => m.key === metricKey)!
-  const sectors = [...new Set(board.stocks.map((s) => s.sector).filter(Boolean))].sort() as string[]
-  const themes = [...new Set(board.stocks.flatMap((s) => s.themes.map((t) => t.theme)))].sort()
+  const m = VALUATION_METRICS.find((x) => x.key === metric)!
+  // duckdb pre-sorts; the injected path sorts in JS so both render identically.
+  const sorted = initial ? sortRows(rows, metric) : rows
+  const sectors = [...new Set(rows.map((r) => r.sector).filter(Boolean))].sort() as string[]
+  const themes = [...new Set(rows.flatMap((r) => (r.themes ? r.themes.split(',') : [])))].sort()
 
   // filter to scope FIRST (PRD §9.5), then the percentile cohort is scope-relative.
-  const rows = board.stocks.filter((s) => inScope(s, scope, pinned))
-  // common-vintage cohort: fresh rows with a value for the active metric.
-  const cohort = rows.filter((s) => isFresh(s) && mval(s, metricKey) != null).map((s) => mval(s, metricKey) as number)
-  const pctile = (s: Stock): number | null => {
-    if (!isFresh(s) || cohort.length === 0) return null
-    const v = mval(s, metricKey)
+  const filtered = sorted.filter((r) => inScope(r, scope, pinned))
+  const cohort = filtered
+    .filter((r) => r.freshness === 'fresh' && mval(r, metric) != null)
+    .map((r) => mval(r, metric) as number)
+  const pctile = (r: ValuationRow): number | null => {
+    if (r.freshness !== 'fresh' || cohort.length === 0) return null
+    const v = mval(r, metric)
     if (v == null) return null
-    const below = cohort.filter((x) => x <= v).length
-    return Math.round((below / cohort.length) * 100)
+    return Math.round((cohort.filter((x) => x <= v).length / cohort.length) * 100)
   }
-
-  const sorted = [...rows].sort((a, b) => {
-    const av = mval(a, metricKey)
-    const bv = mval(b, metricKey)
-    if (av == null && bv == null) return 0
-    if (av == null) return 1 // nulls last
-    if (bv == null) return -1
-    return metric.cheapAsc ? av - bv : bv - av
-  })
 
   const scopeValue =
     scope?.kind === 'sector' ? `sector:${scope.key}` : scope?.kind === 'theme' ? `theme:${scope.key}` : 'all'
@@ -126,7 +113,7 @@ export default function Valuation({
         <label>
           scope{' '}
           <select value={scopeValue} onChange={(e) => onScope(e.target.value)}>
-            <option value="all">ALL（{board.stocks.length}）</option>
+            <option value="all">ALL（{rows.length}）</option>
             <optgroup label="sector">
               {sectors.map((s) => (
                 <option key={s} value={`sector:${s}`}>
@@ -147,16 +134,16 @@ export default function Valuation({
         </label>
         <label>
           sort{' '}
-          <select value={metricKey} onChange={(e) => setMetricKey(e.target.value as MetricKey)}>
-            {METRICS.map((m) => (
-              <option key={m.key} value={m.key}>
-                {m.label} {m.cheapAsc ? '↑便宜在上' : '↓高在上'}
+          <select value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)}>
+            {VALUATION_METRICS.map((x) => (
+              <option key={x.key} value={x.key}>
+                {x.label} {x.cheapAsc ? '↑便宜在上' : '↓高在上'}
               </option>
             ))}
           </select>
         </label>
         <span className="valn-cohort">
-          common-vintage cohort（fresh）= {cohort.length} / {rows.length}
+          duckdb-wasm · common-vintage cohort（fresh）= {cohort.length} / {filtered.length}
         </span>
       </div>
 
@@ -171,34 +158,37 @@ export default function Valuation({
               <th>P/S</th>
               <th>EV/S</th>
               <th>EV/EBITDA</th>
+              <th>PEG</th>
               <th>Grw%</th>
+              <th>Mgn%</th>
               <th>R40</th>
               <th>pctile</th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((s) => {
-              const v = s.valuation
-              const fr = v?.freshness ?? null
-              const p = pctile(s)
+            {filtered.map((r) => {
+              const fr = r.freshness
+              const p = pctile(r)
               return (
                 <tr
-                  key={s.ticker}
+                  key={r.ticker}
                   className={'valn-row' + (fr ? ' vfr-' + fr : ' vfr-none')}
-                  onClick={() => onOpen?.(s.ticker)}
+                  onClick={() => onOpen?.(r.ticker)}
                 >
-                  <td className="l valn-tk">{s.ticker}</td>
-                  <td className="l valn-sec">{s.sector ?? '—'}</td>
+                  <td className="l valn-tk">{r.ticker}</td>
+                  <td className="l valn-sec">{r.sector ?? '—'}</td>
                   <td className="l valn-asof">
                     <span className={'vdot ' + (fr ?? 'none')} />
-                    {v?.as_of_period_end ?? '—'}
+                    {r.as_of_period_end ?? '—'}
                   </td>
-                  <td>{num(v?.pe)}</td>
-                  <td className={metricKey === 'ps' ? 'on' : ''}>{num(v?.ps)}</td>
-                  <td>{num(v?.evs)}</td>
-                  <td>{num(v?.ev_ebitda)}</td>
-                  <td>{pct(v?.growth)}</td>
-                  <td>{num(v?.rule40)}</td>
+                  <td>{num(r.pe)}</td>
+                  <td className={metric === 'ps' ? 'on' : ''}>{num(r.ps)}</td>
+                  <td>{num(r.evs)}</td>
+                  <td>{num(r.ev_ebitda)}</td>
+                  <td>{num(r.peg)}</td>
+                  <td>{pct(r.growth)}</td>
+                  <td>{r.margin == null ? '—' : pct(r.margin)}</td>
+                  <td>{num(r.rule40)}</td>
                   <td className="valn-pct">{p == null ? <span className="vint">vint</span> : p}</td>
                 </tr>
               )
@@ -208,14 +198,13 @@ export default function Valuation({
       </div>
 
       <div className="foot">
-        横截面 screener（PRD §9.5）· 排序：{metric.label}（{metric.cheapAsc ? '便宜在上' : '高在上'}）· as-of 三档：
+        全 universe 横截面 screener（PRD §9.5）· <b>duckdb-wasm 浏览器查 valuation.parquet</b> · 排序：{m.label}（
+        {m.cheapAsc ? '便宜在上' : '高在上'}）· as-of 三档：
         <span className="vfr-inline vfr-fresh">fresh ≤95d</span>
         <span className="vfr-inline vfr-stale">stale ≤160d</span>
         <span className="vfr-inline vfr-overdue">overdue &gt;160d（行变暗）</span>
         · pctile 仅在 fresh cohort 内排（common-vintage，§10.5），stale 行显 <code>vint</code> 不进分母 · scope 下拉 = 全局
-        writer（Valuation 是第 3 个）。点行 → Stock。
-        <br />
-        预览读 board.json（与 Discovery/Ocean 同源 C9）；正式 M5 走 duckdb-wasm 全 universe 横截面 + PEG/margin。as_of {board.as_of_date}。
+        writer（先 filter 再排序再 pctile）。点行 → Stock。读同一 valuation_daily（与 board/Ocean 同源 C9）。
       </div>
     </div>
   )

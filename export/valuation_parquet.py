@@ -38,7 +38,18 @@ STALE_DAYS = 160
 # the LEFT JOINs (DuckDB rejects correlated columns under an outer join). latest_val picks
 # each ticker's most recent valuation row on or before snap; freshness/age measure
 # period_end -> snap so every row shares one ruler. snap is a DB-derived DATE, not user input.
-def cross_section_sql(snap: str) -> str:
+def cross_section_sql(snap: str, has_themes: bool = False) -> str:
+    # themes column lets the Valuation screener honor scope='theme' from the same file
+    # (point-in-time membership as-of snap, exposure>0, comma-joined) — kept as a string so
+    # duckdb-wasm round-trips it trivially and the client filters by split(','). Empty when
+    # theme_membership doesn't exist yet (pre-M4).
+    themes_pit = "''" if not has_themes else f"""COALESCE((
+    SELECT string_agg(theme, ',' ORDER BY theme) FROM (
+      SELECT ticker, theme, exposure,
+             row_number() OVER (PARTITION BY ticker, theme ORDER BY as_of_date DESC) AS trn
+      FROM theme_membership WHERE as_of_date <= DATE '{snap}'
+    ) tm WHERE tm.ticker = d.ticker AND tm.trn = 1 AND tm.exposure > 0
+  ), '')"""
     return f"""
 WITH latest_val AS (
   SELECT v.ticker, v.pe, v.ps, v.evs, v.ev_ebitda, v.peg, v.growth, v.margin, v.rule40,
@@ -59,7 +70,8 @@ SELECT
   CASE WHEN v.as_of_period_end IS NULL THEN NULL
        WHEN date_diff('day', v.as_of_period_end, DATE '{snap}') <= {FRESH_DAYS} THEN 'fresh'
        WHEN date_diff('day', v.as_of_period_end, DATE '{snap}') <= {STALE_DAYS} THEN 'stale'
-       ELSE 'overdue' END AS freshness
+       ELSE 'overdue' END AS freshness,
+  {themes_pit} AS themes
 FROM derived_daily d
 LEFT JOIN universe u ON u.ticker = d.ticker
 LEFT JOIN latest_val v ON v.ticker = d.ticker AND v.rn = 1
@@ -72,7 +84,10 @@ def export_valuation(con, out: Path) -> dict:
     """Write the cross-section Parquet, return {as_of_date, count} meta."""
     out.parent.mkdir(parents=True, exist_ok=True)
     snap = con.execute("SELECT max(date) FROM derived_daily").fetchone()[0]
-    sql = cross_section_sql(str(snap))
+    has_themes = con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name = 'theme_membership'"
+    ).fetchone()[0] > 0
+    sql = cross_section_sql(str(snap), has_themes)
     con.execute(f"COPY ({sql}) TO '{out.as_posix()}' (FORMAT PARQUET)")
     # Read back the snapshot facts for the sidecar (COPY doesn't return them).
     n = con.execute(f"SELECT count(*) FROM ({sql})").fetchone()[0]
