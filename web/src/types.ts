@@ -175,7 +175,14 @@ export interface ManifestData {
   schema_version: number
   as_of_date: string | null
   generated_at: string
-  surfaces: { board: number | null; ocean: number | null; rotation: number | null; 'rotation.theme': number | null }
+  surfaces: {
+    board: number | null
+    ocean: number | null
+    rotation: number | null
+    'rotation.theme': number | null
+    valuation: number | null
+    stock: number | null
+  }
 }
 
 // --- Valuation screener (M5.1 export/valuation_parquet.py -> public/data/valuation.parquet) ---

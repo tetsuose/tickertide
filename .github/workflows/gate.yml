@@ -42,12 +42,13 @@ jobs:
           python-version: "3.12"
       - name: install product deps
         run: pip install -r requirements.txt
-      - name: fixture -> compute -> valuation -> export -> acceptance
+      - name: fixture -> compute -> export -> acceptance + C9
         run: |
           make fixture-pipeline
-          python3 export/board.py
+          make export
           make check
           make check-land
+          make valuation-c9
       - name: upload sample board.json
         uses: actions/upload-artifact@v7
         with:

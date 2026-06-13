@@ -18,6 +18,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = ROOT / "web" / "public" / "data"
 SCHEMA_VERSION = 1
 SURFACES = ("board", "ocean", "rotation", "rotation.theme")
+# Surfaces whose count/as_of live in a sidecar, not a <name>.json (M5): the Valuation
+# screener's Parquet has a .meta.json; the Stock bundles share an index.json.
+EXTRA = {"valuation": "valuation.meta.json", "stock": "stock/index.json"}
 
 
 def build_manifest(data_dir: Path, generated_at: str | None = None) -> dict:
@@ -27,6 +30,15 @@ def build_manifest(data_dir: Path, generated_at: str | None = None) -> dict:
     as_ofs: list[str] = []
     for name in SURFACES:
         p = data_dir / f"{name}.json"
+        if not p.exists():
+            surfaces[name] = None
+            continue
+        d = json.loads(p.read_text())
+        surfaces[name] = d.get("count")
+        if d.get("as_of_date"):
+            as_ofs.append(d["as_of_date"])
+    for name, rel in EXTRA.items():
+        p = data_dir / rel
         if not p.exists():
             surfaces[name] = None
             continue

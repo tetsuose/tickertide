@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 serve pipeline check check-theme check-land \
+        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 serve pipeline check check-theme check-land \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -204,6 +204,10 @@ rotation-c9:
 # C9 cross-surface check (AC-M4): theme league PIT members trace to board theme chips.
 theme-c9:
 	@python3 export/check_rotation.py --rotation web/public/data/rotation.theme.json
+
+# C9 cross-surface check (AC-M5): valuation.parquet + stock bundles trace to board.json.
+valuation-c9:
+	@python3 export/check_valuation.py
 
 serve: web-dev
 
