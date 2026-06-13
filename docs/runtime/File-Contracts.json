@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T02:32:14.232875+00:00",
+  "updated_at": "2026-06-13T05:23:03.097358+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -118,7 +118,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 全 universe 横截面 screener 分片，duckdb-wasm 查)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
         "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS"
       }
     },
@@ -517,6 +517,18 @@
         "invariants": "读 bucket_rrg(周线 RS-Ratio 序列)对齐共享 weeks[](最近 N 周 union、缺失补 null，仿 ocean pts)；as_of_date 取实际最后交易日(max(derived_daily.date)，与 board/ocean 同源 C9)非 weeks[-1] 周线标签(后者 mid-week 跑领先成未来周五、破 C9 + 污染 D.4 badge)，weeks[] 仍用周五标签做 x 轴；league 量经 compute.rotation.league_table 取自 derived_daily/valuation_daily 成员(与 Discovery/Ocean/Stock 同源 C9)；members 经 rotation._bucket_members 取 top-N ticker(sector→universe.sector / theme→theme_membership point-in-time 多对多；成员卡走 board.json scope filter 不重复造 DRY)；sector 附 etf(sector_etf_map.txt 审计)、theme 无 etf(None)；sector 与 theme 各写一文件(各自 weeks 轴/params；theme index 从首个 as_of 起故 weeks 可少于 sector)、web 按 GICS↔Theme toggle 载对应文件；params 暴露 n1/n2/k(透明 reconstruction 不复刻 StockCharts)；inline self_check(rs_ratio 对齐 weeks、weeks 老→新、末值非空)；输出 gitignored 紧凑 JSON；同 fixture seed 字节级可复现",
         "verification": "make fixture-pipeline(+theme_index) 后 python3 export/rotation.py [--bucket-type sector|theme]：sector→rotation.json 11 bucket weeks=52、theme→rotation.theme.json ≥4 theme(members 取自 theme PIT、无 etf)；4 态、params 暴露、rs_ratio 对齐 weeks；theme C9(check_rotation --rotation rotation.theme.json)GATE_PASS；same seed 重导出 byte 一致"
       }
+    },
+    {
+      "path": "export/valuation_parquet.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.1 估值横截面导出：全 universe 最新 valuation 快照 → web/public/data/valuation.parquet（+ .meta.json），供 M5 Valuation screener 用 duckdb-wasm 浏览器查询（wide explore）",
+        "invariants": "全 universe（derived_daily 当日票）每票一行最新 as-of valuation；含 peg/margin（valuation_daily 自 M0 已算、board.json 未导出的两列）；与 board.json 读同一 valuation_daily（C9 同票一致）；snap=max(derived_daily.date) 取值后字面嵌入 SQL（避免 DuckDB correlated 列 + outer join 限制；snap 是 DB 派生 DATE 非用户输入）；freshness 三档 95/160 与 board.py 一致、period_end→snap 同尺；duckdb 原生 COPY 写 parquet 不依赖 pyarrow；输出 gitignored（夜间派生）、.meta.json sidecar 带 as_of+count 供 manifest(D.4)/前端 header",
+        "verification": "make export 产 valuation.parquet（全 universe 行、含 peg/margin 列、freshness∈{fresh,stale,overdue,NULL}）+ valuation.meta.json；duckdb 读回列齐、按 ps 升序便宜在上；同票与 board.json valuation 一致（C9）"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -1011,6 +1023,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/format.ts",
       "kind": "code",
       "module": "web",
@@ -1019,8 +1032,7 @@
         "purpose": "board 驱动视图(Valuation/Stock)的共享展示格式化：fmtMktcap/num/pct/scoreColor",
         "invariants": "纯函数无 DOM、SSR 可测；null→em-dash；scoreColor 按附录C(≥62 hi/≥47 mid/else lo)；EvidenceCard(M1)保留本地副本、不动已验证代码(后续统一重构)",
         "verification": "Valuation/Stock 视图与其测试消费；tsc 通过"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1179,6 +1191,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/views/Stock.test.tsx",
       "kind": "code",
       "module": "web",
@@ -1187,10 +1200,10 @@
         "purpose": "Stock 视图 AC(PRD §9.6)的 SSR 回归门",
         "invariants": "用真实 board.sample.json + 注入 AI/SEMI theme payload 验 chip；断言头部/默认票/6 估值卡/5 分量/theme chip exposure%/ticker 下拉列全票",
         "verification": "npm test 全过(6 测试)；与 Stock.tsx 合同一致"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/views/Stock.tsx",
       "kind": "code",
       "module": "web",
@@ -1199,10 +1212,10 @@
         "purpose": "Stock detail 视图（PRD §9.6，M5 预览）：per-name 面板 = evidence card 的展开态",
         "invariants": "per-name、不受 scope（§9.1.2）；ticker 下拉切换（setTicker）、无选择默认 board 首只；头部 ticker+sector·mktcap+theme chips(带 exposure%)+COMPOSITE 大分(scoreColor)；复用 MiniChart(价格/MA50-150-200/52wh/volume)；6 估值倍数卡 + 5 分量条(权重随 k)；全部来自 board.json(C9)；正式 M5 补 price↔fundamentals 时间轴 stack(季度营收 bars + 每日 P/S over time 共用 x 轴)+ filing AI 摘要(需 per-name 新数据)",
         "verification": "Stock.test.tsx SSR 断言选中 ticker 头部、ticker=null 默认首只、6 估值卡、5 分量、注入 AI/SEMI 验 theme chip exposure%、下拉列全 ticker；npm run build tsc 通过"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/views/Valuation.test.tsx",
       "kind": "code",
       "module": "web",
@@ -1211,10 +1224,10 @@
         "purpose": "Valuation 视图 AC(PRD §9.5)的 SSR 回归门",
         "invariants": "用真实 board.sample.json + renderToStaticMarkup、无浏览器；断言行数 / PS 升序便宜在上 / as-of 三档色 / common-vintage pctile 显 vint / sector scope 过滤",
         "verification": "npm test 全过(6 测试)；与 Valuation.tsx 合同一致"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/views/Valuation.tsx",
       "kind": "code",
       "module": "web",
@@ -1223,8 +1236,7 @@
         "purpose": "Valuation screener 视图（PRD §9.5，M5 预览）：读 board.json 渲染可排序横截面表",
         "invariants": "读 board.json（与 Discovery/Ocean/Stock 同源 C9）；as-of 三档上色取 board valuation.freshness（fresh 绿/stale 黄/overdue 红行变暗，C7/§10.5）；pctile 仅在 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint 不进分母；scope 下拉=第 3 个全局 writer（Ocean lasso/Rotation click 之后）、先 filter scope 再排序再算 pctile（scope 改 pctile 分母）；倍数类升序便宜在上、growth/rule40 降序；PEG/margin/duckdb-wasm 全 universe 留正式 M5",
         "verification": "Valuation.test.tsx SSR 断言行数=stocks、PS 默认升序便宜在上(nulls last)、overdue 行 vfr-overdue、fresh 行 pctile 数字/非 fresh vint、sector scope 过滤行数减少；npm run build tsc 通过"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1276,5 +1288,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "09ad93e7181a3c58983c9de2ad43e7bf9234ca90bb72f351f8ec91a4d0f54be4"
+  "last_structure_digest": "bb624cc8d24c09a508f5d64a84c075961f2ffcea976b25c4ea46f8c87b648ab3"
 }
