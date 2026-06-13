@@ -9,9 +9,11 @@ theme_membership on every pipeline run (after themes/seed.py, which clears + res
 
 The human is the authority (C6): approval may freely OVERRIDE the LLM's exposure values,
 drop candidates, or add a theme the LLM missed. approved_by is required and names the
-person, never a bot. Point-in-time (C3): the approval date becomes the row's as_of_date —
-a later re-review writes a NEW approved file state with a new date, never edits history
-(git keeps the old state anyway).
+person, never a bot. Point-in-time (C3): the row's as_of_date defaults to the candidate's
+FILING date — when the theme info became public — NOT the approval-operation day. PIT means
+"as-of when this was knowable"; a today-dated approval also wouldn't resolve on the latest
+EOD board (whose as_of is the prior trading day) until the next session. A later re-review
+writes a NEW approved file state with a new date, never edits history (git keeps the old).
 
 Usage:
     python3 themes/review.py --ticker NVDA                     # show candidates
@@ -83,7 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--approve", default=None,
                     help='comma list "AI=0.55,SEMI=0.30" — human may override LLM values (C6)')
     ap.add_argument("--by", default=None, help="approver name (REQUIRED with --approve; a person, not a bot)")
-    ap.add_argument("--as-of", default=None, help="as_of_date for the rows (default today; C3 point-in-time)")
+    ap.add_argument("--as-of", default=None,
+                    help="as_of_date for the rows (default = candidate's 10-K filing date, the PIT "
+                         "info-available day; C3)")
     ap.add_argument("--note", default="", help="free-text review note kept in the approved file")
     args = ap.parse_args(argv)
     ticker = args.ticker.upper()
@@ -97,7 +101,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("[review] --by <approver> is required with --approve (C6: human-in-loop)")
     themes = load_themes()
     rows = parse_approvals(args.approve, {t["key"] for t in themes})
-    as_of = args.as_of or date.today().isoformat()
+    # Default to the FILING date (when the theme info became public), not today's approval
+    # day: PIT = "as-of when knowable" (C3), and a today-dated approval wouldn't resolve on
+    # the latest EOD board (as_of = prior trading day) until next session. --as-of overrides.
+    as_of = args.as_of or doc.get("filing", {}).get("filed") or date.today().isoformat()
 
     by_key = {c["theme"]: c for c in doc["candidates"]}
     out = {
