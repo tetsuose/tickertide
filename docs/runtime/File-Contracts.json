@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T07:26:41.211131+00:00",
+  "updated_at": "2026-06-13T07:35:13.297952+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -58,7 +58,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "advisory CI：每次 push/PR 在 Linux runner 跑 devtopology gate(make verify + make health) 与离线合成管道验证(fixture→compute→valuation→export→check)",
-        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖、并跑 check-land(M4.5 land+PIT 优先级离线验收)；其价值是 PR 上留客观健康记录并验证小写路径；所用 actions 维持受 GitHub 支持的 Node24 runtime、不依赖已弃用的 node20 runtime",
+        "invariants": "不作为 required check 阻塞合并（free private 无 branch protection）；gates job 跑 stdlib-only 引擎 gate、offline-pipeline job 装 requirements.txt 用合成 fixture 给无网络的数据管道(compute/export)以 CI 覆盖、make export 全套(含 valuation.parquet+stock bundle)、check-land(M4.5)、valuation-c9(M5.5 AC-M5 C9)；其价值是 PR 上留客观健康记录并验证小写路径；所用 actions 维持受 GitHub 支持的 Node24 runtime、不依赖已弃用的 node20 runtime",
         "verification": "push 后 GitHub Actions 出现 verify/health 日志与 offline-pipeline 的 CHECK_OK(含 check-land)；gate 输出可见；board.json 作为 artifact 上传；workflow 运行无 Node20 runtime 弃用告警"
       }
     },
@@ -70,7 +70,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→themes→compute→check) + export(board/ocean/rotation/theme) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 生产公开上线",
-        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；theme 链路随 make pipeline/export 产 rotation.theme.json 并过 theme-c9(M4.6)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20；web build 设 VITE_DUCKDB_R2_BASE=vars.DUCKDB_R2_BASE(repo 变量、公开 URL 非 secret;指 R2 托管的 duckdb-wasm，未设则 client fallback jsDelivr，build 安全)",
+        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；theme 链路随 make pipeline/export 产 rotation.theme.json 并过 theme-c9(M4.6)；M5 export 产 valuation.parquet+stock bundle 并过 valuation-c9(C9)、web build 设 VITE_DUCKDB_R2_BASE(R2 wasm)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20；web build 设 VITE_DUCKDB_R2_BASE=vars.DUCKDB_R2_BASE(repo 变量、公开 URL 非 secret;指 R2 托管的 duckdb-wasm，未设则 client fallback jsDelivr，build 安全)",
         "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/theme-c9/ocean-c9 在 CI 真实数据上 PASS；设 secret 后 deploy 步骤执行、未设时 skip 不报错；run log 不含 token 值；engine 不装 deps、无 Node20 弃用告警"
       }
     },
@@ -118,7 +118,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4)、valuation-c9 跑 check_valuation(AC-M5 C9 valuation/stock↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
         "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS"
       }
     },
@@ -495,6 +495,18 @@
       }
     },
     {
+      "path": "export/check_valuation.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.5 AC-M5 + C9 验收：valuation.parquet/stock bundle 追溯到 board.json(同一引擎)",
+        "invariants": "只读、CI 友好(任一问题 exit 非0)；duckdb 读 parquet 验列齐(pe/ps/.../peg/margin/freshness/themes)+freshness∈{fresh,stale,overdue,NULL}；C9 valuation↔board 同票 ps/pe 一致(同 valuation_daily，tol 0.02)；C9 stock↔valuation 抽 8 票 bundle ps_series 末值==screener ps；前端行为(duckdb-wasm 排序/三档色/pctile/四格)由 web 测试+浏览器 smoke 覆盖、本 check 只验数据侧；valuation.parquet 缺失 SKIP exit 0",
+        "verification": "make valuation-c9 对 fixture export 输出 GATE_PASS、c9_valuation_board=全票、c9_stock_valuation 抽样；gate.yml offline 与 nightly 串入"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "export/manifest.py",
       "kind": "script",
@@ -502,7 +514,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "D.4 新鲜度 manifest：读 board/ocean/rotation/rotation.theme.json → manifest.json(最新 as_of + 各 surface count)，供 web as_of badge 免 load 全量 JSON + D.3 deploy gate",
-        "invariants": "读 export 已写的 board/ocean/rotation/rotation.theme(M4.6)；as_of_date 取各 surface 最新；缺 surface→None(部分 export 可见、非静默当完整)；Makefile export 末尾跑(在三 export 后)；输出 gitignored 紧凑 JSON",
+        "invariants": "读 export 已写的 board/ocean/rotation/rotation.theme(M4.6)+valuation(valuation.meta.json)/stock(stock/index.json)的 count/as_of(M5.5 EXTRA sidecar，非 <name>.json)；as_of_date 取各 surface 最新；缺 surface→None(部分 export 可见、非静默当完整)；Makefile export 末尾跑(在三 export 后)；输出 gitignored 紧凑 JSON",
         "verification": "make export 后 manifest.json 含 as_of+surfaces counts；as_of==max(各 surface as_of)；缺文件→对应 surface=None"
       }
     },
@@ -975,6 +987,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/components/StockStack.tsx",
       "kind": "code",
       "module": "web",
@@ -983,8 +996,7 @@
         "purpose": "M5.4 Stock 四格时间轴对齐 stack（PRD §9.6）：PRICE/VOLUME/REVENUE/P-S 四格共用一条 x 轴 + 季度网格贯穿的纯 SVG",
         "invariants": "props-only 纯 SVG、SSR 同形；主 x 轴=price.dates(~2y 日频)，所有格共用 X(i)；季度网格=每 revenue period_end 映射到最近交易日 index 的竖线贯穿四格；PRICE=K线+MA50/150/200+52wh 虚线、VOLUME=量柱(涨绿跌红)、REVENUE=季度 TTM bars(YoY 增绿降红、无同比灰)、P/S=每日线；各格独立 y range；price/ps date→index 直查、revenue period_end→最近≤index；空 price 安全(返回空 svg)",
         "verification": "StockStack.test SSR：四格标签 PRICE/VOL/REVENUE/P-S、季度网格、PS 蓝线、candles/bars rect、空 price 不崩；浏览器 smoke 四格对齐+季度竖线贯穿"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1035,6 +1047,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/__fixtures__/stock.sample.json",
       "kind": "config",
       "module": "web",
@@ -1043,8 +1056,7 @@
         "purpose": "M5.4 Stock SSR 测试 fixture：从 stock_bundle.py 导出的一个 bundle(TT07)，注入 Stock/StockStack 跳过 fetch",
         "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染",
         "verification": "Stock.test/StockStack.test 注入渲染；header/卡/分量/四格齐"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1198,7 +1210,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1) + ocean.json(M2.1) + rotation.json(M3.3) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts 含 rotation.theme，D.4/M4.6)；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2，含 peg/margin/themes/freshness)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(surfaces 含 rotation.theme+valuation+stock，D.4/M5.5)；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2，含 peg/margin/themes/freshness)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
@@ -1372,5 +1384,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "a1c6053125708f08367921e465977b7b217edad2207db202571ef28f679d772a"
+  "last_structure_digest": "e59471ed044d3a53b9ccadfd36ad8039d9a65619a225252d6e31eb97eb10d3db"
 }
