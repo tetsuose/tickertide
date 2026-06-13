@@ -6,14 +6,14 @@
 ## 0. 这是什么
 
 一个 **盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
-**脊柱：一个 stock-level composite 引擎 → 五个 lens，两个尺度(wide explore / bounded decide)，零常驻 backend。**
+**脊柱：两台 per-stock 引擎(composite 确认 + ignition 发现，PRD §10.8) → 五个 lens，两个尺度(wide explore / bounded decide)，零常驻 backend。**
 
 **SCOPE（不可越界）：** 仅限美股(NYSE/Nasdaq/AMEX，ADR 可纳入)；中文/cross-language 标的判定本期不做。
 
 ## 1. 脊柱原则（贯穿所有 surface，code 不要翻案）
 
-- 引擎 = stock-level `composite`，**五个 lens 共用同一份 per-stock 数据**（数据一致性是硬约束）。
-- Leaders=排序 / Rotation=按 bucket group-by / Ocean=二维相图 / Valuation=横截面 / Stock=单票展开。
+- 引擎 = **两台并列**：`composite`(确认，长窗口) + `ignition`(发现，短窗口/拐点/突破，PRD §10.8)；**五个 lens 共用同一份 per-stock 数据**（数据一致性是硬约束）。
+- Discovery=ignition 持续点火榜 / Rotation=composite group-by / Ocean=二维相图 / Valuation=横截面 / Stock=单票展开。
 - 两个尺度：wide/explore(Ocean、Valuation screener，数千只) + bounded/decide(Discovery、Rotation)。
 - `early⟷reliable` 旋钮 = 标量 `k∈[0,1]`，在 composite 各 component 间**重分配权重**，不删任何 component。
 - **evidence-first**：默认露原始证据，composite 只是可展开角标，永不给 buy/target。
@@ -63,9 +63,10 @@
 
 ## 7. 已定死（code 不要再翻案，详见 PRD §16 / BUILD-PLAN §12）
 
-- spine：1 引擎 → 5 surface → 2 scale → 零持久后端。
+- spine：**2 引擎(composite 确认 + ignition 发现)** → 5 surface → 2 scale → 零持久后端。
 - 数据源：Stooq(EOD) + Nasdaq screener(universe/mktcap/GICS/PE) + EDGAR(权威基本面) + yfinance(脆弱兜底)。
 - 数学：vol-normalized EWMAC、RS=双窗超额收益横截面百分位、trend=KER/OLS t 值、composite=Σwᵢ·分量(一个旋钮重配权)。
+- **ignition(双引擎，PRD §10.8/§16)**：早期发现引擎(短窗口/拐点/突破)，瞬时点火无精度、唯 persistence(持续~5日)有 lift → Discovery=持续点火榜；三级漏斗(触发→持续→翻财报)；实证 `analysis/`。early⟷reliable 旋钮只属 composite。
 - 估值：price ÷ trailing-4Q 日频(分母季度 ASOF)、`E≤0→n.m.` 退 P/S、无 forward、百分位用 common-vintage。
 - Rotation = RS-Ratio 多线(非散点)；Ocean 轴固定 RS×估值(**RRG-axes 已砍**)。
 - 全局 scope(all|sector|theme|pinned)单一真源、跨 tab 粘滞、可见可一键清。

@@ -3,6 +3,7 @@
 > PRD §13 里程碑的执行展开。**M0·M1·M2·M3 + 部署轨 D 写到可直接 `make task-open` 执行的粒度（★ 详细方案）；M4–M6 给纲要**（目标/前置/关键未决/验收指针），随各自临近再细化。**D（部署 + 夜间自动化）是正交 infra 轨，建议 M3 后与 M4/M5 并行。**
 > **进度（2026-06-13）：M0 ✅（PR #1–#8）· M1 ✅（#9–#14）· M2 ✅ Ocean（#16–#20）· M3 ✅ Rotation（#25–#29）· D ✅ 部署（#37–#44、#48、#50；tickertide.pages.dev）· M4 ✅ DONE 主题分类（M4.1–4.4 #32–#36、M4.6 接线 #51、M4.5 LLM 抽取+human 审批 #52）· M5 ✅ DONE 正式版（Valuation duckdb-wasm 全 universe + PEG/Mgn% #57/#58、Stock per-name bundle + 四格时间轴 stack #59/#60、收口 #61；预览 #53；wasm 走 R2 绕 Pages 25MiB 限——待 operator 配 R2）。**
 > **M4.5 NVDA demo（真实上线）**：`themes/extract.py` 拉真实 10-K → `claude` CLI（print 模式，**订阅 plan 额度，不接 API key**）→ 候选；sejonep 审批 AI 0.90/SEMI 1.00（C6）。真实 nightly 暴露并修了 2 个数据成熟度 bug：**theme 历史不足**（#54 seed as_of 回填到 bars 最早日 + check_theme graceful SKIP）、**approved as_of off-by-one**（#55 默认用 10-K filing 日而非审批日，否则最新 EOD board 回落 seed）。线上 NVDA 现显 SEMI 100%/AI 90% chip、theme Rotation 8 线 ×52 周。
+> **ignition 双引擎立项（2026-06-13，下一步 M7）**：重新梳理算法发现现有 `composite` 是趋势确认引擎、系统性滞后于「早期发现」初衷 → 新增 **`ignition` 发现引擎**（短窗口/拐点/突破，与 composite 并列）。实证（`analysis/verify_ignition.py` timing + `analysis/precision_ignition.py` precision）：ignition 比 composite 早 14–45 周点亮已知大牛股（ARM/MRVL/AAOI/SNDK）；**瞬时点火无精度，唯 persistence（持续 ~5 日）有 lift** → **Discovery = 「持续点火」榜**，三级漏斗（触发→持续→翻财报）。规格已写入 PRD §10.8/§16、BUILD-PLAN §4.8。**M7 待实现。**
 > 引用而非复制：数学见 PRD §10，schema 见 PRD §12，约束见 PRD §7。冲突以 PRD §16 为准。
 >
 > **执行原则（just-in-time）**：M2 之后的实现级决策（客户端框架、duckdb-wasm 接法、shard 粒度、权重常数、theme 阈值）在 PRD §17 标为未决；本文不提前承诺，等 M0 经验落地后回写。每个 milestone 拆成若干 task(worktree+PR)，对应 File-Contracts 的 `planned → implemented → verified` 推进。
@@ -399,13 +400,48 @@ Valuation 表 duckdb-wasm 浏览器查询可排序；as-of 三档上色正确；
 
 ---
 
+## M7 — ignition 发现引擎 + Discovery 持续点火榜 ★ 详细方案（下一个里程碑）
+
+> **状态：实证已立项（2026-06-13），规格见 PRD §10.8 / BUILD-PLAN §4.8；建议优先于 M6 扩量 —— 这是「早期发现」初衷的兑现，产品核心价值。**
+
+**目标**：在现有 `composite` 之外**并列**第二台 per-stock 引擎 `ignition`（短窗口/拐点/突破），把 Discovery 从「composite 瞬时排序」改为「**持续点火**榜」（ignition 跨入横截面 top decile **且**持续 ~5 日）。兑现「在 emerging leader 早期 1–2 周发现」的初衷。**不动 composite**（它退为「已成型 leader」互补视角）。
+
+**第一性原理（实证支撑）**：现有 composite 长窗口系统性滞后（等点亮票已涨 +84%~+732%）；瞬时 ignition 无精度（≈随机入场），唯 persistence 把 60–120d 中位 LIFT 转正 +2.5~3.1pp。故 ignition **必须配 persistence**，且作为独立引擎而非 composite 旋钮档位。实证：`analysis/verify_ignition.py`（timing）+ `analysis/precision_ignition.py`（precision）。
+
+**前置**：M0（`derived_daily` + `daily_bars`）。**对应模块**：`compute/`（新 ignition）+ `export/` + `web/`（Discovery/Stock 改造）。
+
+### M7 任务拆解（每个 = 一个 worktree+PR）
+
+| task | 分支建议 | 范围 | 产出文件 | 验收 |
+|---|---|---|---|---|
+| **M7.1** ignition compute | `feat/compute-ignition` | 5 短窗口分量（per-stock）+ 每日横截面 percentile + `ign_pct` + persistence 计数 → `derived_daily` 扩列 | `compute/ignition.py` `compute/run.py`（接线） `ingest/schema.sql`（derived_daily 扩列） | `derived_daily` 含 ig_* + ign_pct + ign_persist_days；5 分量∈[0,1]；横截面 top-decile 正确 |
+| **M7.2** 持续点火榜 export | `feat/export-ignition-board` | board.py 增「持续点火」候选（ign_pct≥90 且 persist≥~5）+ 点火证据（突破日/放量×/10d-50d 步速比/MA50 收复） | `export/board.py` | board.json 含 ignition 排序 + 点火证据；与 derived_daily 同源（C9） |
+| **M7.3** Discovery 持续点火榜 | `feat/web-ignition-discovery` | Discovery 改 ignition 排序；evidence-card 头部点火证据；composite 角标降为「是否已确认」副读 | `web/src/views/Discovery.tsx` `web/src/components/EvidenceCard.tsx` | Discovery 按持续点火排序；点火证据可见；composite 仍可展开 |
+| **M7.4** Stock 点火诊断 | `feat/web-ignition-stock` | Stock 加「点火诊断」小节（突破/收缩-扩张/放量/RS 拐点），衔接价格↔财务 stack 与翻财报 | `web/src/views/Stock.tsx` | Stock 显 ignition 5 分量 + 点火时间线 |
+| **M7.5** 验证 + 构建 | `feat/m7-build` | AC-M7 端到端 + C9（ignition↔board）+ 测试 | `Makefile` `compute/check.py`（扩 ignition 检查） | AC-M7 全过 |
+
+> 顺序：M7.1（引擎）→ M7.2（export）→ M7.3（Discovery）→ M7.4（Stock）→ M7.5（收口）。**未决参数（PRD §17）**：persistence 天数（5/7/10）、是否叠加估值过滤、横截面池范围 —— 落地后用 `analysis/` 脚本复核，不回测优化 alpha（买 robustness）。
+
+### AC-M7（PRD §14）
+`derived_daily` 含 ignition 5 分量 + `ign_pct` + `ign_persist_days`；Discovery 按「持续点火」排序（非 composite）；点火证据可见；ignition↔composite 同源（C9）；持续点火榜非空可追溯。
+
+### M7 风险与缓解
+| 风险 | 缓解 |
+|---|---|
+| ignition 假阳性多（短窗口噪音） | persistence 过滤（实证转正 lift）；用户翻财报终筛；诚实暴露 lift 温和 |
+| persistence 天数未定 | 默认 ~5 日；落地后 `analysis/` 复核 5/7/10，不回测买 alpha |
+| 与 composite 口径混淆 | 双引擎共用 per-stock 数据但分开评分；early⟷reliable 旋钮只属 composite（PRD P7） |
+| 幸存者偏差致 precision 高估 | 实证已标注；真实 nightly 全 universe 复核 |
+
+---
+
 ## 全局依赖链
 
 ```
-M0(数据+引擎)✅ ─┬─> M1(Discovery)✅
-                ├─> M2(Ocean)✅ ──> M5(Valuation+Stock)
-                ├─> M3(Rotation) ──> M4(主题分类)
-                ├─> D(部署+夜间自动化, infra 轨; 建议 M3 后, 与 M4/M5 并行)
+M0(数据+引擎)✅ ─┬─> M1(Discovery)✅ ──> M7(ignition 发现引擎 + 持续点火榜; 下一个, 优先于 M6)
+                ├─> M2(Ocean)✅ ──> M5(Valuation+Stock)✅
+                ├─> M3(Rotation)✅ ──> M4(主题分类)✅
+                ├─> D(部署+夜间自动化)✅
                 └─────────────────────────────────> M6(扩量, 需 M0–M5 稳定)
 ```
 
