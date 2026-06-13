@@ -53,3 +53,9 @@ themes/candidates/
 !**/.env.example
 docs/runtime/Env-Registry.md
 docs/runtime/Secrets-Inventory.yaml
+
+# Multi-agent task progress docs — transient cross-worktree coordination state
+# (one .md per task, read/written by subagents via the repo-root ABSOLUTE path).
+# Not durable artifacts: deliverables live in each task's PR / main. The doc's own
+# header explains the mechanism. See CLAUDE.md 三层状态协议 (state = protocol, not log).
+docs/progress/
