@@ -1086,6 +1086,17 @@ body {
 .stk-chart {
   margin-bottom: 14px;
 }
+.stk-stackwrap {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--bg2);
+}
+.stk-stack {
+  width: 100%;
+  display: block;
+}
 .stk-vals {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T07:17:04.867883+00:00",
+  "updated_at": "2026-06-13T07:26:41.211131+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -531,6 +531,7 @@
       }
     },
     {
+      "notes": "",
       "path": "export/stock_bundle.py",
       "kind": "script",
       "module": "export",
@@ -539,8 +540,7 @@
         "purpose": "M5.3 Stock per-name bundle 导出：每 universe 票 → web/public/data/stock/<TICKER>.json(+index.json)，为 M5.4 时间轴对齐 stack 提供时序",
         "invariants": "每票一 JSON 分片、懒加载(Stock narrow 一次一票，无需 duckdb-wasm)；含 price(~2y/504d 日 OHLCV+MA50/150/200+52wh)+revenue_q(季度 TTM 营收+YoY，PRD §9.6 REVENUE bars)+ps_series(每日 P/S，§9.6 P/S over time)+header(ticker/name/sector/mktcap/composite/themes PIT)+valuation 卡+5 分量，per-name 自给(任意 universe 票，非 board top-N)；读同一 daily_bars/valuation_daily/fundamentals_q(C9 同票 P/S 与 Ocean/Valuation 一致)；index.json 列 ticker+as_of(Stock 下拉/manifest)；输出 gitignored",
         "verification": "make export 产 stock/<T>.json 全 universe + index.json；抽查 bundle 含 price/revenue_q(YoY)/ps_series/valuation/components/themes；ps 与 valuation_daily 一致(C9)"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -975,6 +975,18 @@
       }
     },
     {
+      "path": "web/src/components/StockStack.tsx",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.4 Stock 四格时间轴对齐 stack（PRD §9.6）：PRICE/VOLUME/REVENUE/P-S 四格共用一条 x 轴 + 季度网格贯穿的纯 SVG",
+        "invariants": "props-only 纯 SVG、SSR 同形；主 x 轴=price.dates(~2y 日频)，所有格共用 X(i)；季度网格=每 revenue period_end 映射到最近交易日 index 的竖线贯穿四格；PRICE=K线+MA50/150/200+52wh 虚线、VOLUME=量柱(涨绿跌红)、REVENUE=季度 TTM bars(YoY 增绿降红、无同比灰)、P/S=每日线；各格独立 y range；price/ps date→index 直查、revenue period_end→最近≤index；空 price 安全(返回空 svg)",
+        "verification": "StockStack.test SSR：四格标签 PRICE/VOL/REVENUE/P-S、季度网格、PS 蓝线、candles/bars rect、空 price 不崩；浏览器 smoke 四格对齐+季度竖线贯穿"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "web/src/lib/__fixtures__/board.sample.json",
       "kind": "config",
@@ -1023,6 +1035,18 @@
       }
     },
     {
+      "path": "web/src/lib/__fixtures__/stock.sample.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.4 Stock SSR 测试 fixture：从 stock_bundle.py 导出的一个 bundle(TT07)，注入 Stock/StockStack 跳过 fetch",
+        "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染",
+        "verification": "Stock.test/StockStack.test 注入渲染；header/卡/分量/四格齐"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "web/src/lib/__fixtures__/valuation.sample.json",
       "kind": "config",
@@ -1066,7 +1090,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
-        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)",
+        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)；loadStockBundle/loadStockIndex 懒加载 per-name bundle(M5.4)",
         "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
       }
     },
@@ -1162,7 +1186,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "暗色主题与配色 SoT：附录C 全调色板 CSS 变量 + shell 组件类 + evidence-card/Discovery/Ocean 类",
-        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.ocpins/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同；加 Rotation 组件类(.rot/.rleague/.rlrow/.rot-summary/.rrgsvg/.seg/.qchip 等，复用现有调色板 var)；D.4 freshness badge 类(.dot.fresh/aging/stale + .asof2.fresh-aging/stale)复用 grn/amb/red；新增 .valn-*(横截面表 + as-of 三档 vfr-fresh/stale/overdue + vint)与 .stk-*(per-name 面板 + theme chip exposure + 6 估值卡 + 5 分量条)(M5 预览)",
+        "invariants": "暗色唯一(--bg #080b11)；hex 取自 PRD 附录C / UX 合同、组件与 canvas 只引 var()/var 名不写裸 hex；选中 tab 高亮绿 --accent；evidence-card(.ecard/.ec-*/.ecgrid)、权重条(.wbars/.wb/.wbfill)、d-d(.ec-headr/.ec-dd)、Ocean(.ocean/.oc-ctrl/.ocmode/.ocwrap/.occanvas/.oax-*/.oquad/.ocscrub/.ocrange/.ocpins/.otip*/.otrow/.otags/.ohint) 转写自 UX 合同；加 Rotation 组件类(.rot/.rleague/.rlrow/.rot-summary/.rrgsvg/.seg/.qchip 等，复用现有调色板 var)；D.4 freshness badge 类(.dot.fresh/aging/stale + .asof2.fresh-aging/stale)复用 grn/amb/red；新增 .valn-*(横截面表 + as-of 三档 vfr-fresh/stale/overdue + vint)与 .stk-*(per-name 面板 + theme chip exposure + 6 估值卡 + 5 分量条)(M5 预览)；.stk-stackwrap/.stk-stack(M5.4 四格 stack 容器)",
         "verification": "构建后 CSS 含附录C 关键 hex 与 .ec-*/.wb*/.oc*/.otip 类；视觉对 UX 合同"
       }
     },
@@ -1174,7 +1198,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1) + ocean.json(M2.1) + rotation.json(M3.3) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts 含 rotation.theme，D.4/M4.6)；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2，含 peg/margin/themes/freshness)",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts 含 rotation.theme，D.4/M4.6)；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2，含 peg/margin/themes/freshness)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
@@ -1257,9 +1281,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Stock 视图 AC(PRD §9.6)的 SSR 回归门",
-        "invariants": "用真实 board.sample.json + 注入 AI/SEMI theme payload 验 chip；断言头部/默认票/6 估值卡/5 分量/theme chip exposure%/ticker 下拉列全票",
-        "verification": "npm test 全过(6 测试)；与 Stock.tsx 合同一致"
+        "purpose": "Stock 视图 + StockStack AC（PRD §9.6，M5.4）的 SSR 回归门",
+        "invariants": "用 stock.sample.json(从 bundle)+renderToStaticMarkup 无 fetch；断言 Stock 头部/theme chip exposure%/6 估值卡/5 分量/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全",
+        "verification": "npm test 全过；与 Stock.tsx + StockStack 合同一致"
       }
     },
     {
@@ -1269,9 +1293,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Stock detail 视图（PRD §9.6，M5 预览）：per-name 面板 = evidence card 的展开态",
-        "invariants": "per-name、不受 scope（§9.1.2）；ticker 下拉切换（setTicker）、无选择默认 board 首只；头部 ticker+sector·mktcap+theme chips(带 exposure%)+COMPOSITE 大分(scoreColor)；复用 MiniChart(价格/MA50-150-200/52wh/volume)；6 估值倍数卡 + 5 分量条(权重随 k)；全部来自 board.json(C9)；正式 M5 补 price↔fundamentals 时间轴 stack(季度营收 bars + 每日 P/S over time 共用 x 轴)+ filing AI 摘要(需 per-name 新数据)",
-        "verification": "Stock.test.tsx SSR 断言选中 ticker 头部、ticker=null 默认首只、6 估值卡、5 分量、注入 AI/SEMI 验 theme chip exposure%、下拉列全 ticker；npm run build tsc 通过"
+        "purpose": "Stock detail 视图（PRD §9.6，M5.4 正式版）：per-name bundle 懒加载 + 四格时间轴对齐 stack",
+        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+COMPOSITE(composite(components,k) 重算)；6 估值卡(bundle.valuation)+5 分量(权重随 k)；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后",
+        "verification": "Stock.test SSR(注入 bundle)断言头部/theme chip exposure%/6 卡/5 分量/四格 stack；浏览器 smoke 懒加载 + 四格渲染"
       }
     },
     {
@@ -1348,5 +1372,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "dbae301356fa5d112f3774d1416dea4f901a149c1a1e52bbaf0e0edb0430242a"
+  "last_structure_digest": "a1c6053125708f08367921e465977b7b217edad2207db202571ef28f679d772a"
 }
