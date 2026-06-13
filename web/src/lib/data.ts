@@ -1,4 +1,4 @@
-import type { BoardData, OceanData, RotationData, ManifestData } from '../types'
+import type { BoardData, OceanData, RotationData, ManifestData, StockBundle, StockIndex } from '../types'
 
 // Load the nightly Discovery snapshot (export/board.py -> public/data/board.json).
 // import.meta.env.BASE_URL respects Vite's base './', so the fetch works from any
@@ -38,4 +38,21 @@ export async function loadManifest(signal?: AbortSignal): Promise<ManifestData> 
   const res = await fetch(`${base}data/manifest.json`, { signal })
   if (!res.ok) throw new Error(`manifest.json HTTP ${res.status}`)
   return (await res.json()) as ManifestData
+}
+
+// Load one Stock per-name bundle (export/stock_bundle.py -> public/data/stock/<TICKER>.json).
+// Lazily fetched when a name is opened (Stock is narrow — one name at a time, M5.4).
+export async function loadStockBundle(ticker: string, signal?: AbortSignal): Promise<StockBundle> {
+  const base = import.meta.env?.BASE_URL ?? './'
+  const res = await fetch(`${base}data/stock/${ticker}.json`, { signal })
+  if (!res.ok) throw new Error(`stock/${ticker}.json HTTP ${res.status}`)
+  return (await res.json()) as StockBundle
+}
+
+// Load the Stock bundle index (ticker list for the per-name selector).
+export async function loadStockIndex(signal?: AbortSignal): Promise<StockIndex> {
+  const base = import.meta.env?.BASE_URL ?? './'
+  const res = await fetch(`${base}data/stock/index.json`, { signal })
+  if (!res.ok) throw new Error(`stock/index.json HTTP ${res.status}`)
+  return (await res.json()) as StockIndex
 }

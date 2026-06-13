@@ -210,3 +210,56 @@ export interface ValuationData {
   count: number
   rows: ValuationRow[]
 }
+
+// --- Stock per-name bundle (M5.3 export/stock_bundle.py -> public/data/stock/<TICKER>.json) ---
+// The series behind the M5.4 time-aligned price↔fundamentals stack (PRD §9.6). Self-contained
+// per name (header + card + components too), lazily fetched. Same daily_bars/valuation_daily/
+// fundamentals_q as every surface (C9). `price` reuses ChartSeries (the ~2y window here, vs
+// board's 90d).
+export interface RevenueQuarter {
+  period_end: string | null
+  revenue_ttm: number | null
+  yoy: number | null
+}
+
+export interface PsPoint {
+  date: string | null
+  ps: number | null
+}
+
+export interface StockBundle {
+  schema_version: number
+  as_of_date: string | null
+  meta: {
+    ticker: string
+    name: string | null
+    sector: string | null
+    mktcap: number | null
+    composite: number | null
+    themes: ThemeTag[]
+  }
+  components: Components | null
+  valuation: {
+    pe: number | null
+    ps: number | null
+    evs: number | null
+    ev_ebitda: number | null
+    peg: number | null
+    growth: number | null
+    margin: number | null
+    rule40: number | null
+    as_of_period_end: string | null
+    as_of_filed: string | null
+  } | null
+  price: ChartSeries
+  revenue_q: RevenueQuarter[]
+  ps_series: PsPoint[]
+}
+
+/** stock/index.json — ticker list for the per-name selector. */
+export interface StockIndex {
+  schema_version: number
+  as_of_date: string | null
+  count: number
+  tickers: string[]
+}

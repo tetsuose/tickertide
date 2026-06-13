@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react'
-import type { BoardData, Components, Stock as StockT } from '../types'
-import { loadBoard } from '../lib/data'
+import type { StockBundle, Components } from '../types'
+import { loadStockBundle, loadStockIndex } from '../lib/data'
 import { weights, composite } from '../lib/composite'
-import MiniChart from '../components/MiniChart'
+import StockStack from '../components/StockStack'
 import { fmtMktcap, num, pct, scoreColor } from '../lib/format'
 
-// Stock detail (PRD §9.6, M5 preview) — the expanded state of an evidence card, per-name
-// and NOT scope-filtered (§9.1.2: Stock is per-name). board.json carries everything this
-// preview needs (header identity + theme chips with exposure, the price/MA/volume mini
-// chart, the 6 valuation multiples, the 5 composite components), so it ships now and stays
-// C9-consistent with every other surface. The full §9.6 contract — the time-aligned
-// price↔fundamentals stack (quarterly revenue bars + daily P/S-over-time, sharing one x
-// axis) and the filing AI summary — needs new per-name export data and lands with M5.
+// Stock detail (PRD §9.6, M5.4) — per-name, NOT scope-filtered. Reads one lazily-fetched
+// bundle (export/stock_bundle.py) for ANY universe ticker, not board.json's top-N. The core
+// is the time-aligned price↔fundamentals stack (StockStack: PRICE/VOLUME/REVENUE/P-S sharing
+// one x axis with quarter gridlines), upgrading the #53 preview's single MiniChart. `initial`
+// injects a bundle for SSR/tests. Same valuation_daily/fundamentals_q as every surface (C9).
 
 const COMPONENTS: { key: keyof Components; label: string }[] = [
   { key: 'rs', label: 'RS' },
@@ -21,7 +19,8 @@ const COMPONENTS: { key: keyof Components; label: string }[] = [
   { key: 'accel', label: 'ACCEL' },
 ]
 
-const VAL_CARDS: { key: keyof NonNullable<StockT['valuation']>; label: string; kind: 'num' | 'pct' }[] = [
+type ValKey = 'ps' | 'evs' | 'ev_ebitda' | 'pe' | 'growth' | 'rule40'
+const VAL_CARDS: { key: ValKey; label: string; kind: 'num' | 'pct' }[] = [
   { key: 'ps', label: 'P/S', kind: 'num' },
   { key: 'evs', label: 'EV/S', kind: 'num' },
   { key: 'ev_ebitda', label: 'EV/EBITDA', kind: 'num' },
@@ -36,36 +35,51 @@ export default function Stock({
   setTicker,
   k,
 }: {
-  initial?: BoardData
+  initial?: StockBundle
   ticker?: string | null
   setTicker?: (t: string) => void
   k?: number
 }) {
-  const [board, setBoard] = useState<BoardData | null>(initial ?? null)
+  const [bundle, setBundle] = useState<StockBundle | null>(initial ?? null)
+  const [tickers, setTickers] = useState<string[]>(initial ? [initial.meta.ticker] : [])
   const [err, setErr] = useState<string | null>(null)
 
+  // index once: the per-name ticker dropdown
   useEffect(() => {
     if (initial) return
     const ac = new AbortController()
-    loadBoard(ac.signal)
-      .then(setBoard)
+    loadStockIndex(ac.signal)
+      .then((idx) => setTickers(idx.tickers))
+      .catch(() => {})
+    return () => ac.abort()
+  }, [initial])
+
+  // bundle whenever the selected ticker (or the default first) changes
+  useEffect(() => {
+    if (initial) return
+    const t = ticker ?? tickers[0]
+    if (!t) return
+    const ac = new AbortController()
+    setBundle(null)
+    setErr(null)
+    loadStockBundle(t, ac.signal)
+      .then((b) => setBundle(b))
       .catch((e) => {
         if (!ac.signal.aborted) setErr(String(e))
       })
     return () => ac.abort()
-  }, [initial])
+  }, [initial, ticker, tickers])
 
   if (err)
     return (
       <div className="placeholder">
         <div className="ph-tag">NO DATA</div>
         <div className="ph-msg">
-          board.json 未就绪（{err}）。先跑 <code>make fixture-pipeline</code> 或 <code>make pipeline</code> 再{' '}
-          <code>python export/board.py</code>。
+          stock bundle 未就绪（{err}）。先跑 <code>make export</code> 产出 web/public/data/stock/。
         </div>
       </div>
     )
-  if (!board)
+  if (!bundle)
     return (
       <div className="placeholder">
         <div className="ph-tag">LOADING</div>
@@ -73,29 +87,21 @@ export default function Stock({
       </div>
     )
 
-  // per-name: the requested ticker, else the top-composite name as a sensible default.
-  const s = board.stocks.find((t) => t.ticker === ticker) ?? board.stocks[0]
-  if (!s)
-    return (
-      <div className="placeholder">
-        <div className="ph-tag">EMPTY</div>
-        <div className="ph-msg">board.json 无个股。</div>
-      </div>
-    )
-
-  const kEff = k ?? board.knob_default_k
+  const m = bundle.meta
+  const kEff = k ?? 0.5
+  const comps = bundle.components
+  const score = comps ? composite(comps, kEff) : (m.composite ?? 0)
   const w = weights(kEff)
-  const score = composite(s.components, kEff)
-  const v = s.valuation
-  const tickers = [...board.stocks].map((t) => t.ticker).sort()
+  const v = bundle.valuation
+  const opts = tickers.length ? tickers : [m.ticker]
 
   return (
     <div className="stk">
       <div className="stk-top">
         <label>
           ticker{' '}
-          <select value={s.ticker} onChange={(e) => setTicker?.(e.target.value)}>
-            {tickers.map((t) => (
+          <select value={m.ticker} onChange={(e) => setTicker?.(e.target.value)}>
+            {opts.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
@@ -107,13 +113,13 @@ export default function Stock({
 
       <div className="stk-head">
         <div className="stk-id">
-          <div className="stk-tk">{s.ticker}</div>
+          <div className="stk-tk">{m.ticker}</div>
           <div className="stk-sec">
-            {s.sector ?? '—'} · {fmtMktcap(s.mktcap)}
+            {m.sector ?? '—'} · {fmtMktcap(m.mktcap)}
           </div>
-          {s.themes.length > 0 && (
+          {m.themes.length > 0 && (
             <div className="stk-themes">
-              {s.themes.map((t) => (
+              {m.themes.map((t) => (
                 <span key={t.theme} className="stk-chip" style={{ color: `var(--th-${t.theme.toLowerCase()}, var(--dim))` }}>
                   {t.theme}
                   {t.exposure != null && <em>{(t.exposure * 100).toFixed(0)}%</em>}
@@ -128,43 +134,40 @@ export default function Stock({
         </div>
       </div>
 
-      <div className="stk-chart">
-        <MiniChart chart={s.chart} />
+      <div className="stk-stackwrap">
+        <StockStack bundle={bundle} />
       </div>
 
       <div className="stk-vals">
         {VAL_CARDS.map(({ key, label, kind }) => (
           <div key={key} className="stk-vcard">
             <span className="stk-vl">{label}</span>
-            <b className="stk-vv">{v == null ? '—' : kind === 'pct' ? pct(v[key] as number | null) : num(v[key] as number | null)}</b>
+            <b className="stk-vv">{v == null ? '—' : kind === 'pct' ? pct(v[key]) : num(v[key])}</b>
           </div>
         ))}
       </div>
 
       <div className="stk-comp">
         <div className="stk-compt">composite 5 分量（原始值 ∈ [0,1] · 权重随 k）</div>
-        {COMPONENTS.map(({ key, label }) => {
-          const cv = s.components[key]
-          const wv = w[key]
-          return (
-            <div key={key} className="stk-crow">
-              <span className="stk-cl">{label}</span>
-              <span className="stk-cbar">
-                <span className="stk-cfill" style={{ width: `${Math.round((cv ?? 0) * 100)}%` }} />
-              </span>
-              <b>{cv == null ? '—' : cv.toFixed(2)}</b>
-              <em>{Math.round((wv ?? 0) * 100)}%</em>
-            </div>
-          )
-        })}
+        {comps &&
+          COMPONENTS.map(({ key, label }) => {
+            const cv = comps[key]
+            const wv = w[key]
+            return (
+              <div key={key} className="stk-crow">
+                <span className="stk-cl">{label}</span>
+                <span className="stk-cbar">
+                  <span className="stk-cfill" style={{ width: `${Math.round((cv ?? 0) * 100)}%` }} />
+                </span>
+                <b>{cv == null ? '—' : cv.toFixed(2)}</b>
+                <em>{Math.round((wv ?? 0) * 100)}%</em>
+              </div>
+            )
+          })}
       </div>
 
       <div className="foot">
-        Stock = evidence card 的展开态（PRD §9.6）· 头部 + 价格/MA/成交量图 + 6 估值倍数 + 5 分量，全部来自 board.json（与
-        Discovery/Ocean/Valuation 同源 C9）。
-        <br />
-        正式 M5 补：price↔fundamentals 时间轴对齐 stack（季度营收 bars + 每日 P/S over time，共用 x 轴）+ 最新 filing AI
-        摘要——需 per-name 导出新数据。as_of {board.as_of_date}。
+        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。来自 per-name bundle（懒加载，与 board/Valuation 同源 C9）。最新 filing AI 摘要留 M5 之后。as_of {bundle.as_of_date}。
       </div>
     </div>
   )

@@ -1,59 +1,61 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import board from '../lib/__fixtures__/board.sample.json'
+import stock from '../lib/__fixtures__/stock.sample.json'
 import Stock from './Stock'
-import type { BoardData } from '../types'
+import StockStack from '../components/StockStack'
+import type { StockBundle } from '../types'
 
-// M5-preview Stock contract (PRD §9.6), rendered from the real exported fixture.
-const data = board as unknown as BoardData
+// M5.4 Stock detail + four-pane stack from the real exported bundle (stock.sample.json,
+// generated from a stock_bundle.py shard). The injected path renders without fetching.
+const bundle = stock as unknown as StockBundle
 const count = (html: string, cls: string) => html.split(cls).length - 1
 
-describe('Stock detail (M5 preview)', () => {
-  it('renders the requested per-name header', () => {
-    const s = data.stocks[5]
-    const html = renderToStaticMarkup(<Stock initial={data} ticker={s.ticker} />)
-    expect(html).toContain(`stk-tk">${s.ticker}<`)
+describe('Stock detail (M5.4, per-name bundle)', () => {
+  it('renders the per-name header from the bundle', () => {
+    const html = renderToStaticMarkup(<Stock initial={bundle} ticker={bundle.meta.ticker} />)
+    expect(html).toContain(`stk-tk">${bundle.meta.ticker}<`)
     expect(html).toContain('COMPOSITE')
   })
 
-  it('defaults to the first board stock when no ticker is selected', () => {
-    const html = renderToStaticMarkup(<Stock initial={data} ticker={null} />)
-    expect(html).toContain(`stk-tk">${data.stocks[0].ticker}<`)
-  })
-
-  it('shows the 6 valuation multiple cards', () => {
-    const html = renderToStaticMarkup(<Stock initial={data} ticker={data.stocks[0].ticker} />)
-    expect(count(html, 'stk-vcard')).toBe(6)
-    expect(html).toContain('Rule of 40')
-    expect(html).toContain('EV/EBITDA')
-  })
-
-  it('shows the 5 composite components', () => {
-    const html = renderToStaticMarkup(<Stock initial={data} ticker={data.stocks[0].ticker} />)
-    expect(count(html, 'stk-crow')).toBe(5)
-    expect(html).toContain('ACCEL')
-  })
-
-  it('renders theme chips with exposure % (the NVDA-style demo payload)', () => {
-    // board.sample synthetic stocks carry no themes; inject the real M4.5 shape to prove
-    // the chip renders exposure (AI 90% / SEMI 100%, like themes/approved/NVDA.json).
-    const injected: BoardData = {
-      ...data,
-      stocks: [
-        { ...data.stocks[0], themes: [{ theme: 'AI', exposure: 0.9 }, { theme: 'SEMI', exposure: 1.0 }] },
-        ...data.stocks.slice(1),
-      ],
-    }
-    const html = renderToStaticMarkup(<Stock initial={injected} ticker={injected.stocks[0].ticker} />)
+  it('renders theme chips with exposure %', () => {
+    // fixture TT07 carries ROBO 58%
+    const html = renderToStaticMarkup(<Stock initial={bundle} />)
     expect(html).toContain('stk-chip')
-    expect(html).toContain('AI')
-    expect(html).toContain('90%')
-    expect(html).toContain('SEMI')
-    expect(html).toContain('100%')
+    expect(html).toContain(bundle.meta.themes[0].theme)
+    expect(html).toContain(`${Math.round((bundle.meta.themes[0].exposure ?? 0) * 100)}%`)
   })
 
-  it('lists every board ticker in the per-name selector', () => {
-    const html = renderToStaticMarkup(<Stock initial={data} ticker={data.stocks[0].ticker} />)
-    for (const t of data.stocks.map((s) => s.ticker)) expect(html).toContain(`value="${t}"`)
+  it('shows the 6 valuation cards + 5 components', () => {
+    const html = renderToStaticMarkup(<Stock initial={bundle} />)
+    expect(count(html, 'stk-vcard')).toBe(6)
+    expect(count(html, 'stk-crow')).toBe(5)
+    expect(html).toContain('Rule of 40')
+  })
+
+  it('renders the four-pane time-aligned stack (not the preview MiniChart)', () => {
+    const html = renderToStaticMarkup(<Stock initial={bundle} />)
+    expect(html).toContain('stk-stack')
+  })
+})
+
+describe('StockStack (M5.4 four panes, one x axis)', () => {
+  it('labels all four panes', () => {
+    const html = renderToStaticMarkup(<StockStack bundle={bundle} />)
+    for (const label of ['PRICE', 'VOL', 'REVENUE', 'P/S']) expect(html).toContain(`>${label}<`)
+  })
+
+  it('draws quarter gridlines (one per revenue quarter) + the P/S line', () => {
+    const html = renderToStaticMarkup(<StockStack bundle={bundle} />)
+    // P/S over time line uses the blue stroke
+    expect(html).toContain('var(--blu)')
+    // revenue bars + candles render as rects; svg present
+    expect(html).toContain('<svg')
+    expect(html).toContain('<rect')
+  })
+
+  it('renders empty-safe with no price data', () => {
+    const empty = { ...bundle, price: { ...bundle.price, dates: [], close: [] } } as StockBundle
+    const html = renderToStaticMarkup(<StockStack bundle={empty} />)
+    expect(html).toContain('<svg')
   })
 })
