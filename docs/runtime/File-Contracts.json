@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T05:23:03.097358+00:00",
+  "updated_at": "2026-06-13T07:10:25.652011+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -70,7 +70,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "夜间 EOD 数据管道 + 部署(D.2+D.3)：cron(美东盘后) + workflow_dispatch 在 GitHub runner 跑真实 pipeline(ingest+sector_etf→fundamentals→themes→compute→check) + export(board/ocean/rotation/theme) + C9 + web-build → 上传 site+data artifact → 直传 Cloudflare Pages 生产公开上线",
-        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；theme 链路随 make pipeline/export 产 rotation.theme.json 并过 theme-c9(M4.6)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20",
+        "invariants": "真实数据源(Nasdaq/yfinance/EDGAR 公开端点)；deploy token 仅存 GitHub Actions secret(CLOUDFLARE_API_TOKEN/_ACCOUNT_ID)、绝不入库/PR/日志、gate 步骤只 echo 布尔不打印值；deploy 在 pipeline+C9+web-build 全绿后才跑(失败步骤先中断 job→陈旧/失败不发布)；CLOUDFLARE_API_TOKEN secret 未设时 deploy 步骤自动跳过(脚手架可安全先合并)；首次 go-live+启用 auto-deploy 是 hard stop(需用户点头)；只装 requirements.txt 产品 deps、engine/index.py 仍 stdlib-only；concurrency 防重叠、timeout 50min；theme 链路随 make pipeline/export 产 rotation.theme.json 并过 theme-c9(M4.6)；所用 actions 维持 Node24 runtime、不依赖已弃用的 node20；web build 设 VITE_DUCKDB_R2_BASE=vars.DUCKDB_R2_BASE(repo 变量、公开 URL 非 secret;指 R2 托管的 duckdb-wasm，未设则 client fallback jsDelivr，build 安全)",
         "verification": "workflow_dispatch 手测(gh workflow run -f limit=小)跑通、artifact 含最新 as_of 的 dist+data；rotation-c9/theme-c9/ocean-c9 在 CI 真实数据上 PASS；设 secret 后 deploy 步骤执行、未设时 skip 不报错；run log 不含 token 值；engine 不装 deps、无 Node20 弃用告警"
       }
     },
@@ -339,6 +339,18 @@
       }
     },
     {
+      "path": "docs/runtime/Deploy-DuckDB-Wasm-R2-Runbook.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.2 R2 部署 runbook：duckdb-wasm bundle 托管到 Cloudflare R2 的一次性 operator 设置(bucket/公开域/CORS/上传/repo 变量)",
+        "invariants": "为什么 R2:wasm 35-41MB 超 Pages 25MiB 单文件限制;R2 是用户自有对象存储非第三方 CDN(脊柱:parquet 仍自托管、仅静态 wasm lib 外移);未配 R2 时 client fallback jsDelivr CDN(site+nightly 安全);wasm 绝不入 web/dist(URL 加载);跨域 worker 用 blob importScripts;DUCKDB_R2_BASE 是公开 URL 用 repo 变量、R2 token 只在本地",
+        "verification": "按 runbook 设置后 nightly 部署的 Valuation tab 浏览器从 R2 base fetch wasm 200(CORS ok)、渲染全 universe;wasm 请求走 R2 非 dist"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "docs/runtime/Deploy-Pages-Runbook.md",
       "kind": "doc",
@@ -519,16 +531,16 @@
       }
     },
     {
+      "notes": "",
       "path": "export/valuation_parquet.py",
       "kind": "script",
       "module": "export",
       "stage": "implemented",
       "contract": {
         "purpose": "M5.1 估值横截面导出：全 universe 最新 valuation 快照 → web/public/data/valuation.parquet（+ .meta.json），供 M5 Valuation screener 用 duckdb-wasm 浏览器查询（wide explore）",
-        "invariants": "全 universe（derived_daily 当日票）每票一行最新 as-of valuation；含 peg/margin（valuation_daily 自 M0 已算、board.json 未导出的两列）；与 board.json 读同一 valuation_daily（C9 同票一致）；snap=max(derived_daily.date) 取值后字面嵌入 SQL（避免 DuckDB correlated 列 + outer join 限制；snap 是 DB 派生 DATE 非用户输入）；freshness 三档 95/160 与 board.py 一致、period_end→snap 同尺；duckdb 原生 COPY 写 parquet 不依赖 pyarrow；输出 gitignored（夜间派生）、.meta.json sidecar 带 as_of+count 供 manifest(D.4)/前端 header",
+        "invariants": "全 universe（derived_daily 当日票）每票一行最新 as-of valuation；含 peg/margin（valuation_daily 自 M0 已算、board.json 未导出的两列）+ themes 列（point-in-time membership as-of snap、exposure>0、逗号连接；theme_membership 不存在则空——供 Valuation theme scope 自给）；与 board.json 读同一 valuation_daily（C9 同票一致）；snap=max(derived_daily.date) 取值后字面嵌入 SQL（避免 DuckDB correlated 列 + outer join 限制；snap 是 DB 派生 DATE 非用户输入）；freshness 三档 95/160 与 board.py 一致、period_end→snap 同尺；duckdb 原生 COPY 写 parquet 不依赖 pyarrow；输出 gitignored（夜间派生）、.meta.json sidecar 带 as_of+count 供 manifest(D.4)/前端 header",
         "verification": "make export 产 valuation.parquet（全 universe 行、含 peg/margin 列、freshness∈{fresh,stale,overdue,NULL}）+ valuation.meta.json；duckdb 读回列齐、按 ps 升序便宜在上；同票与 board.json valuation 一致（C9）"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -709,6 +721,18 @@
         "invariants": "绝不修改 repo 状态；输出 DOCS_ONLY/WORKFLOW_ONLY/STRUCTURE_TRIGGER/WARNINGS；路径为 tickertide 原生无 vpn-ops 耦合；分支建议前缀与 worktree.sh/WORKFLOW §2 共用单一规则（feat/docs/chore-workflow，date-first <prefix>/<date>-<descriptor>）",
         "verification": "make route 输出上述键且格式可解析；--structural/--planning/--gate 可强制触发；建议分支前缀与 worktree.sh 同 lane 一致"
       }
+    },
+    {
+      "path": "scripts/upload-duckdb-wasm-r2.sh",
+      "kind": "script",
+      "module": "scripts",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.2 运维脚本：把 duckdb-wasm bundle(wasm+worker)上传到 Cloudflare R2，供 Valuation screener 运行时加载(绕开 Pages 25MiB 单文件限制)",
+        "invariants": "operator 步骤、每次 duckdb-wasm 版本 bump 跑一次(wasm 静态、不随 nightly 变);从 web/node_modules/@duckdb/duckdb-wasm/dist 取 4 文件(mvp/eh .wasm + .worker.js);wrangler 或 awscli(R2 S3 endpoint)二选一;.wasm→application/wasm、worker→text/javascript;凭证只在本地/operator env、绝不入库(同 Pages token);R2_BUCKET 必填",
+        "verification": "R2_BUCKET=... bash scripts/upload-duckdb-wasm-r2.sh 上传 4 文件;缺文件报错;之后设 repo 变量 DUCKDB_R2_BASE 指向 bucket 公开 base URL"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -988,6 +1012,18 @@
     },
     {
       "notes": "",
+      "path": "web/src/lib/__fixtures__/valuation.sample.json",
+      "kind": "config",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.2 Valuation SSR 测试 fixture：从 valuation.parquet 转出的 rows，注入 Valuation 跳过 duckdb-wasm",
+        "invariants": "逐字段镜像 valuation.parquet（含 peg/margin/themes/freshness/as_of_*）；覆盖 fresh/stale/overdue + 多 theme 票（TT01='AI,SEMI'）；date 列 ISO 字符串（与 duckdb view strftime 输出一致，保证注入路径与浏览器路径同形）",
+        "verification": "Valuation.test 注入 data.rows SSR 渲染；列/freshness/themes 齐、可复跑"
+      }
+    },
+    {
+      "notes": "",
       "path": "web/src/lib/composite.test.ts",
       "kind": "code",
       "module": "web",
@@ -1020,6 +1056,18 @@
         "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
         "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)",
         "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
+      }
+    },
+    {
+      "notes": "",
+      "path": "web/src/lib/duckdb.ts",
+      "kind": "code",
+      "module": "web",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.2 duckdb-wasm 加载层：浏览器读 valuation.parquet + SQL 做 metric 排序（PRD §9.5 在浏览器查 Parquet）",
+        "invariants": "wasm+worker 从 URL 加载、绝不入 dist(wasm 35-41MB 超 Pages 25MiB 限制)：生产 VITE_DUCKDB_R2_BASE 指 Cloudflare R2(用户自有存储非第三方 CDN，脊柱:parquet 仍自托管、仅静态 wasm lib 外移)、dev 无 env 时 fallback jsDelivr;跨域 worker 用 same-origin blob importScripts 包一层;AsyncDuckDB 实例 + 注册 parquet 单例复用、selectBundle 自动选 mvp/eh；buildValuationSql 纯函数（cheap-asc 升序/quality-desc 降序 + NULLS LAST + ticker tiebreak）导出供测；CREATE VIEW 用 strftime 把 DATE→ISO 字符串（避 Arrow→JSON 的 epoch-millis）；duckdb 只做读 parquet + metric 排序，scope filter/common-vintage pctile/三档色留 Valuation.tsx（theme scope 非 SQL 列、pctile 是 cohort 统计）",
+        "verification": "buildValuationSql 单测（ORDER BY metric ASC/DESC + NULLS LAST, ticker）；浏览器 smoke：Valuation tab duckdb-wasm 查 parquet 渲染全 universe 行 + PEG/Mgn% + 三档色 + ISO 日期（非毫秒）"
       }
     },
     {
@@ -1114,7 +1162,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1) + ocean.json(M2.1) + rotation.json(M3.3) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts 含 rotation.theme，D.4/M4.6)",
+        "invariants": "结构与 export/board.py、export/ocean.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空(无可渲染位置)、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(M3.3，4 态枚举)；ManifestData 镜像 manifest.json(as_of_date + surfaces counts 含 rotation.theme，D.4/M4.6)；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2，含 peg/margin/themes/freshness)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData 消费无类型错"
       }
     },
@@ -1221,9 +1269,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Valuation 视图 AC(PRD §9.5)的 SSR 回归门",
-        "invariants": "用真实 board.sample.json + renderToStaticMarkup、无浏览器；断言行数 / PS 升序便宜在上 / as-of 三档色 / common-vintage pctile 显 vint / sector scope 过滤",
-        "verification": "npm test 全过(6 测试)；与 Valuation.tsx 合同一致"
+        "purpose": "Valuation 视图 AC（PRD §9.5，M5.2）的 SSR 回归门 + buildValuationSql 单测",
+        "invariants": "用 valuation.sample.json（从 parquet 转）+ renderToStaticMarkup 无 duckdb-wasm；断言全 universe 行 / PS 升序便宜在上(nulls last) / PEG+Mgn% 列 / 三档色+vint / sector+theme(themes 列)scope 过滤；buildValuationSql 测 ORDER BY metric ASC/DESC + NULLS LAST",
+        "verification": "npm test 全过；与 Valuation.tsx + lib/duckdb 合同一致"
       }
     },
     {
@@ -1233,9 +1281,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Valuation screener 视图（PRD §9.5，M5 预览）：读 board.json 渲染可排序横截面表",
-        "invariants": "读 board.json（与 Discovery/Ocean/Stock 同源 C9）；as-of 三档上色取 board valuation.freshness（fresh 绿/stale 黄/overdue 红行变暗，C7/§10.5）；pctile 仅在 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint 不进分母；scope 下拉=第 3 个全局 writer（Ocean lasso/Rotation click 之后）、先 filter scope 再排序再算 pctile（scope 改 pctile 分母）；倍数类升序便宜在上、growth/rule40 降序；PEG/margin/duckdb-wasm 全 universe 留正式 M5",
-        "verification": "Valuation.test.tsx SSR 断言行数=stocks、PS 默认升序便宜在上(nulls last)、overdue 行 vfr-overdue、fresh 行 pctile 数字/非 fresh vint、sector scope 过滤行数减少；npm run build tsc 通过"
+        "purpose": "Valuation screener 视图（PRD §9.5，M5.2 正式版）：duckdb-wasm 浏览器查 valuation.parquet 渲染全 universe 横截面表",
+        "invariants": "数据从 duckdb-wasm 查 valuation.parquet（lib/duckdb.queryValuation，metric 变重查）或 initial 注入（SSR/测试，JS sortRows 同序）；列含 PEG/Mgn%（board.json 预览缺的两列）；as-of 三档上色取 freshness（fresh 绿/stale 黄/overdue 红变暗 C7/§10.5）；pctile 仅 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint；scope 下拉=全局 writer，先 filter（sector/theme[themes 列 split]/pinned）再排序再 pctile；读同一 valuation_daily（与 board/Ocean C9 同源）",
+        "verification": "Valuation.test SSR（注入 rows）断言全 universe 行 / PS 升序便宜在上 / PEG+Mgn% 列 / 三档色+vint / sector+theme scope 过滤；浏览器 smoke duckdb-wasm 实查"
       }
     },
     {
@@ -1288,5 +1336,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "bb624cc8d24c09a508f5d64a84c075961f2ffcea976b25c4ea46f8c87b648ab3"
+  "last_structure_digest": "abeeaa7e2d59e139869c55654d7b7b248e882202dce9a44271727da6a1d46db3"
 }

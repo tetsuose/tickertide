@@ -177,3 +177,36 @@ export interface ManifestData {
   generated_at: string
   surfaces: { board: number | null; ocean: number | null; rotation: number | null; 'rotation.theme': number | null }
 }
+
+// --- Valuation screener (M5.1 export/valuation_parquet.py -> public/data/valuation.parquet) ---
+// The FULL-universe latest valuation cross-section (wide explore, PRD §9.5), queried in the
+// browser by duckdb-wasm (M5.2). One row per universe ticker; same valuation_daily as
+// board.json (C9). `themes` is comma-joined point-in-time theme keys ('' if none) so the
+// screener can honor scope='theme' from this one file.
+export interface ValuationRow {
+  ticker: string
+  name: string | null
+  sector: string | null
+  mktcap: number | null
+  pe: number | null
+  ps: number | null
+  evs: number | null
+  ev_ebitda: number | null
+  peg: number | null
+  growth: number | null
+  margin: number | null
+  rule40: number | null
+  as_of_period_end: string | null
+  as_of_filed: string | null
+  as_of_age_days: number | null
+  freshness: Freshness | null
+  themes: string
+}
+
+/** valuation.sample.json fixture shape (SSR tests inject rows without duckdb-wasm). */
+export interface ValuationData {
+  schema_version: number
+  as_of_date: string
+  count: number
+  rows: ValuationRow[]
+}
