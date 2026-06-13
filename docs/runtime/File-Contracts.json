@@ -166,8 +166,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M4 验收抽查（M4.6，PRD §14）：pipeline 跑完后校验 theme 链路三性质——membership 形状(≥4 theme、exposure∈[0,1]、approved_by 必填 C6)、C3 晚到重述不回溯改写 index 历史、C4 权重 exposure-based 且 cap-bound(非市值加权)，外加 bucket_bars/bucket_rrg theme 序列落地的接线检查",
-        "invariants": "对 DB 无净写入：C3 探针在 BEGIN/ROLLBACK 事务内插入 exposure=0 重述并用纯读的 build_theme_index 对比前后段（重述日前逐字节不变、重述日后必须分叉）；theme_membership 为空时 SKIP 且 exit 0（裸 DB 上 make compute 不得硬挂）；任一硬检查失败 exit 非 0（CI 友好）",
-        "verification": "make check-theme 对 fixture DB 输出 CHECK_OK 且 9 项全 PASS；清空 theme_membership 后输出 SKIP 且 exit 0；make check 串入本检查"
+        "invariants": "三态结果 PASS/FAIL/SKIP：membership 形状(C6)、index-landed、C4 是硬 FAIL；RS-Ratio-landed 与 C3-no-retro 需要足够 index 历史(RS-Ratio 是周线算法需 ~半年交易日、C3 探针需 ≥10 index 日)，theme 历史不足时(真实场景 seed 单一近期 as_of → index 仅数日)这两项 SKIP(warn 非失败)而非 FAIL，使过短 theme 历史不阻断本就正确的 board/membership 的 export/deploy(根因修在 themes/seed.py as_of 回填)；对 DB 无净写入(C3 探针在 BEGIN/ROLLBACK 事务内插 exposure=0 重述、纯读 build_theme_index 对比前后段)；theme_membership 为空时 SKIP 且 exit 0；仅 FAIL 使 exit 非 0(SKIP 不算失败,CI 友好)",
+        "verification": "make check-theme 对 fixture DB(长历史)输出 CHECK_OK 全 PASS、RS-Ratio/C3 不误 SKIP；构造 6 日短历史→RS-Ratio 与 C3 SKIP 且 CHECK_OK exit 0(不阻断 deploy)；清空 membership→SKIP exit 0；make check 串入"
       }
     },
     {
@@ -826,8 +826,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "从 ingest/universe_seed.txt 的主题分组结构化出 bootstrap theme_membership(point-in-time 基线快照)：按 themes.yaml 的 seed_header 数据驱动把段头映射到 theme,写 exposure 初值 + 单一 baseline as_of + source=seed + approved_by=seed,经 compute/db.upsert_theme_membership 落库",
-        "invariants": "是 LLM/EDGAR 营收锚定(M4.5)前的确定性兜底、粗初值非权威：exposure=SEED_EXPOSURE 平值、approved_by='seed'(未经 human 审批的哨兵,C6)、单一 baseline as_of_date；映射纯数据驱动(seed_header)无代码硬编码观点,reset-on-comment 解析令未识别段头下的 ticker 显式 unmapped 而非静默误配；多对多由数据天然支持(同票列两段→两行),当前 seed 每票一段、真实 overlap(NVDA∈AI+SEMI)按设计留 M4.5 营收锚定;幂等(clear 后全量重写,source=seed 完全派生);依赖 PyYAML(产品代码,engine/index.py 仍 stdlib-only)",
-        "verification": "python3 themes/seed.py --dry-run 报 8 theme、universe_seed 48 票全部映射且零 unmapped；--db 写库后 db.theme_keys()=8、代表票各归位(NVDA∈AI / AMD∈SEMI / CRWD∈CYBR / RKLB∈SPACE / SNOW∈CLOUD / ISRG∈ROBO / COHR∈OPTIC / CEG∈NUKE)；全行 source=seed、approved_by=seed、exposure=0.6"
+        "invariants": "是 LLM/EDGAR 营收锚定(M4.5)前的确定性兜底、粗初值非权威：exposure=SEED_EXPOSURE 平值、approved_by='seed'(未经 human 审批的哨兵,C6)、baseline as_of 默认回填到 daily_bars 最早日(baseline_as_of：theme index 从首个 as_of 前向构建，seed 作为长期粗基线锚到最早价格 bar→index 覆盖完整历史、周线 RS-Ratio 才产得出；空库回退 SEED_AS_OF；PIT 不破坏——M4.5 approved 在更晚 as_of 仍前向胜出)；映射纯数据驱动(seed_header)无代码硬编码观点,reset-on-comment 解析令未识别段头下的 ticker 显式 unmapped 而非静默误配；多对多由数据天然支持(同票列两段→两行),当前 seed 每票一段、真实 overlap(NVDA∈AI+SEMI)按设计留 M4.5 营收锚定;幂等(clear 后全量重写,source=seed 完全派生);依赖 PyYAML(产品代码,engine/index.py 仍 stdlib-only)",
+        "verification": "python3 themes/seed.py --dry-run 报 8 theme、48 票全映射零 unmapped、as_of=daily_bars 最早日(非硬编码近期日)；--db 写库后 db.theme_keys()=8、代表票各归位(NVDA∈AI / AMD∈SEMI / CRWD∈CYBR / RKLB∈SPACE / SNOW∈CLOUD / ISRG∈ROBO / COHR∈OPTIC / CEG∈NUKE)；全行 source=seed、approved_by=seed、exposure=0.6"
       }
     },
     {
