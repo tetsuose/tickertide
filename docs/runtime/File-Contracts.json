@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T13:42:15.706826+00:00",
+  "updated_at": "2026-06-13T13:51:39.996678+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -219,6 +219,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/ignition.py",
       "kind": "script",
       "module": "compute",
@@ -227,8 +228,7 @@
         "purpose": "per-stock ignition 信号数学（早期发现引擎，PRD §10.8.1，与 composite 并列的第二台）：5 个短窗口分量（动量加速 ret10/10-ret50/50 / 波动收缩-扩张 |Δp|10/60 / 放量 vol5/60 / 突破收复 close/max60·1[>MA50] / RS 拐点 slope10-slope30/3）",
         "invariants": "pandas 算 per-stock 时序、分量皆 self-relative（横截面 percentile-rank 在 run.py 做）；与 signals.py 共用同一份 bars 与同一 benchmark 对齐口径（C9，spx.close=adj_close basis、ffill 到本票交易日）；用 adj_close 作价；early⟷reliable 旋钮不触 ignition（PRD §10.8/P7），精度靠 persistence 非权重；窗口短于 composite（10/50/60 vs 63/126/252）测加速度/拐点非水平",
         "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -501,9 +501,21 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M1.1 导出：DuckDB 最新快照 → web/public/data/board.json（Discovery evidence-first 卡流数据，per-stock 一条）+ theme chips（point-in-time，M4.4）",
-        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；theme chips 经 db.theme_membership_asof 取 as-of snapshot 的 point-in-time membership(per theme 最新 as_of≤snap 且 exposure>0、多对多、按 exposure 降序)、绝非旧 naive 全历史扫描(多 as_of 票每 theme 仅一条不重复)、exposure 存 [0,1] 份额卡渲染为 %；输出为派生物、gitignore、不含任何 key",
-        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev；抽查 E≤0 票 pe=null 且 ps 非空、freshness 分档正确、无 NaN token、rank 连续且 composite 降序；theme chips point-in-time：多 as_of 票每 theme 一条非重复、改写后取最新 exposure、drop(exposure=0)不出 chip、多对多(TT01∈AI+SEMI)"
+        "purpose": "M1.1/M7.2 导出：DuckDB 最新快照 → web/public/data/board.json（Discovery evidence-first 卡流数据，per-stock 一条）+ theme chips（point-in-time，M4.4）+ ignition 发现引擎块（持续点火排序 + 点火证据，M7.2）",
+        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+90d mini chart+composite 同源一份 export 可互相追溯；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；theme chips 经 db.theme_membership_asof 取 as-of snapshot 的 point-in-time membership(per theme 最新 as_of≤snap 且 exposure>0、多对多、按 exposure 降序)、绝非旧 naive 全历史扫描(多 as_of 票每 theme 仅一条不重复)、exposure 存 [0,1] 份额卡渲染为 %；ignition 块为第二台引擎(发现，PRD §10.8)逐票携带：ignition∈[0,100]/ign_pct∈[0,100]/ign_persist_days/5 个原始分量 ig_*(accel/expand/vsurge/breakout/rsturn) 全部 verbatim 自 derived_daily 绝不在导出端重算(C9，与 compute/run.py 同源)，candidate=ign_pct≥90 AND persist≥ignition_persist_min(=5，持续点火过滤 §10.8.2，前端 M7.3 据此排序而非 composite)，early⟷reliable 旋钮不触 ignition(P7)；点火证据(breakout_day/days_since_breakout/step_rate_ratio/reclaimed_ma50/ma50)由 ignition 同窗口 bars(BREAKOUT_WIN=60、ACCEL 10/50) 派生、vol_mult× 为 ig_vsurge verbatim；ignition C9 自检以 shipped vol_mult 追 stored ig_vsurge，漂移>tol 即硬失败；输出为派生物、gitignore、不含任何 key",
+        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0 且 ignition_recon_max_drift≈0(C9)；每条含 composite+5分量+6字段+90d bars+valuation+composite_prev+ignition 块(score/ign_pct/persist/5 分量/candidate/点火证据)；抽查 candidate 票 ign_pct≥90 且 persist≥5 可排序在顶、点火证据 vol_mult==分量 vsurge、ignition∈[0,100]、ign_persist_days≥0、无 NaN token；E≤0 票 pe=null 且 ps 非空、freshness 分档正确、rank 连续且 composite 降序；theme chips point-in-time：多 as_of 票每 theme 一条非重复、改写后取最新 exposure、drop(exposure=0)不出 chip、多对多(TT01∈AI+SEMI)"
+      }
+    },
+    {
+      "notes": "读单份 board.json(export/board.py 产物)做 ignition 块的同源自检；本任务以 30 票 fixture 验证 coverage=30/candidates=2(persist≥5)/vsurge_checked=30 全过；负向(翻 candidate 标记 / 改 vol_mult)可触发 GATE_FAIL",
+      "path": "export/check_ignition.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M7.2 ignition 同源自检：board.json 的 ignition 块可追溯到引擎(C9)+ 持续点火 candidate gate 自洽（AC-M7「ignition↔composite 同源、Discovery 按持续点火排序、持续点火榜非空可追溯」）",
+        "invariants": "读 export/board.py 产出的 board.json，对 ignition 块逐票断言：每票有 ignition 块且 components 恰 5 个(accel/expand/vsurge/breakout/rsturn)；ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(PRD §10.8.2)；candidate 严格 == (ign_pct≥90 AND persist≥board.ignition_persist_min) —— 由 shipped 数字重算、不信任导出端的标记；点火证据 evidence.vol_mult 必 == 分量 vsurge(ig_vsurge verbatim 的同源 identity guard，容差仅取整 1e-3)；顶层 ignition_recon_max_drift≈0；至少 1 个持续点火 candidate(否则 Discovery 榜空)；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
+        "verification": "make ignition-c9（先 fixture-pipeline + python export/board.py 出 board.json）→ GATE_PASS、coverage/candidates/vsurge_checked 计数一致；构造不符(翻 candidate 标记 / 篡改 vol_mult / 越界 ign_pct)可触发 GATE_FAIL"
       }
     },
     {
@@ -1456,5 +1468,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "bfe013bbe9cff8e36b94f56b91bb301bb89c6f34ec4f99aeed41188ce8c2dcfc"
+  "last_structure_digest": "45b4ce4ec77b549f5e9a1f99e3559f4b98da2a051c9c3bd08712710fe5cfc449"
 }
