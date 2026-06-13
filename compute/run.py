@@ -3,12 +3,17 @@
 Usage:
     python3 compute/run.py [--k 0.5] [--db data/tickertide.duckdb] [--min-bars 60]
 
-Per-stock time-series metrics (pandas, compute/signals.py) are concatenated, then
-the cross-sectional work runs in DuckDB:
+Per-stock time-series metrics (pandas, compute/signals.py + compute/ignition.py) are
+concatenated, then the cross-sectional work runs in DuckDB:
   - rs_pct  = PERCENT_RANK() over each date (the IBD-style cross-sectional RS)
   - rs_accel = rs_pct[t] - rs_pct[t-21]
   - components c_* clamped to [0,1]; composite = 100·Σ wᵢ·cᵢ at the given k
   - rank_in_universe = RANK() by composite per date
+  - ignition (PRD §10.8): each of the 5 short-window components is PERCENT_RANK()'d
+    per date to [0,1] and averaged -> `ignition`; `ign_pct` = PERCENT_RANK() of that
+    per date; `ign_persist_days` = consecutive days (incl. today) with ign_pct>=90
+    (top-decile persistence — the precision filter, PRD §10.8.2).
+The two engines share this one per-stock pass and land in the SAME derived_daily row (C9).
 """
 from __future__ import annotations
 
@@ -21,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 import pandas as pd  # noqa: E402
 
-from compute import db, signals  # noqa: E402
+from compute import db, ignition, signals  # noqa: E402
 
 
 def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
@@ -37,7 +42,11 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
         if len(bars) < min_bars:
             skipped += 1
             continue
-        m = signals.compute_metrics(bars, spx)
+        m = signals.compute_metrics(bars, spx)       # composite inputs (long windows)
+        g = ignition.compute_ignition(bars, spx)     # ignition components (short windows)
+        # Both engines share the SAME bars (C9) and emit a str `date`; merge per ticker
+        # so each (ticker,date) row carries both engines' per-stock features.
+        m = m.merge(g, on="date", how="left")
         m["ticker"] = t
         frames.append(m)
 
@@ -52,11 +61,22 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
         f"""
         INSERT OR REPLACE INTO derived_daily
         WITH x AS (
-          SELECT *, PERCENT_RANK() OVER (PARTITION BY date ORDER BY rs_raw) * 100 AS rs_pct
+          SELECT *,
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY rs_raw) * 100 AS rs_pct,
+            -- ignition: cross-sectional percentile-rank of each short-window component
+            -- to [0,1] per date (PRD §10.8.1); NULL components stay out of their own rank.
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_accel)   AS p_accel,
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_expand)  AS p_expand,
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_vsurge)  AS p_vsurge,
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_breakout) AS p_breakout,
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_rsturn)  AS p_rsturn
           FROM allm WHERE rs_raw IS NOT NULL
         ),
         y AS (
-          SELECT *, rs_pct - LAG(rs_pct, 21) OVER (PARTITION BY ticker ORDER BY date) AS rs_accel
+          SELECT *,
+            rs_pct - LAG(rs_pct, 21) OVER (PARTITION BY ticker ORDER BY date) AS rs_accel,
+            -- equal-weight average of the 5 ranked components -> ignition (PRD §10.8.1).
+            100 * (p_accel + p_expand + p_vsurge + p_breakout + p_rsturn) / 5.0 AS ignition
           FROM x
         ),
         z AS (
@@ -65,19 +85,42 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
             LEAST(1, GREATEST(0, high_prox))                           AS c_high,
             LEAST(1, GREATEST(0, trend_quality))                       AS c_trend,
             LEAST(1, GREATEST(0, (vol_ratio - 1.0) / 0.6 + 0.5))       AS c_vol,
-            LEAST(1, GREATEST(0, COALESCE(rs_accel, 0) / 100.0 + 0.5)) AS c_accel
+            LEAST(1, GREATEST(0, COALESCE(rs_accel, 0) / 100.0 + 0.5)) AS c_accel,
+            -- ign_pct: cross-sectional percentile of the ignition score, per date (PRD §10.8.2).
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ignition) * 100 AS ign_pct
           FROM y
+        ),
+        lit AS (
+          SELECT *, CASE WHEN ign_pct >= 90 THEN 1 ELSE 0 END AS is_lit
+          FROM z
+        ),
+        grp AS (
+          -- islands: a run counter minus a run-of-lit counter is constant within one
+          -- consecutive top-decile streak per ticker (gaps reset it). PRD §10.8.2.
+          SELECT *,
+            ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date)
+            - ROW_NUMBER() OVER (PARTITION BY ticker, is_lit ORDER BY date) AS streak_grp
+          FROM lit
+        ),
+        persist AS (
+          SELECT *,
+            CASE WHEN is_lit = 1
+                 THEN CAST(ROW_NUMBER() OVER (PARTITION BY ticker, is_lit, streak_grp ORDER BY date) AS INTEGER)
+                 ELSE 0 END AS ign_persist_days
+          FROM grp
         ),
         c AS (
           SELECT *,
             100 * ({w['rs']}*c_rs + {w['high']}*c_high + {w['trend']}*c_trend
                    + {w['vol']}*c_vol + {w['accel']}*c_accel) AS composite
-          FROM z
+          FROM persist
         )
         SELECT ticker, date, ret_63, ret_126, rs_raw, rs_pct, rs_accel, high_prox,
                ma50, ma150, ma200, trend_quality, vol_ratio, ud_vol_ratio,
                ewmac_fast, ewmac_slow, c_rs, c_high, c_trend, c_vol, c_accel, composite,
-               CAST(RANK() OVER (PARTITION BY date ORDER BY composite DESC) AS INTEGER) AS rank_in_universe
+               CAST(RANK() OVER (PARTITION BY date ORDER BY composite DESC) AS INTEGER) AS rank_in_universe,
+               ig_accel, ig_expand, ig_vsurge, ig_breakout, ig_rsturn,
+               ignition, ign_pct, ign_persist_days
         FROM c
         """
     )
@@ -109,6 +152,12 @@ def main(argv: list[str] | None = None) -> int:
         "FROM derived_daily WHERE date = ? ORDER BY composite DESC LIMIT 5", [latest]
     ).fetchall():
         print(f"    {r[0]:6} composite={r[1]:5}  rs_pct={r[2]:3}  c_high={r[3]}  c_trend={r[4]}  rank={r[5]}")
+    print("[compute] top 5 by ignition (early discovery; persist = consecutive days in top decile):")
+    for r in con.execute(
+        "SELECT ticker, round(ignition,1), round(ign_pct,0), ign_persist_days "
+        "FROM derived_daily WHERE date = ? ORDER BY ignition DESC LIMIT 5", [latest]
+    ).fetchall():
+        print(f"    {r[0]:6} ignition={r[1]:5}  ign_pct={r[2]:3}  persist={r[3]}d")
     con.close()
     return 0
 

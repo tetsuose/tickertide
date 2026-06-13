@@ -65,9 +65,14 @@ CREATE TABLE IF NOT EXISTS bucket_rrg (
   PRIMARY KEY (bucket_type, bucket, date)
 );
 
--- derived_daily: per-stock signals + composite (M0.3). Spec: PRD §12, math: §10.
--- Stores the 5 composite COMPONENTS (c_*) in [0,1] so the client can recompute
--- composite at any early<->reliable knob k; `composite` is the default-k snapshot.
+-- derived_daily: per-stock signals + composite (M0.3) + ignition (M7.1). Spec: PRD
+-- §12, math: §10.6 (composite) / §10.8 (ignition). Stores the 5 composite COMPONENTS
+-- (c_*) in [0,1] so the client can recompute composite at any early<->reliable knob k
+-- (`composite` is the default-k snapshot). The two engines are PARALLEL and share this
+-- one per-stock row (C9): composite confirms (long windows, "already a leader"),
+-- ignition discovers (short windows, "just starting"); both lenses read this table so
+-- they never drift. The ignition columns (ig_*/ignition/ign_pct/ign_persist_days, §10.8)
+-- carry the 5 short-window components + the cross-sectional score + top-decile persistence.
 CREATE TABLE IF NOT EXISTS derived_daily (
   ticker            VARCHAR,
   date              DATE,
@@ -92,6 +97,16 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   c_accel           DOUBLE,    -- component [0,1]: rs_accel score
   composite         DOUBLE,    -- 100 * Σ wᵢ·cᵢ at default k
   rank_in_universe  INTEGER,   -- dense rank by composite per date (1 = strongest)
+  -- ignition engine (early discovery, PRD §10.8) — the 5 raw self-relative short-window
+  -- components, each then cross-sectionally percentile-ranked to [0,1] and averaged:
+  ig_accel          DOUBLE,    -- momentum acceleration: ret_10/10 - ret_50/50 (slope steepening)
+  ig_expand         DOUBLE,    -- squeeze->expansion: mean(|Δp|,10)/mean(|Δp|,60) (range opening)
+  ig_vsurge         DOUBLE,    -- volume surge: mean(vol,5)/mean(vol,60) (vs own recent base)
+  ig_breakout       DOUBLE,    -- breakout/reclaim: clamp(close/max(close,60),0,1)·1[close>MA50]
+  ig_rsturn         DOUBLE,    -- RS-line turn: slope10(P/P_spx) - slope30(P/P_spx)/3 (inflection)
+  ignition          DOUBLE,    -- 100·mean(cross-sectional percentile-rank of the 5 components), [0,100]
+  ign_pct           DOUBLE,    -- cross-sectional percentile of ignition, per date, 0-100
+  ign_persist_days  INTEGER,   -- consecutive days (incl. today) with ign_pct>=90 (top-decile persistence)
   PRIMARY KEY (ticker, date)
 );
 
