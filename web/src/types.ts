@@ -25,6 +25,45 @@ export interface Evidence {
   vol_mult: number | null
 }
 
+/** 5 raw self-relative ignition components (PRD §10.8) — verbatim from derived_daily.
+ * NOT ∈ [0,1] (these are the engine's raw signals; only `breakout` is ∈ [0,1]). The
+ * [0,1] normalization happens cross-sectionally in run.py and is folded into `ign_pct`. */
+export interface IgnitionComponents {
+  accel: number | null
+  expand: number | null
+  vsurge: number | null
+  breakout: number | null
+  rsturn: number | null
+}
+
+/** Human-readable 点火证据 (PRD §10.8) — derived from the SAME bars the chart ships.
+ * `vol_mult` is the engine's ig_vsurge verbatim (5/60 vol ratio — distinct from
+ * Evidence.vol_mult, which is the 50d ratio). `step_rate_ratio` = (ret10/10)/(ret50/50);
+ * it blows up when ret50≈0, so the card MUST clamp/format it for display (M7.2 pitfall). */
+export interface IgnitionEvidence {
+  breakout_day: string | null
+  days_since_breakout: number | null
+  vol_mult: number | null
+  step_rate_ratio: number | null
+  reclaimed_ma50: boolean | null
+  ma50: number | null
+}
+
+/** The SECOND engine (ignition = early discovery, PRD §10.8), carried per stock
+ * alongside composite. Discovery (M7.3) sorts by 持续点火 — sustained ignition —
+ * NOT composite: `candidate` (= top-decile ign_pct AND ign_persist_days >= persist_min)
+ * first, then ign_persist_days desc, then ign_pct desc. The early⟷reliable knob does
+ * NOT touch ignition (PRD P7); it only re-weights composite. Same source as every
+ * surface (derived_daily, C9) — the client never recomputes the engine. */
+export interface Ignition {
+  ignition: number | null
+  ign_pct: number | null
+  ign_persist_days: number | null
+  candidate: boolean
+  components: IgnitionComponents
+  evidence: IgnitionEvidence
+}
+
 export interface Valuation {
   pe: number | null
   ps: number | null
@@ -69,6 +108,8 @@ export interface Stock {
   rank: number | null
   components: Components
   evidence: Evidence
+  /** Second engine (PRD §10.8). Optional: pre-M7 fixtures / partial exports may omit it. */
+  ignition?: Ignition
   valuation: Valuation | null
   chart: ChartSeries
 }
@@ -81,6 +122,11 @@ export interface BoardData {
   composite_recon_max_drift: number
   count: number
   valuation_coverage: number
+  /** ignition rollups (PRD §10.8) — optional for pre-M7 fixtures. */
+  ignition_coverage?: number
+  ignition_candidates?: number
+  ignition_persist_min?: number
+  ignition_recon_max_drift?: number
   stocks: Stock[]
 }
 
