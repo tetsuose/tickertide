@@ -435,7 +435,7 @@ spx_daily(date, close);
 | **M4** | 主题分类：EDGAR + LLM 营收锚定 membership（point-in-time, human-in-loop）→ theme RS-Ratio 线 / 上色 | themes, compute | AC-M4 |
 | **M5** | Valuation screener + Stock detail：duckdb-wasm 浏览器查询；per-name 面板 | export, web | AC-M5 |
 | **M6** | 扩量：universe 由 ~500 扩到数千（Stooq bulk 已支撑） | ingest, compute | AC-M6 |
-| **M7** | **ignition 发现引擎 + Discovery 持续点火榜**（§10.8，实证已立项）：`compute/ignition.py`（5 分量 + 横截面 + persistence）→ export 持续点火榜 → Discovery 改造（ignition 排序 + 点火诊断卡）→ Stock 衔接基本面。**产品核心价值，建议优先于 M6。** | compute, export, web | AC-M7 |
+| **M7 ✅** | **ignition 发现引擎 + Discovery 持续点火榜**（§10.8，✅ 已实现 M7.1–M7.5）：`compute/ignition.py`（5 分量 + 横截面 + persistence）→ export 持续点火榜 → Discovery 改造（ignition 排序 + 点火诊断卡）→ Stock 衔接基本面。**双引擎脊柱兑现；AC-M7 五条 `make ac-m7` 一键复验。** | compute, export, web | AC-M7 |
 
 **起手**：把 BUILD-PLAN 全文 + 本 PRD 当 kickoff，从 **M0**（~500 只跑通端到端）起，先证明数据拉得动、composite 直观，再扩量。
 
