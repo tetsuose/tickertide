@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T13:51:39.996678+00:00",
+  "updated_at": "2026-06-13T14:21:13.887702+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -181,6 +181,18 @@
         "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E / ignition 已生成且 ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(C9 同源 derived_daily)",
         "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS（含 ignition 三项）；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
       }
+    },
+    {
+      "path": "compute/check_ac_m7.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M7.5 AC-M7 聚合验收（PRD §14、§10.8）：把 AC-M7 五条收成单一带标签门禁，使整个里程碑可一键复验而非靠口述「哪个 target 覆盖哪一条」——补足此前散落在 make check(compute 列) / ignition-c9(C9) / web-test(渲染序)的拼图，提供 1:1 映射 AC-M7 五条的单命令复验",
+        "invariants": "读已导出的 board.json + per-name stock bundles(浏览器同款产物)，逐条断言 AC-M7：① derived_daily 含 ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn)+ign_pct+ign_persist_days 且覆盖全票、在范围内；② Discovery 持续点火序(candidate→persist desc→pct desc，与 web/src/views/Discovery.tsx ignKey 逐位一致)在该快照上确实 ≠ composite 纯排序(证明非 composite 排序)且按文档键单调非增；③ 每票 ignition.evidence 含点火证据六键(breakout_day/days_since_breakout/vol_mult/step_rate_ratio/reclaimed_ma50/ma50)；④ ignition⇄composite 同源(C9)：同一 per-stock 行成对出现(composite 有⇔ignition 有)+ ignition_recon_max_drift≈0 + 抽样 stock bundle 的 ignition 块与 board 逐字段相同；⑤ 持续点火榜非空(≥1 candidate)且每个 candidate 重算 gate(ign_pct≥90 AND persist≥persist_min)成立。复用 export/check_ignition.check 的同源/candidate/vsurge/stock↔board 逻辑(DRY，C9 逻辑单一真源)，仅新增 AC-M7.2 的 composite-vs-ignition 序分歧断言与逐条框架；任一条 FAIL 非零退出可门禁；names/counts only 无 secrets",
+        "verification": "make ac-m7（须先 make export 产 board.json+stock bundles）→ 五条全 PASS + GATE_PASS；make ac-m7-e2e 从裸离线 DB 一命令端到端(fixture-pipeline → export → 五条)；构造不符(翻 candidate / 篡改 vol_mult / 制造 ignition==composite 同序)可触发 GATE_FAIL"
+      },
+      "notes": "M7.5 收口：AC-M7 五条单命令复验。复用 export/check_ignition.check 不重写 C9 逻辑；fixture 30 票实测 candidates=2(persist≥5)、ign_top≠composite_top、stock_xcheck=8 全过"
     },
     {
       "notes": "",
@@ -1468,5 +1480,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "45b4ce4ec77b549f5e9a1f99e3559f4b98da2a051c9c3bd08712710fe5cfc449"
+  "last_structure_digest": "e0a9583bdd5d6a5dde9fd32b85baf4550337a5a4e3ff1d8eeea269c300be200a"
 }
