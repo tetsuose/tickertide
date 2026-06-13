@@ -31,6 +31,12 @@ data/
 # Task isolation worktrees
 .worktrees/
 
+# M4.5 LLM theme candidates — intermediate extractor output, re-runnable from the
+# 10-K (make theme-extract). Only the human-approved files (themes/approved/*.json)
+# are the durable SoT and stay in git; the approved file already carries the LLM
+# provenance (model, filing, llm_exposure per row). See themes/extract.py / review.py.
+themes/candidates/
+
 # Cloudflare Pages / wrangler (D.3). Local deploy state + local secret file —
 # the API token lives only in a GitHub Actions secret or `wrangler login` creds,
 # never in the repo. See docs/runtime/Deploy-Pages-Runbook.md.

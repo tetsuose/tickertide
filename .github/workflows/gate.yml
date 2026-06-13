@@ -47,6 +47,7 @@ jobs:
           make fixture-pipeline
           python3 export/board.py
           make check
+          make check-land
       - name: upload sample board.json
         uses: actions/upload-artifact@v7
         with:

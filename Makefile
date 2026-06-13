@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals themes compute export ocean-c9 rotation-c9 theme-c9 serve pipeline check check-theme \
+        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 serve pipeline check check-theme check-land \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -49,7 +49,8 @@ help:
 	@echo "  Data Pipeline (M0-M4 live — see docs/PRD.md §13)"
 	@echo "    make ingest                   Nasdaq universe + price bars (yfinance)"
 	@echo "    make fundamentals             SEC EDGAR companyfacts -> fundamentals_q"
-	@echo "    make themes                   Seed theme_membership (M4.1 bootstrap; M4.5 adds LLM+review)"
+	@echo "    make themes                   theme_membership: seed bootstrap + land approved files (M4.5)"
+	@echo "    make theme-extract TICKER=X   M4.5 operator step: EDGAR 10-K -> LLM candidates (claude CLI)"
 	@echo "    make compute                  DuckDB: composite + valuation + theme index + RS-Ratio (sector/theme)"
 	@echo "    make check                    AC-M0 + AC-M4 acceptance checks on the DB"
 	@echo "    make pipeline                 ingest -> fundamentals -> themes -> compute -> check"
@@ -146,11 +147,25 @@ ingest:
 fundamentals:
 	@python3 ingest/edgar.py $(PIPELINE_ARGS)
 
-# M4.1 seed bootstrap (idempotent: clears + reseeds source='seed' rows). The nightly DB
-# is rebuilt from scratch, so membership must be re-landed every pipeline run; the M4.5
-# LLM+human path will append on top of this baseline.
+# M4.1 seed bootstrap + M4.5 approved landing (both idempotent). The nightly DB is
+# rebuilt from scratch, so membership must be re-landed every pipeline run: seed clears
+# + reseeds the coarse baseline, then land.py replays the human-approved files
+# (themes/approved/*.json, committed — git is the durable store). PIT resolution prefers
+# the approved row where its as_of is later. Extraction itself (themes/extract.py,
+# claude CLI on plan quota + human review) is an OPERATOR step, never run in CI:
+#   make theme-extract TICKER=NVDA   then   python3 themes/review.py --ticker NVDA ...
 themes:
 	@python3 themes/seed.py
+	@python3 themes/land.py
+
+theme-extract:
+	@test -n "$(TICKER)" || (echo "usage: make theme-extract TICKER=NVDA" && exit 1)
+	@python3 themes/run.py --ticker $(TICKER)
+
+# AC for M4.5: land + point-in-time precedence (approved wins forward, seed intact
+# backward) over themes/approved/*.json. Self-contained (temp DB), runs offline in CI.
+check-land:
+	@python3 themes/check_land.py
 
 compute:
 	@python3 compute/run.py

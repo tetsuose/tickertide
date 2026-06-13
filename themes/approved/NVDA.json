@@ -1,0 +1,33 @@
+{
+  "ticker": "NVDA",
+  "approved_by": "sejonep",
+  "as_of_date": "2026-06-13",
+  "source": "llm",
+  "note": "FY2026 10-K: Data Center $193.7B/total $215.9B=AI 0.90; fabless, 100% revenue semiconductor=SEMI 1.00. AI/SEMI overlap intentional (PRD 8.2 many-to-many).",
+  "provenance": {
+    "candidates_generated_on": "2026-06-13",
+    "model": "claude-haiku-4-5-20251001",
+    "filing": {
+      "form": "10-K",
+      "accession": "0001045810-26-000021",
+      "filed": "2026-02-25",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm"
+    }
+  },
+  "rows": [
+    {
+      "theme": "AI",
+      "exposure": 0.9,
+      "llm_exposure": 0.9,
+      "confidence": "high",
+      "basis": "Data Center end-market revenue $193,737M out of total revenue $215,938M (FY2026, year ended Jan 25 2026); Data Center Compute sub-segment $162,361M + Networking $31,376M. Filing states 'revenue growth in fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions' and 'Blackwell architectures represented the majority of our Data Center revenue.'"
+    },
+    {
+      "theme": "SEMI",
+      "exposure": 1.0,
+      "llm_exposure": 1.0,
+      "confidence": "high",
+      "basis": "Total revenue $215,938M (FY2026). Both reported segments are semiconductor products: Compute & Networking $193,479M (GPU accelerators, networking ASICs, Drive SoCs) and Graphics $22,459M (GeForce/RTX GPUs). NVIDIA is a fabless semiconductor designer; 100% of revenue derives from chip products."
+    }
+  ]
+}
