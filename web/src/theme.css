@@ -519,6 +519,52 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* 持续点火 candidate marker — the Discovery sort signal (PRD §10.8.2, M7.3). */
+.ec-ign {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--grn);
+  background: color-mix(in srgb, var(--grn) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--grn) 40%, transparent);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 点火证据 strip (PRD §10.8): breakout / vol× / step-rate / reclaimed MA50. */
+.ec-ignev {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  padding: 5px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.ec-ignev-i {
+  color: var(--dim);
+  letter-spacing: 0.01em;
+}
+.ec-ignev-i em {
+  font-style: normal;
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: var(--dim2);
+  text-transform: uppercase;
+}
+.ec-ignev-i b {
+  font-weight: 700;
+}
+.ec-ignev-d {
+  font-style: normal;
+  color: var(--dim2);
+}
+
 /* early⟷reliable weight bars beside the knob (PRD §9.1.1), transcribed from UX contract */
 .wbars {
   display: flex;

@@ -10,6 +10,20 @@ function scoreColor(score: number | null): string {
   return 'var(--score-lo)'
 }
 
+// step-rate ratio = (ret10/10)/(ret50/50): the readable form of ig_accel (PRD §10.8).
+// It blows up when ret50≈0 (M7.2 pitfall: fixture TT20=685) — mathematically faithful
+// but useless on the card. Clamp the DISPLAY at ±SR_CLAMP (the engine's ranked ig_accel
+// is unaffected — this is display-only) and mark clamped values with a leading >/<.
+const SR_CLAMP = 20
+function fmtStepRate(v: number | null): string {
+  if (v == null) return '—'
+  if (v > SR_CLAMP) return `>${SR_CLAMP}×`
+  if (v < -SR_CLAMP) return `<-${SR_CLAMP}×`
+  return v.toFixed(1) + '×'
+}
+
+const fmtDate = (d: string | null): string => (d == null ? '—' : d.slice(5)) // MM-DD
+
 function fmtMktcap(v: number | null): string {
   if (v == null) return '—'
   if (v >= 1e12) return '$' + (v / 1e12).toFixed(1) + 'T'
@@ -50,6 +64,7 @@ export default function EvidenceCard({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const e = stock.evidence
+  const ign = stock.ignition
   // d/d: the engine's day-over-day composite move at the default weighting.
   // prev-day components aren't exported, so this is a snapshot fact (it does not
   // track the knob); at the default k it lines up with the badge.
@@ -68,6 +83,16 @@ export default function EvidenceCard({
           </span>
         </div>
         <div className="ec-headr">
+          {/* 持续点火 badge: this IS the Discovery sort signal (PRD §10.8.2). candidate
+              = top-decile ign_pct AND sustained ≥persist_min days. */}
+          {ign?.candidate && (
+            <span
+              className="ec-ign"
+              title={`持续点火 candidate: ign_pct ${ign.ign_pct?.toFixed(0)} · 持续 ${ign.ign_persist_days}d`}
+            >
+              🔥 {ign.ign_persist_days}d
+            </span>
+          )}
           {dd != null && (
             <span
               className="ec-dd"
@@ -78,6 +103,7 @@ export default function EvidenceCard({
               {Math.abs(dd).toFixed(1)}
             </span>
           )}
+          {/* composite is now a 已确认 (confirmation) side-read, NOT the sort key (M7.3). */}
           <button
             className="ec-badge"
             style={{ color: scoreColor(score) }}
@@ -86,11 +112,45 @@ export default function EvidenceCard({
               setOpen(!open)
             }}
             aria-expanded={open}
+            title="composite（已确认副读，按 early⟷reliable 旋钮重算；非点火榜排序）"
           >
             {score.toFixed(0)} <i>▾</i>
           </button>
         </div>
       </div>
+
+      {/* 点火证据 (ignition evidence, PRD §10.8) — the card's primary read on the
+          ignition board: breakout day / vol surge× / step-rate (clamped) / reclaimed MA50.
+          Same source as the chart bars (C9). vol_mult here is ig_vsurge (5/60 ratio),
+          distinct from the 50d vol_mult in the field strip below. */}
+      {ign && (
+        <div className="ec-ignev">
+          <span className="ec-ignev-i" title="trailing-60d high (breakout reference) + 距今天数">
+            <em>brk</em> {fmtDate(ign.evidence.breakout_day)}
+            {ign.evidence.days_since_breakout != null && (
+              <i className="ec-ignev-d"> ·{ign.evidence.days_since_breakout}d前</i>
+            )}
+          </span>
+          <span className="ec-ignev-i" title="放量× = ig_vsurge（5日/60日成交量比）">
+            <em>vol</em>{' '}
+            <b style={{ color: (ign.evidence.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
+              {ign.evidence.vol_mult == null ? '—' : ign.evidence.vol_mult.toFixed(2) + '×'}
+            </b>
+          </span>
+          <span className="ec-ignev-i" title="步速比 = (ret10/10)/(ret50/50)，ig_accel 可读形（显示已 clamp ±20×）">
+            <em>step</em>{' '}
+            <b style={{ color: (ign.evidence.step_rate_ratio ?? 0) >= 1 ? 'var(--grn)' : 'var(--txt)' }}>
+              {fmtStepRate(ign.evidence.step_rate_ratio)}
+            </b>
+          </span>
+          <span className="ec-ignev-i" title="是否收复 MA50（ig_breakout 的 gate：close>MA50）">
+            <em>MA50</em>{' '}
+            <b style={{ color: ign.evidence.reclaimed_ma50 ? 'var(--grn)' : 'var(--dim)' }}>
+              {ign.evidence.reclaimed_ma50 == null ? '—' : ign.evidence.reclaimed_ma50 ? '收复✓' : '未收复'}
+            </b>
+          </span>
+        </div>
+      )}
 
       {stock.themes.length > 0 && (
         <div className="ec-themes">
