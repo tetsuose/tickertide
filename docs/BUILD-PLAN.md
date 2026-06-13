@@ -18,10 +18,10 @@
 
 ## 1. 脊柱原则(贯穿所有 surface)
 
-**一套信号,五个 lens,两个尺度。** 不要写五条独立管线。
+**两台互补引擎(composite 确认 + ignition 发现),五个 lens,两个尺度。** 不要写五条独立管线。
 
-- 引擎 = stock-level `composite`(§4)。
-- **Leaders** = composite 排序;**Rotation** = composite 按 bucket group-by;**Ocean** = composite 的二维相图;**Valuation** = 估值的 cross-section;**Stock** = 单票展开。
+- **composite** = stock-level 确认引擎(§4.6);**ignition** = 早期发现引擎(§4.8,2026-06-13 立项,实证 `analysis/`)。两台共用同一份 per-stock 数据。
+- **Discovery** = ignition「持续点火」排序;**Rotation** = composite 按 bucket group-by;**Ocean** = composite 的二维相图;**Valuation** = 估值的 cross-section;**Stock** = 单票展开。
 - **两个尺度**(产品成立的前提):
   - **wide / explore**:Ocean、Valuation screener —— 数千只,用来逛。
   - **bounded / decide**:Leaders(固定 top-N)、Rotation(~10–12 桶)—— 用来动手。
@@ -106,6 +106,13 @@ Client (canvas + duckdb-wasm):  renders Ocean (thousands of points) + boards; sc
 
 **4.7 (optional) Kalman level+slope**:要日间稳定/无丑跳变时再上;`rs≈level`,`rs_accel≈slope` 变化,`slope/√var` 做 z-score。
 
+**4.8 ignition 引擎(早期发现,第二台引擎;2026-06-13 立项,权威规格见 PRD §10.8)**
+- **动机**:composite(§4.6)是趋势确认,长窗口(rs 63/126、high 252、trend 63、vol 50/200)系统性滞后;`early⟷reliable` 旋钮只在滞后分量间重配权,k=1「early」仍滞后。早期发现 = 不同物理量(加速/拐点 vs 水平)→ 第二台并列引擎。
+- **5 短窗口分量**(per-stock → 每日横截面 percentile → 等权):加速 `ret10/10−ret50/50`、波动收缩→扩张 `mean(|Δp|,10)/mean(|Δp|,60)`、放量 `vol5/vol60`、突破收复 `clamp(close/max(close,60))·1[close>MA50]`、RS 拐点 `slope10−slope30/3`(of `P/P_spx`)。
+- **persistence = 精度关键**:点火 = `ign_pct` 跨入 top decile;**瞬时点火无 lift(≈随机入场),唯连续 ~5 日仍在 top decile 把 60–120d 中位 LIFT 转正 +2.5~3.1pp**(实证 `analysis/precision_ignition.py`,中性 800 只 Nasdaq habitat 池)。机理:真突破赖在强势区、假突破速熄。
+- **三级漏斗**:ignition 触发(recall,早)→ persistence 确认(precision,去假突破)→ 翻财报终筛(human)。**Discovery = 「持续点火」榜(非 composite 排序)。**
+- **诚实**:lift 温和、买 robustness 不买 alpha;persistence 是结构性去噪非调参买 alpha;caveat 幸存者偏差 + 牛市底噪(LIFT=event−base 抗偏差)。timing 实证 `analysis/verify_ignition.py`(ignition 早 14–45 周)。
+
 ---
 
 ## 5. 分类:标准底 + 营收锚定的语义主题
@@ -128,7 +135,7 @@ Client (canvas + duckdb-wasm):  renders Ocean (thousands of points) + boards; sc
 ## 6. 五个 Surface(对照 `equity-monitor-v2.jsx`)
 
 1. **Ocean**(canvas,wide):数千只;**轴固定 x=RS pct,y=Valuation pct(底=便宜)**,color=sector/theme,size=mktcap;**时间 scrubber(周度快照,无 autoplay)**;**点击 pin → 画箭头 trail**(仅 pinned,不全量)。"右移 + 留在低估区(绿象限)" = cheap & strengthening = 要找的 emerging leader。(**RRG-axes 模式已砍**:per-stock RRG 散点冗余、1800 点是噪音云,且 Rotation 已改折线;momentum 维度在 composite / Rotation / Stock 已有。`rsr`/`rsm` 一并删。)
-2. **Discovery**(原 "Emerging Leaders",名字待定):**evidence-first 证据卡流**(非分数榜)。候选池放宽 + AI 兜底筛(Layer 1 宽 / Layer 2 enrich);bound 移到「AI 筛完值得人看的」,非硬 top-20。每只票一张 evidence-card = **Stock 的 collapsed 态**(见 §6.2)。旋钮在此调候选池松紧;d/d 仍标。
+2. **Discovery**(原 "Emerging Leaders"):**evidence-first 证据卡流**(非分数榜),**按 ignition「持续点火」排序**(§4.8:跨入横截面 top decile 且持续 ~5 日;**非 composite 排序**)。候选池 = 三级漏斗前两级(ignition 触发 → persistence 确认)+ AI 兜底筛;bound = 持续点火名单,非硬 top-20。每卡 = **Stock 的 collapsed 态**,头部露点火证据(突破/放量/步速/MA50 收复)+ composite 角标作「是否已确认」副读;旋钮调候选池松紧;d/d 仍标。
 3. **Rotation**(narrow):**所有 sector/theme 的 RS-Ratio 多线图(非散点)** + **enriched league 表**(rank、RS-Ratio level、**Δ(=斜率/momentum)**、**breadth %>MA50 / %>MA200**、#at-52w-high、member composite 中位数、agg EV/S、多 horizon relative return,按 level 排序);**GICS↔Theme 切换**。**点表行/线 → set scope + 钻进该 bucket**(N=1 RS-Ratio 单线放大 + 成员 evidence-cards,见 §6.1)。
 4. **Valuation**(screener,wide):cross-sectional 表 P/E·P/S·EV/S·EV/EBITDA·PEG·Rule-of-40·growth·margin + **sector/theme 内 percentile**;可排序筛选(duckdb-wasm 在浏览器查 Parquet)。
 5. **Stock**(narrow,= evidence-card 的 expanded 态):**核心 = 时间轴对齐的 price↔fundamentals stack** —— 日线 K 线 + MA50/150/200 + 成交量 / **季度营收 bars** / **P/S over time**,各格共用同一 x 轴对齐(季度网格线贯穿),直接可视化 P/S expansion(价↑营收平 = 变贵无基本面)vs 赚到这波(价↑营收↑)。下接估值快照(P/S·EV/S·EV/EBITDA·P/E·growth·Rule40)+ composite component 序列 + theme memberships+exposure + 最新 filing AI 摘要。**保留为独立 tab**:既是 card 点开的落地详情,也支持按 ticker 直接查。
@@ -226,10 +233,11 @@ intraday / real-time;auth / 多用户 / 支付;**非美上市标的**;**中文 c
 **`equity-monitor-v2.jsx` = UX 合同,不是实现**:合成数据(`mulberry32` 种子)、纯 inline SVG/canvas、无真实管线。它锁的是**布局 / 交互 / 信息层级 / 配色**;数据契约与算法以 §1–§5 为准。code 不要照抄它的造数逻辑。
 
 **已定死(code 不要再翻案):**
-- spine:**1 个 per-stock 引擎 → 5 surface → 2 scale → 零持久后端**(§0)。
+- spine:**2 台 per-stock 引擎(composite 确认 + ignition 发现,§4.8/PRD §10.8)→ 5 surface → 2 scale → 零持久后端**(§0)。
 - 数据源:Stooq(EOD)+ Nasdaq screener(universe/mktcap/GICS/PE)+ EDGAR(权威基本面)+ yfinance(脆弱兜底)(§2)。
 - 5 surface 行为 + evidence-first(默认露原始证据,composite 只是可展开角标,永不给 buy/target)(§6、§6.2)。
 - 数学:vol-normalized EWMAC、RS=双窗超额收益的横截面百分位、trend=KER/OLS t 值、composite=Σwᵢ·分量 由 early↔reliable **一个旋钮**重配权(§4)。
+- **ignition(§4.8/PRD §10.8,已定)**:早期发现第二台引擎,5 短窗口分量→横截面 top decile;**瞬时无精度,唯 persistence(持续 ~5 日)有 lift**(实证 analysis/) → Discovery=「持续点火」榜;三级漏斗 = 触发→持续→翻财报。
 - **权重是观点不是事实**:不回测优化、买 robustness 不买 alpha,全程暴露旋钮+分量条(§4.6)。
 - 估值统一规则:price ÷ trailing-4Q,日频(分母季度 ASOF、分子日频),`E≤0→n.m.` 退 P/S,无 forward;**百分位用 common-vintage**(只在当期 cohort 内排名,stale 不进)(§4.5)。
 - Rotation = **RS-Ratio 多线(非散点)**;Ocean 轴固定 RS×估值(**RRG-axes 已砍**)(§4.4、§6)。
