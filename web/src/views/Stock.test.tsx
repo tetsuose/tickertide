@@ -78,7 +78,7 @@ describe('Stock 点火诊断 (M7.4, second engine — ignition)', () => {
     expect(html).toContain('stk-igntl')
   })
 
-  it('does NOT touch composite (parallel engine, NOT the early⟷reliable knob; PRD P7)', () => {
+  it('does NOT replace composite (parallel engine; composite stays a fixed-weight side-read)', () => {
     // composite stack is still its own section; ignition is additive, not a replacement.
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
     expect(html).toContain('stk-comp')
@@ -109,11 +109,14 @@ describe('Stock 点火诊断 (M7.4, second engine — ignition)', () => {
     expect(html).toContain('&gt;20×')
   })
 
-  it('the knob k does NOT re-render the ignition panel (k=0 == k=1 for the ignition block)', () => {
-    const early = renderToStaticMarkup(<Stock initial={bundle} k={0} />)
-    const reliable = renderToStaticMarkup(<Stock initial={bundle} k={1} />)
-    const slice = (h: string) => h.slice(h.indexOf('stk-ign'), h.indexOf('stk-vals'))
-    expect(slice(early)).toBe(slice(reliable))
+  it('composite is a fixed-weight side-read with no knob (PRD §16): no per-k label, no slider', () => {
+    // the early⟷reliable knob is gone — Stock takes no k prop. The composite header reads
+    // 确认副读 (fixed weighting), never "k=…", and the surface carries no range slider.
+    const html = renderToStaticMarkup(<Stock initial={bundle} />)
+    expect(html).toContain('确认副读')
+    expect(html).not.toContain('k=')
+    expect(html).not.toContain('type="range"')
+    expect(html).not.toContain('early')
   })
 
   it('hides the panel for a pre-M7.4 bundle with no ignition block (back-compat)', () => {

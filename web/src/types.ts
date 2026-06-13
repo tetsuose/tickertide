@@ -1,8 +1,9 @@
 // TypeScript types mirroring export/board.py's board.json (M1.1 contract).
-// The client re-weights composite from `components` by the early<->reliable knob
-// k WITHOUT recomputing the engine (C9); those coefficients port to composite.ts
-// in M1.4. Numeric fields are nullable wherever the engine can emit no value
-// (insufficient history, E<=0 valuation, missing fundamentals).
+// composite is read from the engine's exported value at the fixed weighting (k=0.5);
+// the client never recomputes the engine (C9) — the early⟷reliable knob is gone (PRD
+// §16), composite.ts only carries the fixed WEIGHTS for the per-component %. Numeric
+// fields are nullable wherever the engine can emit no value (insufficient history,
+// E<=0 valuation, missing fundamentals).
 
 export type Freshness = 'fresh' | 'stale' | 'overdue'
 
@@ -52,9 +53,9 @@ export interface IgnitionEvidence {
 /** The SECOND engine (ignition = early discovery, PRD §10.8), carried per stock
  * alongside composite. Discovery (M7.3) sorts by 持续点火 — sustained ignition —
  * NOT composite: `candidate` (= top-decile ign_pct AND ign_persist_days >= persist_min)
- * first, then ign_persist_days desc, then ign_pct desc. The early⟷reliable knob does
- * NOT touch ignition (PRD P7); it only re-weights composite. Same source as every
- * surface (derived_daily, C9) — the client never recomputes the engine. */
+ * first, then ign_persist_days desc, then ign_pct desc. ignition is the project's core
+ * engine and has no tunable parameter (the early⟷reliable knob is gone, PRD §16). Same
+ * source as every surface (derived_daily, C9) — the client never recomputes the engine. */
 export interface Ignition {
   ignition: number | null
   ign_pct: number | null
@@ -117,6 +118,8 @@ export interface Stock {
 export interface BoardData {
   schema_version: number
   as_of_date: string
+  /** the engine's snapshot knob (fixed 0.5) + its weights — the early⟷reliable knob is
+   * gone (PRD §16); the app reads `composite` directly and uses composite.ts WEIGHTS. */
   knob_default_k: number
   weights_default: Components
   composite_recon_max_drift: number
@@ -295,7 +298,7 @@ export interface StockBundle {
   /** Second engine (ignition = early discovery, PRD §10.8) — verbatim from derived_daily,
    * same block board.json ships per Discovery card (C9). Drives Stock's 点火诊断 (5 raw
    * components + 点火证据 + persistence). Optional/null: pre-M7.4 bundles or names the engine
-   * couldn't score omit it. The early⟷reliable knob does NOT touch it (PRD P7). */
+   * couldn't score omit it. ignition is the core engine, no tunable parameter (PRD §16). */
   ignition?: Ignition | null
   valuation: {
     pe: number | null

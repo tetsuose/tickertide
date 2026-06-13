@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { StockBundle, Components, IgnitionComponents } from '../types'
 import { loadStockBundle, loadStockIndex } from '../lib/data'
-import { weights, composite } from '../lib/composite'
+import { WEIGHTS, composite } from '../lib/composite'
 import StockStack from '../components/StockStack'
 import { fmtMktcap, fmtMonthDay, fmtStepRate, num, pct, scoreColor } from '../lib/format'
 
@@ -67,12 +67,10 @@ export default function Stock({
   initial,
   ticker,
   setTicker,
-  k,
 }: {
   initial?: StockBundle
   ticker?: string | null
   setTicker?: (t: string) => void
-  k?: number
 }) {
   const [bundle, setBundle] = useState<StockBundle | null>(initial ?? null)
   const [tickers, setTickers] = useState<string[]>(initial ? [initial.meta.ticker] : [])
@@ -122,10 +120,11 @@ export default function Stock({
     )
 
   const m = bundle.meta
-  const kEff = k ?? 0.5
   const comps = bundle.components
-  const score = comps ? composite(comps, kEff) : (m.composite ?? 0)
-  const w = weights(kEff)
+  // composite at the fixed weighting (no knob, PRD §16): prefer the engine's exported
+  // value (C9), fall back to the frontend recompute only when meta.composite is null.
+  const score = m.composite ?? (comps ? composite(comps) : 0)
+  const w = WEIGHTS
   const v = bundle.valuation
   const ign = bundle.ignition
   const opts = tickers.length ? tickers : [m.ticker]
@@ -165,7 +164,7 @@ export default function Stock({
         </div>
         <div className="stk-score" style={{ color: scoreColor(score) }}>
           <div className="stk-scorev">{score.toFixed(0)}</div>
-          <div className="stk-scorel">COMPOSITE · k={kEff.toFixed(2)}</div>
+          <div className="stk-scorel">COMPOSITE · 确认副读</div>
         </div>
       </div>
 
@@ -176,13 +175,13 @@ export default function Stock({
       {/* 点火诊断 (ignition diagnostic, PRD §10.8) — the SECOND engine, parallel to the
           composite stack below. Bridges the price↔fundamentals chart (where the breakout /
           vol surge is visible) into 翻财报: ignition flags "刚起步在加速"; the user confirms
-          with fundamentals. Verbatim from derived_daily (same block as the Discovery card, C9);
-          the early⟷reliable knob does NOT touch it (PRD P7). */}
+          with fundamentals. Verbatim from derived_daily (same block as the Discovery card, C9).
+          ignition is the core engine and has no tunable parameter (PRD §16). */}
       {ign && (
         <div className="stk-ign">
           <div className="stk-ignt">
             <span className="stk-ignt-l">点火诊断 · ignition</span>
-            <span className="stk-ignt-r">发现引擎（短窗口 · 不受 k 旋钮影响）</span>
+            <span className="stk-ignt-r">发现引擎（短窗口 · 核心 · 无可调参）</span>
           </div>
 
           {/* persistence timeline: 持续点火 = top-decile ign_pct sustained ≥persist_min days
@@ -272,7 +271,7 @@ export default function Stock({
       </div>
 
       <div className="stk-comp">
-        <div className="stk-compt">composite 5 分量（原始值 ∈ [0,1] · 权重随 k）</div>
+        <div className="stk-compt">composite 5 分量（原始值 ∈ [0,1] · 固定权重，无旋钮）</div>
         {comps &&
           COMPONENTS.map(({ key, label }) => {
             const cv = comps[key]
@@ -291,7 +290,7 @@ export default function Stock({
       </div>
 
       <div className="foot">
-        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。点火诊断（ignition，§10.8）是并列的第二台引擎（发现，短窗口），不受 k 旋钮影响（旋钮只属 composite）：刚起步在加速 → 翻财报终筛。来自 per-name bundle（懒加载，与 board/Discovery/Valuation 同源 C9）。最新 filing AI 摘要留 M5 之后。as_of {bundle.as_of_date}。
+        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。点火诊断（ignition，§10.8）是并列的第二台引擎（发现，短窗口，项目核心）：无可调参，刚起步在加速 → 翻财报终筛；composite 退为确认副读（固定权重，无旋钮）。来自 per-name bundle（懒加载，与 board/Discovery/Valuation 同源 C9）。最新 filing AI 摘要留 M5 之后。as_of {bundle.as_of_date}。
       </div>
     </div>
   )

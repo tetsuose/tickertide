@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BoardData, Scope, Stock } from '../types'
 import { loadBoard } from '../lib/data'
-import { weights, composite } from '../lib/composite'
+import { WEIGHTS, composite } from '../lib/composite'
 import EvidenceCard from '../components/EvidenceCard'
 
 // Whether a board stock is in the global scope (PRD §9.1.2/§9.3 — filter BEFORE sort).
@@ -17,8 +17,8 @@ function inScope(s: Stock, scope: Scope | undefined, pinned: string[]): boolean 
 // NOT a composite ranking. Candidates (top-decile AND persistent) float first, then
 // by persistence streak, then by cross-sectional ignition percentile. Instantaneous
 // ignition has no lift — only sustained ignition does — so persistence dominates pct.
-// The early⟷reliable knob does NOT touch this order (PRD P7); it only re-weights the
-// composite shown as a 已确认 side-read badge on each card.
+// ignition is the project's core engine and has no tunable parameter — there is no
+// knob to perturb this order (the former early⟷reliable knob is gone, PRD §16).
 function ignKey(s: Stock): [number, number, number] {
   const ig = s.ignition
   return [ig?.candidate ? 1 : 0, ig?.ign_persist_days ?? 0, ig?.ign_pct ?? 0]
@@ -32,23 +32,21 @@ function byIgnition(a: Stock, b: Stock): number {
 
 // Discovery board (PRD §9.3 + §10.8): 2-column evidence-card grid, sorted by
 // 持续点火 (sustained ignition) — candidate first, then ign_persist_days desc, then
-// ign_pct desc — NOT composite. The early⟷reliable knob k still re-weights the
-// exported components c_* via composite.ts (a verbatim port of compute/signals.py —
-// C9, the engine is never recomputed) to drive the composite side-read badge, but it
-// no longer re-sorts the grid (this is an ignition board, not a composite board).
-// `initial` lets tests/SSR inject the board without fetching; `k` defaults to the
-// snapshot's knob_default_k. `scope`/`pinned` (App's single source) filter BEFORE sort (C10).
+// ign_pct desc — NOT composite. ignition is the core engine and has no tunable
+// parameter (the former early⟷reliable knob is gone, PRD §16). Each card carries the
+// engine's exported composite (stock.composite, computed at the fixed weighting in
+// compute/run.py — C9, never recomputed in the browser) as a 已确认 side-read badge.
+// `initial` lets tests/SSR inject the board without fetching. `scope`/`pinned`
+// (App's single source) filter BEFORE sort (C10).
 export default function Discovery({
   initial,
   onOpen,
-  k,
   scope,
   pinned = [],
   limit,
 }: {
   initial?: BoardData
   onOpen?: (ticker: string) => void
-  k?: number
   scope?: Scope
   pinned?: string[]
   limit?: number
@@ -87,14 +85,13 @@ export default function Discovery({
     )
   }
 
-  const kEff = k ?? board.knob_default_k
-  const w = weights(kEff)
   // respect global scope: filter BEFORE sorting (PRD §9.3), then rank by 持续点火 (NOT
-  // composite — M7.3). composite(...,kEff) is still computed per card for the side-read
-  // badge (it tracks the knob), but it is no longer the order key.
+  // composite — M7.3). The composite side-read badge uses the engine's exported value
+  // (fixed weighting, C9); the recompute fallback only fills a null. It is never the
+  // order key, and there is no knob (PRD §16).
   const scored = board.stocks
     .filter((s) => inScope(s, scope, pinned))
-    .map((s) => ({ s, score: composite(s.components, kEff) }))
+    .map((s) => ({ s, score: s.composite ?? composite(s.components) }))
     .sort((a, b) => byIgnition(a.s, b.s))
   // Callers bound the board to a top-N: Discovery proper caps at App's DISCOVERY_LIMIT
   // (PRD §9.3 bounded/decide); Rotation's drill drawer previews fewer still (PRD §9.4).
@@ -105,15 +102,15 @@ export default function Discovery({
     <div className="disco">
       <div className="ecgrid">
         {shown.map(({ s, score }) => (
-          <EvidenceCard key={s.ticker} stock={s} weights={w} score={score} onOpen={onOpen} />
+          <EvidenceCard key={s.ticker} stock={s} weights={WEIGHTS} score={score} onOpen={onOpen} />
         ))}
       </div>
       <div className="foot">
-        <b>持续点火榜</b>（PRD §10.8）：按 <b>持续点火</b> 排序 —— candidate（top-decile 且持续 ≥
+        <b>持续点火榜</b>（PRD §10.8，发现核心引擎）：按 <b>持续点火</b> 排序 —— candidate（top-decile 且持续 ≥
         {board.ignition_persist_min ?? 5} 日）置顶 → 点火持续天数 → 点火百分位（<b>不</b>按 composite，瞬时点火无 lift）。
-        每张卡头部 = 点火证据（突破日 / 放量× / 步速比 / 是否收复 MA50）；composite 角标降为「是否已确认」副读
-        —— 拨 early⟷reliable 旋钮（k = {kEff.toFixed(2)}）只重算 composite 副读（前端按 c_* 重算，不碰引擎，C9），
-        <b>不</b>动点火排序。点 ▾ 看 composite 5 分量 + 权重；点卡片任意处 → Stock（M5）。 as_of {board.as_of_date} ·{' '}
+        ignition 无可调参（5 分量等权 + 阈值离线定，刻意=买 robustness 不买 alpha）。每张卡头部 = 点火证据（突破日 /
+        放量× / 步速比 / 是否收复 MA50）；composite 角标降为「是否已确认」副读（固定权重，引擎 C9 同源，无旋钮）。点 ▾
+        看 composite 5 分量 + 权重；点卡片任意处 → Stock（M5）。 as_of {board.as_of_date} ·{' '}
         {shown.length} 只（点火候选 {nCand}）
         {scope && scope.kind !== 'all' ? `（scope=${scope.kind === 'pinned' ? 'pinned' : scope.key} 过滤后）` : ''} · valuation
         覆盖 {board.valuation_coverage}。

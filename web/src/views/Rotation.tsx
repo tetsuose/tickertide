@@ -206,13 +206,11 @@ export default function Rotation({
   scope,
   setScope,
   onJumpTab,
-  k,
 }: {
   initial?: RotationData
   scope: Scope
   setScope?: (s: Scope) => void
   onJumpTab?: (t: SurfaceId) => void
-  k?: number
 }) {
   // `initial` (SSR/tests) drives the starting view by its bucket_type, so a theme fixture
   // renders theme mode directly. The live app passes no initial → loads sector, lazy-loads
@@ -311,7 +309,7 @@ export default function Rotation({
           <span>成员 · top by composite <em className="tag">scope 收窄到该 {noun}</em></span>
           <button className="seg" onClick={() => onJumpTab?.('discovery')}>在 Discovery 看全部成员 →</button>
         </div>
-        <Discovery scope={scope} k={k} limit={6} />
+        <Discovery scope={scope} limit={6} />
         <div className="foot">
           单条 RS-Ratio 放大：<b>高度=level、线色=斜率(↑绿/↓红)=momentum</b>（N=1 时 color 空出来给斜率）。下面是该 {noun}
           成员证据卡（复用 board.json，按 scope filter — C9/DRY）。点「← all {noun}s」或顶部 scope ✕ 清 scope 回总览。

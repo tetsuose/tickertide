@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
-import type { SurfaceId, Scope, Components, ManifestData } from './types'
+import type { SurfaceId, Scope, ManifestData } from './types'
 import Discovery from './views/Discovery'
 import Ocean from './views/Ocean'
 import Rotation from './views/Rotation'
 import Valuation from './views/Valuation'
 import Stock from './views/Stock'
-import { weights } from './lib/composite'
 import { loadManifest } from './lib/data'
 import { dataAgeDays, freshness, ageLabel } from './lib/freshness'
 
@@ -32,8 +31,8 @@ const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb:
   },
   discovery: {
     scale: 'bounded · decide',
-    milestone: 'M1.3 – M1.4',
-    blurb: 'evidence-first 卡流：每张卡 6 个原始数字 + 可展开的 composite 角标。卡片组件 M1.3；composite 排序 + early⟷reliable 旋钮（前端按 c_* 重算，C9）M1.4。数据来自 export/board.py 的 board.json。',
+    milestone: 'M1.3 – M7',
+    blurb: 'evidence-first 卡流：按 ignition 持续点火排序（PRD §10.8，核心引擎）；每张卡 6 个原始数字 + 点火证据 + 可展开的 composite 角标（确认副读，固定权重，无旋钮）。数据来自 export/board.py 的 board.json。',
   },
   rotation: {
     scale: 'narrow · decide',
@@ -54,7 +53,6 @@ const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb:
 
 export default function App() {
   const [tab, setTab] = useState<SurfaceId>('discovery')
-  const [k, setK] = useState(0.5)
   // global scope filter — single source, sticky across tabs (PRD §9.1.2, C8/C10).
   // Two writers: Ocean's lasso (M2.4) sets scope='pinned'; Rotation's league row/line
   // click (M3.4) sets scope='sector'. Discovery/Ocean/Rotation all respect it (filter /
@@ -122,40 +120,9 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="knobwrap">
-            <div className="knoblabels">
-              <span className={k < 0.5 ? 'kactive' : ''}>RELIABLE</span>
-              <span className="khint">confirmation ⟷ acceleration</span>
-              <span className={k >= 0.5 ? 'kactive' : ''}>EARLY</span>
-            </div>
-            <input
-              className="knob"
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={k}
-              onChange={(e) => setK(parseFloat(e.target.value))}
-              aria-label="early to reliable knob"
-            />
-            <div className="wbars">
-              {(
-                [
-                  ['rs', 'RS'],
-                  ['high', '52WH'],
-                  ['trend', 'TREND'],
-                  ['vol', 'VOL'],
-                  ['accel', 'ACCEL'],
-                ] as [keyof Components, string][]
-              ).map(([key, label]) => (
-                <div key={key} className="wb" title={`${label} ${(weights(k)[key] * 100).toFixed(0)}%`}>
-                  <div className="wbtrack">
-                    <div className="wbfill" style={{ height: `${Math.round((weights(k)[key] / 0.45) * 100)}%` }} />
-                  </div>
-                  <div className="wbl">{label}</div>
-                </div>
-              ))}
-            </div>
+          <div className="enginenote">
+            <span className="enginelead">IGNITION</span>
+            <span className="enginehint">持续点火 = 发现核心引擎（无可调参） · composite = 确认副读（固定权重）</span>
           </div>
         </div>
 
@@ -179,15 +146,15 @@ export default function App() {
             <span className="khint">{info.milestone}</span>
           </div>
           {tab === 'discovery' ? (
-            <Discovery k={k} scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} onOpen={openStock} />
+            <Discovery scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} onOpen={openStock} />
           ) : tab === 'ocean' ? (
             <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} />
           ) : tab === 'rotation' ? (
-            <Rotation scope={scope} setScope={setScope} onJumpTab={setTab} k={k} />
+            <Rotation scope={scope} setScope={setScope} onJumpTab={setTab} />
           ) : tab === 'valuation' ? (
             <Valuation scope={scope} setScope={setScope} pinned={pinned} onOpen={openStock} />
           ) : (
-            <Stock ticker={selected} setTicker={setSelected} k={k} />
+            <Stock ticker={selected} setTicker={setSelected} />
           )}
         </section>
       </div>
