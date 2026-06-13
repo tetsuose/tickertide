@@ -86,7 +86,6 @@ def ignition_metrics(bars: pd.DataFrame, spx: pd.DataFrame) -> pd.DataFrame:
     cross-section here) — cross-sectional ranking happens in the caller."""
     df = bars.sort_values("date").reset_index(drop=True)
     px = df["adj_close"].astype(float)
-    high, low, close = df.get("high", px), df.get("low", px), df["close"].astype(float)
     vol = df["volume"].fillna(0).astype(float)
     spx_al = (spx.set_index("date")["adj_close"].reindex(df["date"], method="ffill")
               .reset_index(drop=True).astype(float))

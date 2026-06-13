@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T11:37:18.912173+00:00",
+  "updated_at": "2026-06-13T11:56:07.087487+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -135,6 +135,19 @@
       }
     },
     {
+      "path": "analysis/precision_ignition.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "ignition 精度回看(precision pass):在中性的 Nasdaq habitat 池($0.3B-$100B 随机 800 只)上量化 ignition top-decile 点亮后的延续 vs 假阳性。核心发现=瞬时点火 lift≈0(证伪『Discovery 直接改 ignition 排序』),唯『持续点火』(连续在 top decile)把 60-120d 中位 LIFT 转正;一次性分析脚本,非 nightly 管线",
+        "invariants": "ignition 复用 analysis/verify_ignition.py 的 ignition_metrics 同一套数学;universe 来自 ingest/nasdaq.fetch_universe 真实美股(非手挑、降幸存者挑选偏差);核心度量是『event 减 base 的 LIFT』而非绝对收益(抗 2023-26 牛市底噪);只读 yfinance,产出仅落 gitignore 的 data/;幸存者偏差(死票缺失)在输出显式标注、不掩饰",
+        "verification": "跑 .venv/bin/python analysis/precision_ignition.py 输出 4 变体(top10/5/1% 进入 + top10%持续5d)× 3 窗口的 median LIFT vs base 表 + 4 target 的 recall;唯持续过滤变体 LIFT 显著为正"
+      },
+      "notes": "negative-then-refined 结果:钉出 Discovery 应为『持续点火』榜而非瞬时;下一步落地 compute/ignition.py + persistence"
+    },
+    {
+      "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进",
       "path": "analysis/verify_ignition.py",
       "kind": "script",
       "module": "analysis",
@@ -143,8 +156,7 @@
         "purpose": "ignition vs composite 早期点亮时机的历史回看验证:用真实 yfinance 数据量化短窗口 ignition 引擎是否比现有长窗口 composite 更早把已知大牛股(ARM/MRVL/AAOI/SNDK)送进 universe 前 10%(双引擎方向的实证,PRD §1 脊柱);一次性分析脚本,非 nightly 管线",
         "invariants": "composite 复用 compute/signals.py 产品口径(横截面 rs_pct/composite 镜像 compute/run.py),绝不另起一套数学;ignition 仅由短窗口/拐点/突破分量构成;两引擎用同一『横截面 top-decile 点亮』口径以保证时机对比公平;只读 yfinance 价格,产出仅落 gitignore 的 data/,不写产品 DuckDB 或 web 数据",
         "verification": "跑 .venv/bin/python analysis/verify_ignition.py 输出每只目标的 t0 与 ignition/composite 点亮周数+点亮时涨幅对照表;4 只目标上 ignition 点亮均不晚于 composite"
-      },
-      "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进"
+      }
     },
     {
       "notes": "",
@@ -1432,5 +1444,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "9b39367702009d0af8cc45e10e8d63cef5b05a66fedae49408a22d27fe647aad"
+  "last_structure_digest": "d57543f5be7d28028e595036c65601bbfce470a2e5699436ba6f4eab59571258"
 }
