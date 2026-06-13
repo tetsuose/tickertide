@@ -17,10 +17,14 @@ instead of silently in Discovery:
     same-source identity guard board.py asserts at build, re-checked off the file);
   - non-empty: at least one sustained-ignition candidate (else Discovery's board
     would be empty — flagged, not fatal, since a quiet tape can have zero);
-  - the top-level ignition_recon_max_drift the exporter wrote is ~0.
+  - the top-level ignition_recon_max_drift the exporter wrote is ~0;
+  - stock↔board same-source (M7.4): a sample of per-name Stock bundles
+    (export/stock_bundle.py) carry the SAME ignition block as board.json for that
+    ticker — both are assembled by board._ignition from the same derived_daily, so
+    the Stock 点火诊断 and the Discovery card never disagree (C9 across surfaces).
 
-Runs on the exported board.json (see `make ignition-c9`). Exits non-zero on any
-inconsistency so it can gate. Names/counts only — no secrets.
+Runs on the exported board.json + stock bundles (see `make ignition-c9`). Exits
+non-zero on any inconsistency so it can gate. Names/counts only — no secrets.
 """
 from __future__ import annotations
 
@@ -100,19 +104,57 @@ def check(board: dict) -> tuple[bool, list[str], dict]:
     return (not problems), problems, stats
 
 
+SAMPLE = 8  # stock bundles to cross-check against board (M7.4 stock↔board same-source)
+
+
+def check_stock_same_source(board: dict, stock_dir: Path) -> tuple[list[str], int]:
+    """Stock↔board ignition C9 (M7.4): a sample of per-name bundles must carry the SAME
+    ignition block as board.json (both built by board._ignition from one derived_daily)."""
+    problems: list[str] = []
+    idx = stock_dir / "index.json"
+    if not idx.exists():
+        return [f"stock/index.json missing under {stock_dir} — run `make export`"], 0
+    bteam = {s.get("ticker"): s.get("ignition") for s in board.get("stocks", [])}
+    tickers = json.loads(idx.read_text()).get("tickers", [])
+    sample = [t for t in tickers if t in bteam][:SAMPLE]
+    checked = 0
+    for t in sample:
+        bp = stock_dir / f"{t}.json"
+        if not bp.exists():
+            problems.append(f"{t}: stock bundle missing for index ticker")
+            continue
+        sig = (json.loads(bp.read_text()) or {}).get("ignition")
+        if sig != bteam[t]:
+            problems.append(f"{t}: stock bundle ignition != board ignition (cross-surface drift)")
+        else:
+            checked += 1
+    return problems, checked
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="TickerTide M7.2 ignition C9 self-check (board.json).")
+    ap = argparse.ArgumentParser(description="TickerTide M7.2/M7.4 ignition C9 self-check.")
     ap.add_argument("--board", default=str(ROOT / "web" / "public" / "data" / "board.json"))
+    ap.add_argument("--stock-dir", default=str(ROOT / "web" / "public" / "data" / "stock"),
+                    help="per-name Stock bundles dir for the stock↔board cross-check (M7.4)")
     args = ap.parse_args(argv)
 
     board = json.loads(Path(args.board).read_text())
     ok, problems, stats = check(board)
 
+    stock_checked = 0
+    stock_dir = Path(args.stock_dir)
+    if stock_dir.exists():
+        sp, stock_checked = check_stock_same_source(board, stock_dir)
+        problems = problems + sp
+        ok = ok and not sp
+
     print(f"[ignition-c9] as_of={board.get('as_of_date')}  stocks={stats['stocks']}  "
           f"coverage={stats['ignition_coverage']}  candidates={stats['candidates']}"
-          f"(persist>={stats['persist_min']})  vsurge_checked={stats['vsurge_checked']}")
+          f"(persist>={stats['persist_min']})  vsurge_checked={stats['vsurge_checked']}  "
+          f"stock_xcheck={stock_checked}")
     if ok:
-        print("[ignition-c9] GATE_PASS ignition same-source (candidate gate + vsurge trace + ranges)")
+        print("[ignition-c9] GATE_PASS ignition same-source "
+              "(candidate gate + vsurge trace + ranges + stock↔board)")
         return 0
     print(f"[ignition-c9] GATE_FAIL {len(problems)} problem(s):", file=sys.stderr)
     for p in problems[:20]:

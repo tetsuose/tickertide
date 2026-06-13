@@ -28,3 +28,22 @@ export function scoreColor(score: number | null | undefined): string {
   if (score >= 47) return 'var(--score-mid)'
   return 'var(--score-lo)'
 }
+
+// --- ignition 点火证据 formatters (PRD §10.8, M7.3/M7.4) ---
+// step-rate ratio = (ret10/10)/(ret50/50): the readable form of ig_accel. It blows up when
+// ret50≈0 (M7.2 pitfall: fixture TT20=685) — faithful but useless on screen. Clamp the
+// DISPLAY at ±SR_CLAMP (the engine's ranked ig_accel is untouched — display-only) and mark
+// clamped values with a leading >/<. Discovery (EvidenceCard) keeps an identical local copy;
+// this is the shared home so Stock's 点火诊断 reuses the SAME clamp, not a second one.
+export const SR_CLAMP = 20
+export function fmtStepRate(v: number | null | undefined): string {
+  if (v == null) return '—'
+  if (v > SR_CLAMP) return `>${SR_CLAMP}×`
+  if (v < -SR_CLAMP) return `<-${SR_CLAMP}×`
+  return v.toFixed(1) + '×'
+}
+
+/** ISO date -> MM-DD (point-in-time evidence labels), em-dash for null. */
+export function fmtMonthDay(d: string | null | undefined): string {
+  return d == null ? '—' : d.slice(5)
+}

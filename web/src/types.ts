@@ -292,6 +292,11 @@ export interface StockBundle {
     themes: ThemeTag[]
   }
   components: Components | null
+  /** Second engine (ignition = early discovery, PRD §10.8) — verbatim from derived_daily,
+   * same block board.json ships per Discovery card (C9). Drives Stock's 点火诊断 (5 raw
+   * components + 点火证据 + persistence). Optional/null: pre-M7.4 bundles or names the engine
+   * couldn't score omit it. The early⟷reliable knob does NOT touch it (PRD P7). */
+  ignition?: Ignition | null
   valuation: {
     pe: number | null
     ps: number | null

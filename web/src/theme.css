@@ -1204,6 +1204,142 @@ body {
   font-family: var(--mono);
   color: var(--txt);
 }
+
+/* 点火诊断 (ignition diagnostic, PRD §10.8, M7.4) — the second engine on the Stock surface,
+   visually a distinct panel from the composite stack. Amber-tinted to read as "发现/早期"
+   vs composite's blue "确认". */
+.stk-ign {
+  margin-bottom: 14px;
+  border: 1px solid color-mix(in srgb, var(--amb, var(--score-mid)) 30%, var(--line));
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--amb, var(--score-mid)) 5%, var(--bg2));
+}
+.stk-ignt {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stk-ignt-l {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--txt);
+  letter-spacing: 0.02em;
+}
+.stk-ignt-r {
+  font-size: 10px;
+  color: var(--dim);
+}
+.stk-ignhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.stk-ignflag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.stk-ignflag.on {
+  color: var(--grn);
+  background: color-mix(in srgb, var(--grn) 14%, transparent);
+  border-color: color-mix(in srgb, var(--grn) 40%, transparent);
+}
+.stk-ignmeta {
+  color: var(--dim);
+}
+.stk-ignmeta b {
+  color: var(--txt);
+  font-weight: 700;
+  margin-left: 2px;
+}
+/* persistence streak timeline (newest at right). lit cells = consecutive top-decile days. */
+.stk-igntl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+}
+.stk-igntl-lab {
+  color: var(--dim2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 8.5px;
+}
+.stk-igntl-cells {
+  display: inline-flex;
+  gap: 3px;
+}
+.stk-igntl-c {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+}
+.stk-igntl-c.on {
+  background: var(--grn);
+  border-color: var(--grn);
+}
+.stk-igntl-now {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+/* the ignition evidence strip on Stock reuses .ec-ignev (M7.3); this just lifts its margin
+   since it sits inside the panel, not under a card head. */
+.stk-ignev {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.stk-igncomp {
+  margin-top: 4px;
+}
+.stk-igncompt {
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.stk-igncrow {
+  display: grid;
+  grid-template-columns: 78px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 3px;
+}
+.stk-igncl {
+  color: var(--txt);
+  font-weight: 700;
+}
+.stk-igncw {
+  color: var(--dim);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stk-igncrow b {
+  text-align: right;
+  color: var(--txt);
+}
+
 .stk-comp {
   margin-bottom: 14px;
 }
