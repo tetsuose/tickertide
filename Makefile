@@ -189,8 +189,9 @@ export:
 	@python3 export/rotation.py
 	@python3 export/rotation.py --bucket-type theme
 	@python3 export/valuation_parquet.py
+	@python3 export/stock_bundle.py
 	@python3 export/manifest.py
-	@echo "[export] board + ocean + rotation(+theme) + valuation.parquet + manifest -> web/public/data/ (M5.1: full-universe screener shard)."
+	@echo "[export] board + ocean + rotation(+theme) + valuation.parquet + stock bundles + manifest -> web/public/data/ (M5.1/M5.3)."
 
 # C9 cross-surface check (AC-M2): ocean.json positions trace to board/Stock numbers.
 ocean-c9:

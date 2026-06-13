@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T07:10:25.652011+00:00",
+  "updated_at": "2026-06-13T07:17:04.867883+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -118,7 +118,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 全 universe 横截面 screener 分片，duckdb-wasm 查)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4 C9 league↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
         "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS"
       }
     },
@@ -339,6 +339,7 @@
       }
     },
     {
+      "notes": "",
       "path": "docs/runtime/Deploy-DuckDB-Wasm-R2-Runbook.md",
       "kind": "doc",
       "module": "docs",
@@ -347,8 +348,7 @@
         "purpose": "M5.2 R2 部署 runbook：duckdb-wasm bundle 托管到 Cloudflare R2 的一次性 operator 设置(bucket/公开域/CORS/上传/repo 变量)",
         "invariants": "为什么 R2:wasm 35-41MB 超 Pages 25MiB 单文件限制;R2 是用户自有对象存储非第三方 CDN(脊柱:parquet 仍自托管、仅静态 wasm lib 外移);未配 R2 时 client fallback jsDelivr CDN(site+nightly 安全);wasm 绝不入 web/dist(URL 加载);跨域 worker 用 blob importScripts;DUCKDB_R2_BASE 是公开 URL 用 repo 变量、R2 token 只在本地",
         "verification": "按 runbook 设置后 nightly 部署的 Valuation tab 浏览器从 R2 base fetch wasm 200(CORS ok)、渲染全 universe;wasm 请求走 R2 非 dist"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -529,6 +529,18 @@
         "invariants": "读 bucket_rrg(周线 RS-Ratio 序列)对齐共享 weeks[](最近 N 周 union、缺失补 null，仿 ocean pts)；as_of_date 取实际最后交易日(max(derived_daily.date)，与 board/ocean 同源 C9)非 weeks[-1] 周线标签(后者 mid-week 跑领先成未来周五、破 C9 + 污染 D.4 badge)，weeks[] 仍用周五标签做 x 轴；league 量经 compute.rotation.league_table 取自 derived_daily/valuation_daily 成员(与 Discovery/Ocean/Stock 同源 C9)；members 经 rotation._bucket_members 取 top-N ticker(sector→universe.sector / theme→theme_membership point-in-time 多对多；成员卡走 board.json scope filter 不重复造 DRY)；sector 附 etf(sector_etf_map.txt 审计)、theme 无 etf(None)；sector 与 theme 各写一文件(各自 weeks 轴/params；theme index 从首个 as_of 起故 weeks 可少于 sector)、web 按 GICS↔Theme toggle 载对应文件；params 暴露 n1/n2/k(透明 reconstruction 不复刻 StockCharts)；inline self_check(rs_ratio 对齐 weeks、weeks 老→新、末值非空)；输出 gitignored 紧凑 JSON；同 fixture seed 字节级可复现",
         "verification": "make fixture-pipeline(+theme_index) 后 python3 export/rotation.py [--bucket-type sector|theme]：sector→rotation.json 11 bucket weeks=52、theme→rotation.theme.json ≥4 theme(members 取自 theme PIT、无 etf)；4 态、params 暴露、rs_ratio 对齐 weeks；theme C9(check_rotation --rotation rotation.theme.json)GATE_PASS；same seed 重导出 byte 一致"
       }
+    },
+    {
+      "path": "export/stock_bundle.py",
+      "kind": "script",
+      "module": "export",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "M5.3 Stock per-name bundle 导出：每 universe 票 → web/public/data/stock/<TICKER>.json(+index.json)，为 M5.4 时间轴对齐 stack 提供时序",
+        "invariants": "每票一 JSON 分片、懒加载(Stock narrow 一次一票，无需 duckdb-wasm)；含 price(~2y/504d 日 OHLCV+MA50/150/200+52wh)+revenue_q(季度 TTM 营收+YoY，PRD §9.6 REVENUE bars)+ps_series(每日 P/S，§9.6 P/S over time)+header(ticker/name/sector/mktcap/composite/themes PIT)+valuation 卡+5 分量，per-name 自给(任意 universe 票，非 board top-N)；读同一 daily_bars/valuation_daily/fundamentals_q(C9 同票 P/S 与 Ocean/Valuation 一致)；index.json 列 ticker+as_of(Stock 下拉/manifest)；输出 gitignored",
+        "verification": "make export 产 stock/<T>.json 全 universe + index.json；抽查 bundle 含 price/revenue_q(YoY)/ps_series/valuation/components/themes；ps 与 valuation_daily 一致(C9)"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -723,6 +735,7 @@
       }
     },
     {
+      "notes": "",
       "path": "scripts/upload-duckdb-wasm-r2.sh",
       "kind": "script",
       "module": "scripts",
@@ -731,8 +744,7 @@
         "purpose": "M5.2 运维脚本：把 duckdb-wasm bundle(wasm+worker)上传到 Cloudflare R2，供 Valuation screener 运行时加载(绕开 Pages 25MiB 单文件限制)",
         "invariants": "operator 步骤、每次 duckdb-wasm 版本 bump 跑一次(wasm 静态、不随 nightly 变);从 web/node_modules/@duckdb/duckdb-wasm/dist 取 4 文件(mvp/eh .wasm + .worker.js);wrangler 或 awscli(R2 S3 endpoint)二选一;.wasm→application/wasm、worker→text/javascript;凭证只在本地/operator env、绝不入库(同 Pages token);R2_BUCKET 必填",
         "verification": "R2_BUCKET=... bash scripts/upload-duckdb-wasm-r2.sh 上传 4 文件;缺文件报错;之后设 repo 变量 DUCKDB_R2_BASE 指向 bucket 公开 base URL"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1336,5 +1348,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "abeeaa7e2d59e139869c55654d7b7b248e882202dce9a44271727da6a1d46db3"
+  "last_structure_digest": "dbae301356fa5d112f3774d1416dea4f901a149c1a1e52bbaf0e0edb0430242a"
 }
