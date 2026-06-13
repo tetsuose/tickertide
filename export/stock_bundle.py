@@ -10,6 +10,14 @@ Self-contained per name (header + valuation card + 5 components too), so the Sto
 reads ONE file for any universe ticker, not board.json's top-N shortlist. Same daily_bars /
 valuation_daily / fundamentals_q as every other surface (C9): a ticker's P/S line here and
 its Ocean/Valuation P/S are the same numbers.
+
+The SECOND engine (ignition = early discovery, PRD §10.8) is carried per name too, so the
+Stock surface can show its 点火诊断 (ignition diagnostic) — the 5 raw self-relative components
+ig_* + the human-readable 点火证据 (breakout day / vol surge× / step-rate / reclaimed MA50) +
+the persistence streak — alongside the composite component stack. It is taken VERBATIM from
+derived_daily and assembled by board.py's _ignition (the canonical ignition-block builder),
+NEVER recomputed here (C9, same source as compute/run.py and board.json's Discovery cards).
+early⟷reliable does NOT touch ignition (PRD P7); the knob only re-weights composite.
 """
 from __future__ import annotations
 
@@ -23,6 +31,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from compute import db  # noqa: E402
+# Reuse board.py's canonical ignition-block builder (candidate gate + evidence windows) so the
+# Stock 点火诊断 is byte-for-byte the same shape/source as the Discovery card (C9, one builder —
+# no parallel copy to drift). _ignition is a pure (ig, bars) -> dict; HIST_BARS just sizes the
+# window the evidence is derived from (board pulls 260; we already pull HIST_DAYS=504, both end
+# at the snapshot, and the evidence windows are the trailing 50/60 bars — identical either way).
+from export.board import _ignition  # noqa: E402
 
 DATA_DIR = ROOT / "web" / "public" / "data"
 STOCK_DIR = DATA_DIR / "stock"
@@ -47,12 +61,18 @@ def _iso(d) -> str | None:
     return None if d is None else str(d)
 
 
-def _price(con, ticker: str, snap) -> dict:
-    bars = con.execute(
+def _bars(con, ticker: str, snap) -> list[tuple]:
+    """Raw daily bars (oldest→newest) — the ONE fetch the price stack and the ignition
+    evidence both read (same source, C9). Tuple order (date, open, high, low, close,
+    adj_close, volume) matches what board._ignition expects (adj_close=[5], volume=[6])."""
+    return con.execute(
         "SELECT date, open, high, low, close, adj_close, volume FROM daily_bars "
         "WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT ?",
         [ticker, snap, HIST_DAYS],
     ).fetchall()[::-1]
+
+
+def _price(con, ticker: str, snap, bars: list[tuple]) -> dict:
     ma_rows = con.execute(
         "SELECT date, ma50, ma150, ma200 FROM derived_daily "
         "WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT ?",
@@ -102,7 +122,9 @@ def _ps_series(con, ticker: str, snap) -> list[dict]:
 
 def build_bundle(con, ticker: str, snap) -> dict:
     head = con.execute(
-        "SELECT u.name, u.sector, u.mktcap, d.composite, d.c_rs, d.c_high, d.c_trend, d.c_vol, d.c_accel "
+        "SELECT u.name, u.sector, u.mktcap, d.composite, d.c_rs, d.c_high, d.c_trend, d.c_vol, d.c_accel, "
+        "d.ignition, d.ign_pct, d.ign_persist_days, d.ig_accel, d.ig_expand, d.ig_vsurge, "
+        "d.ig_breakout, d.ig_rsturn, d.ma50 "
         "FROM derived_daily d LEFT JOIN universe u ON u.ticker = d.ticker "
         "WHERE d.ticker = ? AND d.date = ?",
         [ticker, snap],
@@ -114,6 +136,22 @@ def build_bundle(con, ticker: str, snap) -> dict:
     ).fetchone()
     chips = db.theme_membership_asof(con, snap, ticker=ticker)
     themes = [{"theme": r.theme, "exposure": _num(r.exposure, 3)} for r in chips.itertuples()]
+
+    bars = _bars(con, ticker, snap)
+
+    # ignition (PRD §10.8) — verbatim from derived_daily, assembled by board.py's canonical
+    # _ignition (C9, never recomputed). Same builder + same bars source as the Discovery card,
+    # so a name's 点火诊断 here and its Discovery 点火证据 are identical. `_vsurge_recon` is an
+    # internal C9 guard hook used by board.build_board; the bundle drops it.
+    ignition = None
+    if head is not None and head[9] is not None:
+        ig = {
+            "ignition": head[9], "ign_pct": head[10], "ign_persist_days": head[11],
+            "ig_accel": head[12], "ig_expand": head[13], "ig_vsurge": head[14],
+            "ig_breakout": head[15], "ig_rsturn": head[16], "ma50": head[17],
+        }
+        ignition = _ignition(ig, bars)
+        ignition.pop("_vsurge_recon", None)
 
     valuation = None
     if val is not None:
@@ -138,8 +176,9 @@ def build_bundle(con, ticker: str, snap) -> dict:
             "rs": _num(head[4], 4), "high": _num(head[5], 4), "trend": _num(head[6], 4),
             "vol": _num(head[7], 4), "accel": _num(head[8], 4),
         } if head else None,
+        "ignition": ignition,
         "valuation": valuation,
-        "price": _price(con, ticker, snap),
+        "price": _price(con, ticker, snap, bars),
         "revenue_q": _revenue_q(con, ticker, snap),
         "ps_series": _ps_series(con, ticker, snap),
     }
