@@ -20,11 +20,13 @@ describe('C9: frontend composite port matches the engine (fixed weighting, no kn
     expect(WEIGHTS.rs + WEIGHTS.high + WEIGHTS.trend + WEIGHTS.vol + WEIGHTS.accel).toBeCloseTo(1, 12)
   })
 
-  it('matches the engine-exported weights_default byte-for-byte', () => {
-    // the board ships weights_default = round(weights(k),4) at its snapshot k. With the
-    // knob gone the snapshot is fixed at k=0.5, so WEIGHTS must equal weights_default.
+  it('matches the engine snapshot weights round(weights(0.5),4) (knob gone, board no longer ships weights_default)', () => {
+    // With the early⟷reliable knob removed (PRD §16) the board snapshot is fixed at
+    // k=0.5 and no longer exports weights_default; WEIGHTS must equal the engine's
+    // round(weights(0.5),4) — the per-component parity the export field used to lock.
+    const engineK05 = { rs: 0.215, high: 0.22, trend: 0.17, vol: 0.12, accel: 0.275 }
     for (const key of ['rs', 'high', 'trend', 'vol', 'accel'] as const) {
-      expect(WEIGHTS[key]).toBeCloseTo(data.weights_default[key], 4)
+      expect(WEIGHTS[key]).toBeCloseTo(engineK05[key], 4)
     }
   })
 

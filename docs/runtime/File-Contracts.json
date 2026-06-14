@@ -1090,7 +1090,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "C9 单测 + AC-M1/AC-M7 渲染测试用样本 board.json（export/board.py 真实产物，30 票，含 ignition 块）",
-        "invariants": "export/board.py 产物、含 components c_* + 导出 composite + knob_default_k + 每票 ignition 块(ignition/ign_pct/ign_persist_days/candidate/components{}/evidence{})；≥18 票满足 AC-M1「≥18 卡」、≥1 票 candidate=true 供 AC-M7 持续点火排序断言、含 step_rate_ratio>20 票供 clamp 断言；固定供回归对拍；非运行时数据(运行时走 public/data、gitignore)",
+        "invariants": "export/board.py 产物、含 components c_* + 导出 composite + 每票 ignition 块(ignition/ign_pct/ign_persist_days/candidate/components{}/evidence{})；early⟷reliable 旋钮已取消(PRD §16)故不再含 knob_default_k/weights_default 顶层字段；≥18 票满足 AC-M1「≥18 卡」、≥1 票 candidate=true 供 AC-M7 持续点火排序断言、含 step_rate_ratio>20 票供 clamp 断言；固定供回归对拍；非运行时数据(运行时走 public/data、gitignore)",
         "verification": "composite.test.ts + Discovery.test.tsx 据此对拍/渲染；fixture 与 fresh export byte-identical(同 seed 确定可复现)"
       }
     },
@@ -1186,7 +1186,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "C9 parity 单测(vitest)：前端固定权重 composite vs 引擎导出对拍（旋钮已取消）",
-        "invariants": "WEIGHTS = weights(k=0.5) 命中公式(代入 0.5)、Σ=1、= 引擎导出 weights_default(byte)；对 board.sample.json 每票 composite() 与导出 composite 漂移<0.02",
+        "invariants": "WEIGHTS = weights(k=0.5) 命中公式(代入 0.5)、Σ=1、= 引擎 round(weights(0.5),4)(rs=.215/high=.22/trend=.17/vol=.12/accel=.275)逐分量一致——旋钮已取消(PRD §16)、board 不再导出 weights_default 故改对引擎公式而非该字段；对 board.sample.json 每票 composite() 与导出 composite 漂移<0.02",
         "verification": "npm test(vitest run)全绿（本文件 4 用例）"
       }
     },
@@ -1198,8 +1198,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "C9 前端 composite 固定权重：WEIGHTS = compute/signals.py weights(k=0.5) 常量 + 100·Σwᵢ·cᵢ（early⟷reliable 旋钮已取消，PRD §16，无 weights(k) 函数）",
-        "invariants": "WEIGHTS = weights(0.5)(rs=.215/high=.22/trend=.17/vol=.12/accel=.275)、Σ=1、与引擎导出 weights_default 逐位一致(C9)；composite(c) 用固定 WEIGHTS·导出 c_*、绝不在前端 re-derive 引擎；前端不重算 composite——app 直接读引擎导出的 composite(stock.composite/meta.composite)，composite() 仅作导出值缺失时的 fallback + 角标里显每分量固定权重%；前端唯一固定权重来源",
-        "verification": "composite.test.ts(vitest)对拍：WEIGHTS=weights(0.5)+Σ=1+=weights_default+composite() 复现导出 composite(<0.02)；Python signals.weights(0.5) 交叉对照逐位相等"
+        "invariants": "WEIGHTS = weights(0.5)(rs=.215/high=.22/trend=.17/vol=.12/accel=.275)、Σ=1、与引擎 round(weights(0.5),4) 逐位一致(C9——旋钮已取消、board 不再导出 weights_default)；composite(c) 用固定 WEIGHTS·导出 c_*、绝不在前端 re-derive 引擎；前端不重算 composite——app 直接读引擎导出的 composite(stock.composite/meta.composite)，composite() 仅作导出值缺失时的 fallback + 角标里显每分量固定权重%；前端唯一固定权重来源",
+        "verification": "composite.test.ts(vitest)对拍：WEIGHTS=weights(0.5)+Σ=1+=引擎 round(weights(0.5),4)+composite() 复现导出 composite(<0.02)；Python signals.weights(0.5) 交叉对照逐位相等"
       }
     },
     {

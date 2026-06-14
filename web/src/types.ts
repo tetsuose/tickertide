@@ -118,10 +118,6 @@ export interface Stock {
 export interface BoardData {
   schema_version: number
   as_of_date: string
-  /** the engine's snapshot knob (fixed 0.5) + its weights — the early⟷reliable knob is
-   * gone (PRD §16); the app reads `composite` directly and uses composite.ts WEIGHTS. */
-  knob_default_k: number
-  weights_default: Components
   composite_recon_max_drift: number
   count: number
   valuation_coverage: number

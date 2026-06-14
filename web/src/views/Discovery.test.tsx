@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import board from '../lib/__fixtures__/board.sample.json'
 import Discovery from './Discovery'
 import EvidenceCard from '../components/EvidenceCard'
-import { composite } from '../lib/composite'
+import { WEIGHTS, composite } from '../lib/composite'
 import type { BoardData, Stock } from '../types'
 
 // AC-M1 / AC-M7 (PRD §14, §10.8) as a committed regression gate: render Discovery +
@@ -16,7 +16,7 @@ const order = (html: string) => [...html.matchAll(/ec-tk">\s*([A-Za-z0-9]+)/g)].
 const score = (i: number) => data.stocks[i].composite ?? composite(data.stocks[i].components)
 const card = (i: number, defaultOpen = false) =>
   renderToStaticMarkup(
-    <EvidenceCard stock={data.stocks[i]} weights={data.weights_default} score={score(i)} defaultOpen={defaultOpen} />,
+    <EvidenceCard stock={data.stocks[i]} weights={WEIGHTS} score={score(i)} defaultOpen={defaultOpen} />,
   )
 
 // Sustained-ignition sort key (PRD §10.8.2): candidate first, then persist desc, then pct desc.
