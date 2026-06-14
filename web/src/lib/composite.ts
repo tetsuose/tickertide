@@ -11,7 +11,8 @@ import type { Components } from '../types'
 // exists only so the expandable badge can show each component's weight % (informed
 // consent — composite = Σ wᵢ·cᵢ, no black box) and so `composite()` can fill a value
 // when the engine emitted components but no composite. Parity with the engine's
-// exported weights_default is locked by composite.test.ts.
+// weights(0.5) is locked by composite.test.ts (the board no longer ships a
+// weights_default field — the early⟷reliable knob is gone, PRD §16).
 export const WEIGHTS: Components = {
   rs: 0.215,
   high: 0.22,

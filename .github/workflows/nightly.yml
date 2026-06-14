@@ -59,12 +59,13 @@ jobs:
       - name: export (board + ocean + rotation + theme)
         run: make export
 
-      - name: cross-surface C9 (rotation + theme + ocean + valuation ↔ board)
+      - name: cross-surface C9 (rotation + theme + ocean + valuation + ignition ↔ board)
         run: |
           make rotation-c9
           make theme-c9
           make ocean-c9
           make valuation-c9
+          make ignition-c9
 
       - name: web build (static dist, data bundled from public/data)
         # VITE_DUCKDB_R2_BASE points the Valuation screener's duckdb-wasm at the R2-hosted

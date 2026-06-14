@@ -3,9 +3,9 @@
 Reads the latest derived_daily/valuation_daily snapshot and assembles the
 evidence-first Discovery board (PRD §9.3, ROADMAP M1.1). One JSON object per
 stock: identity, engine composite + the 5 raw components c_* (so the client can
-re-weight by the early<->reliable knob k WITHOUT recomputing the engine — C9),
-6 raw evidence numbers, a ~90d OHLCV mini-chart, latest valuation with as-of
-freshness, and the previous-day composite for d/d.
+show each component's weight in the fixed-weight composite WITHOUT recomputing
+the engine — C9), 6 raw evidence numbers, a ~90d OHLCV mini-chart, latest
+valuation with as-of freshness, and the previous-day composite for d/d.
 
 Three evidence numbers are NOT materialised in derived_daily; they are derived
 here from the SAME daily_bars the mini-chart ships, so card and chart stay
@@ -23,7 +23,9 @@ top-decile persistence streak, the 5 raw self-relative components ig_* verbatim
 from derived_daily (NEVER recomputed here — C9, same source as compute/run.py),
 and an `ign_candidate` flag = ign_pct>=90 AND ign_persist_days>=IGN_PERSIST_MIN
 (the persistence filter, PRD §10.8.2 — instantaneous ignition has no lift; only
-sustained ignition does). early<->reliable does NOT touch ignition (PRD P7).
+sustained ignition does). ignition is the project core and has no tunable
+parameter; the early<->reliable knob is gone (PRD §16) — composite is the
+fixed-weight (k=0.5) confirmation side-read, ignition the discovery engine.
 
 The ignition card also ships human-readable 点火证据 (ignition evidence) — the
 plain-language form of what lit the engine: breakout day / volume surge× /
@@ -34,8 +36,9 @@ from the SAME bars the chart ships (same windows ignition.py uses: BREAKOUT_WIN
 mirrors the raw components without re-scoring the engine.
 
 This export carries each engine's score verbatim and never recomputes it; the
-early<->reliable re-weighting is the client's job from the exported c_* (C9). As
-a guard, build_board reconstructs 100·Σ weights(k)·c_* at the snapshot k and
+client reads the exported composite directly and uses the c_* only to show each
+component's contribution at the fixed weighting (C9 — the knob is gone). As a
+guard, build_board reconstructs 100·Σ weights(k)·c_* at the snapshot k and
 checks it reproduces derived_daily.composite, AND reconstructs ignition from the
 exported raw vsurge/breakout vs the stored component to catch ignition drift, so
 an engine/export drift fails loudly here instead of silently in the browser.
@@ -379,8 +382,6 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
     return {
         "schema_version": SCHEMA_VERSION,
         "as_of_date": _iso(snap),
-        "knob_default_k": k,
-        "weights_default": {key: round(v, 4) for key, v in w.items()},
         "composite_recon_max_drift": round(max_drift, 9),
         "ignition_recon_max_drift": round(ign_max_drift, 9),
         "ignition_persist_min": IGN_PERSIST_MIN,
@@ -397,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="output JSON path")
     ap.add_argument("--k", type=float, default=0.5,
-                    help="snapshot early<->reliable knob; must match the k `make compute` used")
+                    help="composite fixed weighting (knob removed, PRD §16); must match the k `make compute` used")
     ap.add_argument("--limit", type=int, default=None, help="cap to top-N by composite (default: all)")
     ap.add_argument("--min-bars", type=int, default=60, help="skip stocks with fewer bars")
     args = ap.parse_args(argv)
