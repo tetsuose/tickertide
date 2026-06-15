@@ -3,21 +3,15 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import board from '../lib/__fixtures__/board.sample.json'
 import Discovery from './Discovery'
 import EvidenceCard from '../components/EvidenceCard'
-import { WEIGHTS, composite } from '../lib/composite'
 import type { BoardData, Stock } from '../types'
 
-// AC-M1 / AC-M7 (PRD §14, §10.8) as a committed regression gate: render Discovery +
-// EvidenceCard from the real exported fixture (board.sample.json — export/board.py
-// product, now carrying the ignition block) via react-dom/server and assert the
-// milestone's user-visible contract. No browser needed.
+// AC-M1 / AC-M7 / M8 (PRD §14, §10.8) as a committed regression gate: render Discovery +
+// EvidenceCard from the real exported fixture (board.sample.json — export/board.py product,
+// carrying the ignition block) via react-dom/server and assert the milestone's user-visible
+// contract. M8: the card is ignition-first; composite is no longer shown. No browser needed.
 const data = board as unknown as BoardData
 const order = (html: string) => [...html.matchAll(/ec-tk">\s*([A-Za-z0-9]+)/g)].map((m) => m[1])
-// composite is now the engine's exported value at the fixed weighting (no knob, PRD §16).
-const score = (i: number) => data.stocks[i].composite ?? composite(data.stocks[i].components)
-const card = (i: number, defaultOpen = false) =>
-  renderToStaticMarkup(
-    <EvidenceCard stock={data.stocks[i]} weights={WEIGHTS} score={score(i)} defaultOpen={defaultOpen} />,
-  )
+const card = (i: number) => renderToStaticMarkup(<EvidenceCard stock={data.stocks[i]} />)
 
 // Sustained-ignition sort key (PRD §10.8.2): candidate first, then persist desc, then pct desc.
 const ignKey = (s: Stock): [number, number, number] => [
@@ -44,19 +38,6 @@ describe('AC-M1: Discovery evidence-card board', () => {
   it('card carries the 6 raw evidence fields', () => {
     const html = card(0)
     for (const label of ['1M', '3M', '6M', 'from high', 'week', 'vol']) expect(html).toContain(label)
-  })
-
-  it('expanded badge reveals 5 components + weights (no black box)', () => {
-    const html = card(0, true)
-    for (const c of ['RS', '52WH', 'TREND', 'VOL', 'ACCEL']) expect(html).toContain(c)
-    expect(html).toContain('无黑箱')
-    expect(html).toContain('%')
-  })
-
-  it('annotates d/d (day-over-day composite)', () => {
-    const i = data.stocks.findIndex((s) => s.composite != null && s.composite_prev != null)
-    expect(i).toBeGreaterThanOrEqual(0)
-    expect(/[▲▼]/.test(card(i))).toBe(true)
   })
 
   it('renders the mini-chart SVG with MA lines + 52w dashed line', () => {
@@ -110,21 +91,21 @@ describe('AC-M7: Discovery is the sustained-ignition board (not composite)', () 
   })
 
   it('ignition order differs from a pure composite ranking (proves it is NOT composite-sorted)', () => {
+    // composite still exists in the engine export (calc-layer), but it no longer drives any
+    // order or UI — the board order must not coincide with a composite ranking.
     const compOrder = [...data.stocks]
-      .sort((a, b) => (b.composite ?? composite(b.components)) - (a.composite ?? composite(a.components)))
+      .sort((a, b) => (b.composite ?? 0) - (a.composite ?? 0))
       .map((s) => s.ticker)
     expect(expectedIgnOrder(data.stocks)).not.toEqual(compOrder)
   })
 
-  it('composite is still shown as a fixed-weight side-read badge (the engine value, not dead)', () => {
-    // composite no longer tracks a knob (it is gone), but it stays a live side-read: the
-    // card renders the engine's exported composite at the fixed weighting, score-colored.
+  it('M8: composite is NOT shown on the card (no badge, no 5-component panel)', () => {
     const i = data.stocks.findIndex((s) => s.composite != null)
     expect(i).toBeGreaterThanOrEqual(0)
     const html = card(i)
-    expect(html).toContain('ec-badge')
-    // the badge shows the engine's composite, rounded
-    expect(html).toContain(`>${(data.stocks[i].composite as number).toFixed(0)} `)
+    expect(html).not.toContain('ec-badge')          // composite badge removed
+    expect(html).not.toContain('ec-comp')           // composite 5-component panel removed
+    expect(html).not.toContain('Σ wᵢ')              // composite formula note removed
   })
 })
 

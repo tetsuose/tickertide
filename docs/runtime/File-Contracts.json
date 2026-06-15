@@ -249,9 +249,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "rotation compute：bucket_bars + spx_daily 周线 RS-Ratio(JdK 透明 reconstruction) → bucket_rrg(M3.2)；league_table 按 bucket_type 聚合 per-bucket 成员(breadth/at-52w-high/composite 中位/agg EV-S/多 horizon rel return)供 export。M4.3：bucket_type='theme' 整路复用(对 theme index 价做同一 RS-Ratio)，仅 league 成员源换为 theme_membership(point-in-time)",
-        "invariants": "周线(daily resample 周五收盘)；RS=100×P_bucket/P_spx(price relative)、M=EMA(rs,n1)、rs_ratio=100+k·(M−SMA(M,n2))/σ(M,n2)(z-score recenter 100，>100=跑赢自身近期趋势)；momentum=rs_ratio 斜率、RS-Momentum 归一量已砍(PRD §16)；n1/n2/k 暴露 PARAMS 透明 reconstruction、不声称复刻 StockCharts/de Kempenaer；compute_rotation 只读 bucket_bars+spx_daily、绝不碰 universe 横截面(隔离 PRD §16)、且按 bucket_type 限域清 bucket_rrg(sector/theme 共表共存)；point-in-time 关键在 theme index 构建(theme_index.py，M4.2)非此处 z-score —— rotation 对 theme index 价做的 RS-Ratio 算法与 sector 完全同一(不翻案)，sector z-score temporal、theme 的 PIT 已由 index 序列承载；league 成员源由 bucket_type 决定 —— sector→universe.sector、theme→theme_membership_asof(point-in-time、exposure>0、多对多：一票可计入 AI+SEMI 两行)，成员量(breadth/at-high/composite 中位/agg_evs)取自 derived_daily/valuation_daily 同源可追溯(C9)、不持久化、不造成员卡(走 board.json，DRY)；infer_state/slope_4w 是 state/Δ4w 单一口径",
-        "verification": "make fixture-pipeline + theme_index 后 python3 compute/rotation.py --bucket-type theme：bucket_rrg theme ≥4 周序列、rs_ratio ~95-105、4 态可推；theme league member_count 与 theme_membership_asof(latest)逐 theme 一致、composite_median 与直接查 derived_daily 该 theme PIT 成员 median 逐位一致(C9)、TT01 计入 AI+SEMI(多对多)；clear 限域：跑 sector 再跑 theme 后 bucket_rrg 仍含 11 sector + 4 theme(共存)；M3 回归：sector 路径 make rotation-c9 仍 GATE_PASS"
+        "purpose": "rotation compute：bucket_bars + spx_daily 周线 RS-Ratio(JdK 透明 reconstruction) → bucket_rrg(M3.2)；league_table 按 bucket_type 聚合 per-bucket 成员(breadth/at-52w-high/# igniting/# candidates/agg EV-S/多 horizon rel return)供 export。M4.3：bucket_type='theme' 整路复用(对 theme index 价做同一 RS-Ratio)，仅 league 成员源换为 theme_membership(point-in-time)",
+        "invariants": "周线(daily resample 周五收盘)；RS=100×P_bucket/P_spx(price relative)、M=EMA(rs,n1)、rs_ratio=100+k·(M−SMA(M,n2))/σ(M,n2)(z-score recenter 100，>100=跑赢自身近期趋势)；momentum=rs_ratio 斜率、RS-Momentum 归一量已砍(PRD §16)；n1/n2/k 暴露 PARAMS 透明 reconstruction、不声称复刻 StockCharts/de Kempenaer；compute_rotation 只读 bucket_bars+spx_daily、绝不碰 universe 横截面(隔离 PRD §16)、且按 bucket_type 限域清 bucket_rrg(sector/theme 共表共存)；point-in-time 关键在 theme index 构建(theme_index.py，M4.2)非此处 z-score —— rotation 对 theme index 价做的 RS-Ratio 算法与 sector 完全同一(不翻案)，sector z-score temporal、theme 的 PIT 已由 index 序列承载；league 成员源由 bucket_type 决定 —— sector→universe.sector、theme→theme_membership_asof(point-in-time、exposure>0、多对多：一票可计入 AI+SEMI 两行)，成员量(breadth/at-high/# igniting=ign_pct≥90/# candidates=持续点火 gate(ign_pct≥90 且 persist≥5)/agg_evs)取自 derived_daily/valuation_daily 同源可追溯(C9，M8 起以 ignition 聚合替代 composite 中位)、不持久化、不造成员卡(走 board.json，DRY)；infer_state/slope_4w 是 state/Δ4w 单一口径",
+        "verification": "make fixture-pipeline + theme_index 后 python3 compute/rotation.py --bucket-type theme：bucket_rrg theme ≥4 周序列、rs_ratio ~95-105、4 态可推；theme league member_count 与 theme_membership_asof(latest)逐 theme 一致、igniting/candidates 与直接查 derived_daily 该 theme PIT 成员(ign_pct≥90 / 且 persist≥5)计数逐位一致(C9)、TT01 计入 AI+SEMI(多对多)；clear 限域：跑 sector 再跑 theme 后 bucket_rrg 仍含 11 sector + 4 theme(共存)；M3 回归：sector 路径 make rotation-c9 仍 GATE_PASS"
       }
     },
     {
@@ -549,9 +549,9 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M2.5 C9 跨 surface 校验：ocean.json 点位可追溯到 Stock/Discovery 数字（AC-M2「Ocean 点位与 Stock 数字一致」）",
-        "invariants": "读同一 DB 导出的 board.json + ocean.json，对最新快照逐票断言：as_of 同日；rs=ocean.pts[-1].rs == board.components.rs×100(同 derived_daily.rs_pct)；ps=ocean.pts[-1].ps == board.valuation.ps(同 valuation_daily.ps)；容差仅取整(rs 0.1/ps 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
-        "verification": "make ocean-c9（先 fixture-pipeline + make export 出两份）→ GATE_PASS、shared/rs_checked/ps_checked 计数一致；构造不符可触发 GATE_FAIL"
+        "purpose": "M8 C9 跨 surface 校验：ocean.json(v2) 点位可追溯到 board/Discovery 数字（AC-M8「海平面以上点 = Discovery candidate」）",
+        "invariants": "读同一 DB 导出的 board.json + ocean.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean.pts[-1].ign_pct == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean.pts[-1].candidate == board.ignition.candidate(同持续点火 gate)；ps=ocean.pts[-1].ps == board.valuation.ps(同 valuation_daily.ps)；容差仅取整(ign 0.1/ps 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
+        "verification": "make ocean-c9（先 fixture-pipeline + make export 出两份）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked 计数一致；构造不符可触发 GATE_FAIL"
       }
     },
     {
@@ -562,8 +562,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "C9 跨 surface 校验(AC-M3/AC-M4)：rotation league 与 board.json 成员聚合一致；按 rotation 文件 bucket_type 分组 board 成员(sector→universe.sector / theme→board theme chips)，gate sector(rotation.json)与 theme(rotation.theme.json)两导出",
-        "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 bucket 成员数、composite_median==median(board 同 bucket composite)；theme 分组按 board 每票 themes chips(多对多：一票计入其每个 PIT theme)、故 theme league PIT 成员须与 board PIT theme chips 一致(闭环 theme C9)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐，已注释标注)",
-        "verification": "make rotation-c9(sector)：GATE_PASS、member_count/composite_median 11 sector 逐一致；theme：python3 export/check_rotation.py --rotation web/public/data/rotation.theme.json GATE_PASS(4 theme member_count/composite_median 逐一致、members⊆board)；mismatch 退非 0"
+        "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 bucket 成员数、igniting==board 同 bucket ign_pct≥90 数、candidates==board 同 bucket candidate 数(M8：ignition 聚合替代 composite 中位)；theme 分组按 board 每票 themes chips(多对多：一票计入其每个 PIT theme)、故 theme league PIT 成员须与 board PIT theme chips 一致(闭环 theme C9)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐，已注释标注)",
+        "verification": "make rotation-c9(sector)：GATE_PASS、member_count/igniting/candidates 11 sector 逐一致；theme：python3 export/check_rotation.py --rotation web/public/data/rotation.theme.json GATE_PASS(4 theme member_count/igniting/candidates 逐一致、members⊆board)；mismatch 退非 0"
       }
     },
     {
@@ -597,9 +597,9 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M2.1 导出：DuckDB 周度快照 → web/public/data/ocean.json（Ocean wide-explore 散点每票 N 周 RS×估值位置序列，供 scrubber + pin trail）",
-        "invariants": "每票 pts[] 与 weeks[] 对齐(老→新)：rs=derived_daily.rs_pct(0-100 横截面，与 Discovery/Stock 同列同源、点位可追溯 C9)、val=common-vintage 百分位(0-100，底=便宜，§10.5)、ps=val 背后的原始倍数(供 hover tip §9.2，与位置同周)；val 一律经 compute.valuation.common_vintage 计算(M2 Ocean 与 M5 Valuation 复用同一函数、口径不分叉 C9)；weeks=各 ISO 周最后交易日(date_trunc('week'))、最新周==最新快照(==board.json as_of)故 Ocean 当前位与 Stock 数字一致；入选票=最新周同时有 rs 且 fresh val(有可渲染 (x,y))，stale/n.m./无基本面者无 y 坐标→不导出(符合 §10.5 stale 不进 percentile)，历史周缺 rs/fresh-val 则该 pt=null(不伪造位置)；mktcap 原始 USD(同 board.json)；输出为派生物、gitignore、不含任何 key/secret",
-        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 len(pts)==n_weeks 且最新 pt 非空；val orientation 最便宜 ps 的 val 不高于最贵=底=便宜)；ocean.json rs/val∈[0,100]、ps>0、weeks 老→新且 weeks[-1]==max(derived_daily.date)；none/stale/overdue profile 票缺席；≥500 票 fixture 下 count≥500、size 几百 KB、export<1s"
+        "purpose": "M8 导出：DuckDB 日度快照 → web/public/data/ocean.json (schema v2)（Ocean = Ignition × Valuation 海平面图：每票最近 N 个交易日 pts 序列，y=ign_pct/x=原始 P/S(log)，供日期滑杆 + Play 相邻真实快照插值动画）",
+        "invariants": "schema_version=2；顶层 axis{x_metric:ps,x_scale:log,y_metric:ign_pct,sea_level:90} + dates[] + x_domain + count + stocks[]；每票 pts[] 与 dates[](老→新)对齐，pt 字段全部 C9 同源(前端不重算引擎)：ign_pct/ignition/ign_persist_days/candidate=derived_daily 同列(与 Discovery/board 逐票可追溯)、candidate=ign_pct≥90 AND persist≥5(=Discovery 持续点火 gate=海平面以上)、ps/evs/pe/ev_ebitda=valuation_daily、freshness=§10.5 as-of 档(date−as_of_period_end)、ret_10d/ret_1m=daily_bars adj_close/LAG-1(同 board 证据派生)、vol_mult=derived_daily.ig_vsurge(5/60 放量，存列读取)；入选票=最新日同时有有效 ign_pct 且 ps>0 且在 universe(有可渲染 (x,y))，历史日缺任一坐标则 pt=null(播放淡入/淡出，不伪造位置)；x_domain=窗口内所有有效 P/S 的[min,max](log 轴自动域、无写死估值阈值 §16)；mktcap 原始 USD(同 board.json)；输出为派生物、gitignore、不含任何 key/secret",
+        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 len(pts)==len(dates) 且最新 pt 非空；每非空 pt ign_pct∈[0,100]、ps>0；candidate⇒ign_pct≥90；x_domain 为正序区间)；dates 老→新且 dates[-1]==max(derived_daily.date)；`make ocean-c9` 证 ocean.pts[-1] ign_pct/candidate/ps 与 board 同源；≥500 票 fixture 下 count≥500、export<1s"
       }
     },
     {
@@ -1042,7 +1042,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "应用 shell：固定顶部控制栏（5 tab + IGNITION 引擎说明 + scope chip；early⟷reliable 旋钮已取消，PRD §9.0/§16）+ 中央 surface 面板 + 全局 scope/pinned 单一真源",
-        "invariants": "5 surface 固定顺序、默认 Discovery；无旋钮/无 k state——核心是 ignition、ignition 无可调参，顶栏只剩 tab 组 + 一行 IGNITION 引擎说明(enginenote) + scope chip；discovery 渲染 <Discovery scope pinned limit=DISCOVERY_LIMIT(20)>（board 上限 top-20，bounded/decide §9.3）、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余照传；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；composite 副读用引擎导出的固定权重(k=0.5)值、前端不重算(C9)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab，不再传 k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜；Valuation/Stock 视图已挂载、placeholder 分支移除；selectedTicker 状态 + openStock 路由让任意 surface(Discovery 卡 / Valuation 行)的 onOpen 切到 Stock per-name",
+        "invariants": "5 surface 固定顺序、默认 Discovery；无旋钮/无 k state——核心是 ignition、ignition 无可调参，顶栏只剩 tab 组 + 一行 IGNITION 引擎说明(enginenote) + scope chip；discovery 渲染 <Discovery scope pinned limit=DISCOVERY_LIMIT(20)>（board 上限 top-20，bounded/decide §9.3）、ocean 渲染 <Ocean scope setScope pinned setPinned>(lasso writer)、其余照传；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；composite 退出全部用户可见层(M8、Discovery/Stock/Rotation/App 均不显示，仅计算层暂存)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab，不再传 k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜；Valuation/Stock 视图已挂载、placeholder 分支移除；selectedTicker 状态 + openStock 路由让任意 surface(Discovery 卡 / Valuation 行)的 onOpen 切到 Stock per-name",
         "verification": "npm run build 通过；App.test SSR：顶栏不含 range 滑块/RELIABLE/EARLY/wbars，含 IGNITION enginenote；ocean tab 渲染 Ocean canvas；scope≠all 显 chip + 可清"
       }
     },
@@ -1065,9 +1065,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "evidence-card = Stock 的 collapsed 态（PRD §9.1.3 + §10.8）：头部 + 🔥持续点火标 + d/d + 可展开 composite 角标 + 点火证据 strip + theme tags + MiniChart + 6 原始字段",
-        "invariants": "证据优先、永不给 buy/target；点火榜上 composite 降为「已确认」副读角标（badge 显外部传入 score = 引擎导出的固定权重 composite、≥62/≥47 三档色、展开露 5 分量 c_*+各自固定权重% 无黑箱），无旋钮（early⟷reliable 已取消、composite 权重固定 k=0.5、可看不可拨），candidate 时显 🔥+ign_persist_days 标；点火证据 strip 取 stock.ignition.evidence 同源 derived_daily(C9 不重算)：突破日 breakout_day(MM-DD)+days_since_breakout、放量× vol_mult(=ig_vsurge 5/60 比，区别于 6 字段里的 50d vol)、步速比 step_rate_ratio(=ig_accel 可读形，显示 clamp ±20× 防 ret50≈0 爆值)、收复 MA50(reclaimed_ma50 即 ig_breakout gate)；d/d=引擎默认权重日变；点 badge 仅展开、点卡其他处 onOpen(Stock)",
-        "verification": "Discovery.test SSR 含 ticker/live score badge/d-d 箭头/6 字段/展开 5 分量+权重%/无黑箱/点火证据 strip(brk·vol·step·MA50)/🔥candidate 标/step_rate clamp(>20× 且原始爆值不 verbatim)/reclaimed 收复；build 通过"
+        "purpose": "evidence-card = Stock 的 collapsed 态（PRD §9.1.3 + §10.8，M8）：头部 + 🔥持续点火标(或 ign_pct 角标) + 点火证据 strip + theme tags + MiniChart + 6 原始字段。composite 已退出(无角标/无 d/d/无可展开面板)",
+        "invariants": "证据优先、永不给 buy/target；ignition-first：candidate 时显 🔥+ign_persist_days 标、否则显 ign_pct 角标(≥90=海平面以上=点亮)；composite 已退出(无 badge/无 d/d/无 5 分量展开，M8)；点火证据 strip 取 stock.ignition.evidence 同源 derived_daily(C9 不重算)：突破日 breakout_day(MM-DD)+days_since_breakout、放量× vol_mult(=ig_vsurge 5/60 比，区别于 6 字段里的 50d vol)、步速比 step_rate_ratio(=ig_accel 可读形，显示 clamp ±20× 防 ret50≈0 爆值)、收复 MA50(reclaimed_ma50 即 ig_breakout gate)；点卡任意处 onOpen(Stock)",
+        "verification": "Discovery.test SSR 含 ticker/ign_pct 或 🔥candidate 标/6 字段/无 composite 角标(ec-badge)与展开面板(M8)/点火证据 strip(brk·vol·step·MA50)/step_rate clamp(>20× 且原始爆值不 verbatim)/reclaimed 收复；build 通过"
       }
     },
     {
@@ -1113,9 +1113,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "AC-M2.2 Ocean 渲染测试用样本 ocean.json（export/ocean.py 真实产物，520 票 fixture→517 票×14 周）",
-        "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；每票 pts 与 weeks 对齐、最新周非空(≥500 可渲染点)；rs/val∈[0,100]、val 底=便宜；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)",
-        "verification": "Ocean.test.tsx import 后断言 count≥500、最新周全非空、每票 sector 可识别；再生命令见 Ocean.test.tsx notes"
+        "purpose": "AC-M8 Ocean 渲染测试用样本 ocean.json(schema v2)（export/ocean.py 真实产物，520 票 fixture→519 票×N 日；为控体积用 --days 4 导出）",
+        "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；schema_version=2、axis.sea_level=90；每票 pts 与 dates 对齐、最新日非空(≥500 可渲染点)；ign_pct∈[0,100]、ps>0；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)",
+        "verification": "Ocean.test.tsx import 后断言 count≥500、最新日全非空、每票 sector 可识别；再生命令见 Ocean.test.tsx notes"
       }
     },
     {
@@ -1126,7 +1126,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M3 Rotation 渲染测试用样本 rotation.json（export/rotation.py 真实产物，110 票 fixture→11 sector×52 周）",
-        "invariants": "export/rotation.py 对 fixture(seed 7、110 票)的真实产物、非手写；含 11 sector RS-Ratio 周序列 + 4 态 league(breadth/at-high/composite 中位/agg EV-S/rel return) + members ticker；供 M3.4 web SSR 测试(react-dom/server 断言 path 数=bucket 数、4 态标签、钻进 N=1)；fixture 确定性 → 提交版字节稳定",
+        "invariants": "export/rotation.py 对 fixture(seed 7、110 票)的真实产物、非手写；含 11 sector RS-Ratio 周序列 + 4 态 league(breadth/at-high/# igniting/# candidates/agg EV-S/rel return) + members ticker；供 M3.4 web SSR 测试(react-dom/server 断言 path 数=bucket 数、4 态标签、钻进 N=1)；fixture 确定性 → 提交版字节稳定",
         "verification": "JSON.parse 通过；buckets=11、weeks=52、4 态齐、各 bucket rs_ratio 长度=weeks；与 export/rotation.py 当前产物一致"
       }
     },
@@ -1245,8 +1245,8 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "board 驱动视图(Valuation/Stock)的共享展示格式化：fmtMktcap/num/pct/scoreColor + ignition 点火证据格式化(fmtStepRate/SR_CLAMP/fmtMonthDay)",
-        "invariants": "纯函数无 DOM、SSR 可测；null→em-dash；scoreColor 按附录C(≥62 hi/≥47 mid/else lo)；fmtStepRate 把步速比(ig_accel 可读形)显示 clamp 在 ±SR_CLAMP(=20×、display-only，引擎 ranked ig_accel 不受影响)、超界前缀 >/<，与 EvidenceCard(M7.3)本地副本同阈值同语义(共享主源，Stock 点火诊断复用此处而非另起一套)；fmtMonthDay 取 ISO 日期 MM-DD；EvidenceCard(M1/M7.3)仍保留本地副本、不动已验证代码(后续统一重构)",
+        "purpose": "board 驱动视图(Valuation/Stock)的共享展示格式化：fmtMktcap/num/pct + ignition 点火证据格式化(fmtStepRate/SR_CLAMP/fmtMonthDay)。scoreColor 已删(composite 退出用户可见层，M8)",
+        "invariants": "纯函数无 DOM、SSR 可测；null→em-dash；fmtStepRate 把步速比(ig_accel 可读形)显示 clamp 在 ±SR_CLAMP(=20×、display-only，引擎 ranked ig_accel 不受影响)、超界前缀 >/<，与 EvidenceCard(M7.3)本地副本同阈值同语义(共享主源，Stock 点火诊断复用此处而非另起一套)；fmtMonthDay 取 ISO 日期 MM-DD；EvidenceCard(M1/M7.3)仍保留本地副本、不动已验证代码(后续统一重构)",
         "verification": "Valuation/Stock 视图与其测试消费；Stock.test 断言 fmtStepRate clamp(>20× 显 &gt;20×)；tsc 通过"
       }
     },
@@ -1281,9 +1281,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Ocean canvas 纯绘制库：固定 RS×Val 平面的几何/配色/尺寸 helpers + drawOcean 单次绘制一周快照(含 pinned trail/arrow + lasso rect) + nearestPoint/pointsInRect 命中测试（PRD §9.2）",
-        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；domain 0-100→像素、sy 反转故 val=0 在底=便宜(§9.2)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色三模式返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；quadrant 强(rs≥50)+便宜(val<50)=lead/强+贵=weak/弱+便宜=improving/弱+贵=dim；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawOcean 画象限 tint+(50,50)十字线+当周点(in-scope/主题成员全径、否则淡至 1.2px C10)+可选 hover 白环+pinned 装饰(彩色 trail 断 null 段+当前位箭头+ticker 标签)仅当 pinned 数≤TRAIL_CAP(8) 时整画、超过则每只仅留强调点(无 trail/箭头/label)由 scope 淡化承载选择(C2 认知带宽守卫，防 lasso 大区域 trail spaghetti)+lasso 选框，并返回非淡点屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
-        "verification": "Ocean.test.tsx：radiusFor/makeScales(底=便宜)/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope(pinned) 纯测；drawOcean mock-ctx 在 517 票 fixture 画 ≥500 arc 落框内 + 静态层 + scope 淡化 + hover ring + pinned trail(多 stroke + ticker fillText) + 大 pinned(>TRAIL_CAP) 不画 N 条 trail(text 空、仅强调点) + lasso rect(多 fillRect+stroke) + 切周点位移动"
+        "purpose": "Ocean canvas 纯绘制库（M8 海平面图）：log P/S 横轴 + ign_pct 纵轴 + 海平面(ign_pct 90)几何/配色/尺寸 helpers + interpolateOceanPoint 插值 + drawOcean 单次绘制一动画帧(含 candidate glow + pinned 标记 + lasso rect) + nearestPoint/pointsInRect 命中测试（PRD §9.2）",
+        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；makeScales：x=log10 P/S 映射 x_domain→宽、y=ign_pct 0-100(sy 反转故 0 在底)、seaY=sy(sea_level)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色两模式(sector/theme)返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；inScope 按 scope 判定(pinned=ticker∈pinned 集)；interpolateOceanPoint(prev,next,phase)：两点都有→x(log)/y lerp + snap 取最近真实快照、prev only→淡出(fade=1-phase)、next only→淡入(fade=phase)、都无→null(状态恒取真实 snapshot 不伪造)；drawOcean 画海平面以下压暗 + 以上高亮 + waterline(ign 90) + P/S log 网格 + ign 轴刻度 + 当帧点(in-scope 按是否点亮 0.5/0.92、否则淡至 1.2px C10、candidate 加 glow halo + 亮环)+可选 hover 白环 + pinned 强调点(≤PIN_LABEL_CAP 标 ticker，C2)+lasso 选框，并返回非淡点(插值后)屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)、命中用当帧插值位置；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
+        "verification": "Ocean.test.tsx：radiusFor/makeScales(海平面=sy(90)、log P/S 单调)/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/interpolateOceanPoint(双有 lerp、prev-only 淡出、next-only 淡入、都无 null)/nearestPoint/pointsInRect/inScope 纯测；drawOcean mock-ctx 在 519 票 fixture 返回 ≥500 drawn 落框内 + 海平面背景层 + scope 淡化 + hover ring + candidate glow(多 arc+stroke) + 海平面上下 y 摆位 + 切日点位移动 + pinned 标签"
       }
     },
     {
@@ -1330,7 +1330,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1/M7.2) + ocean.json(M2.1) + rotation.json(M3.3) + stock bundle(M5.3/M7.4) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；OceanData/OceanStock/OceanPt：pts 与 weeks 对齐、pt 可空、rs/val∈[0,100] val 底=便宜；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
+        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；OceanData/OceanStock/OceanPt/OceanAxis(M8 v2)：pts 与 dates 对齐、pt 可空(播放淡入/出)、非空 pt ign_pct∈[0,100]+ps>0+candidate+估值倍数+freshness，axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData、Stock 按 StockBundle(含 ignition)消费无类型错"
       }
     },
@@ -1342,7 +1342,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M1 + AC-M7 + AC-M2.4 渲染 gate（vitest）：SSR 渲染 Discovery/EvidenceCard 断言里程碑可见契约 + 持续点火排序 + 点火证据 + 全局 scope 过滤",
-        "invariants": "renderToStaticMarkup 断言：AC-M1 ≥18 卡 / 6 字段 / 展开 5 分量+固定权重+无黑箱 / d-d 箭头 / mini chart svg+MA+52w；AC-M7 持续点火排序=candidate→ign_persist_days desc→ign_pct desc(candidate 浮顶、高 persist 先、整体序≠纯 composite 序)、唯一序=持续点火(Discovery 无 k prop、旋钮已取消 PRD §16)、composite 副读=引擎导出的固定权重值(score badge 显该值、活的非死)、点火证据 strip(brk/vol/step/MA50)+🔥candidate 标+step_rate clamp(>20× 原始爆值不 verbatim)+收复 MA50；AC-M2.4 scope=sector|pinned 过滤、scope=all 全显(C10)；无浏览器、用 board.sample.json fixture(含 ignition 块)；composite 取 stock.composite(composite() 仅 fallback)",
+        "invariants": "renderToStaticMarkup 断言：AC-M1 ≥18 卡 / 6 字段 / mini chart svg+MA+52w；AC-M7 持续点火排序=candidate→ign_persist_days desc→ign_pct desc(candidate 浮顶、高 persist 先、整体序≠纯 composite 序)、唯一序=持续点火(Discovery 无 k prop、旋钮已取消 PRD §16)、卡片无 composite 角标(M8、断言 ec-badge/ec-comp 不出现)、点火证据 strip(brk/vol/step/MA50)+🔥candidate 标+step_rate clamp(>20× 原始爆值不 verbatim)+收复 MA50；AC-M2.4 scope=sector|pinned 过滤、scope=all 全显(C10)；无浏览器、用 board.sample.json fixture(含 ignition 块)；composite 仅作「序≠composite」对照(读 stock.composite，UI 不再渲染，M8)",
         "verification": "npm test / make web-test 全绿（本文件 19 用例）"
       }
     },
@@ -1354,8 +1354,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Discovery 持续点火榜（PRD §9.3 + §10.8）：2 列 evidence-card 网格、respect 全局 scope 后按持续点火排序（非 composite）",
-        "invariants": "先按全局 scope filter(all/sector/theme/pinned 由 App 透传，§9.3 先 filter 再排序 C10)再按持续点火排序 byIgnition：candidate(=ign_pct top-decile 且 persist≥persist_min)优先 → ign_persist_days desc → ign_pct desc(瞬时点火无 lift、persistence 主导)；ignition 是核心、无可调参——无 k prop、无旋钮可扰动此序(early⟷reliable 已取消 PRD §16)；卡片 score = 引擎导出的固定权重 composite(stock.composite，composite() 仅作 null fallback)、weights = 固定 WEIGHTS，作「已确认」副读；ignition 数据从 board.json stock.ignition 读(C9 同源不前端重算)；loading/error/empty 三态；initial 注入便于 SSR/测试；可选 limit prop slice top-N(Discovery 本体由 App 传 20 设上限；Rotation 钻进成员预览传更小 N、scope=sector)；脚注示点火候选数",
-        "verification": "SSR：持续点火排序(candidate 浮顶/persist desc/序≠composite 序)、无 k prop(唯一序=持续点火)、composite 副读=引擎导出固定权重值、≥18 卡；scope=sector/pinned 仅留对应卡、scope=all 全显；build 通过"
+        "invariants": "先按全局 scope filter(all/sector/theme/pinned 由 App 透传，§9.3 先 filter 再排序 C10)再按持续点火排序 byIgnition：candidate(=ign_pct top-decile 且 persist≥persist_min)优先 → ign_persist_days desc → ign_pct desc(瞬时点火无 lift、persistence 主导)；ignition 是核心、无可调参——无 k prop、无旋钮可扰动此序(early⟷reliable 已取消 PRD §16)；卡片为 evidence-first(无 composite 角标，M8)；ignition 数据从 board.json stock.ignition 读(C9 同源不前端重算)；loading/error/empty 三态；initial 注入便于 SSR/测试；可选 limit prop slice top-N(Discovery 本体由 App 传 20 设上限；Rotation 钻进成员预览传更小 N、scope=sector)；脚注示点火候选数",
+        "verification": "SSR：持续点火排序(candidate 浮顶/persist desc/序≠composite 序)、无 k prop(唯一序=持续点火)、卡片无 composite 角标(ec-badge)与展开面板(M8)、≥18 卡；scope=sector/pinned 仅留对应卡、scope=all 全显；build 通过"
       }
     },
     {
@@ -1377,9 +1377,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Ocean surface（PRD §9.2）：固定 RS×Val canvas 散点 + 配色切换 + √市值尺寸 + 手动 WEEK scrubber + hover tip + click pin(trail) + lasso 框选 set 全局 scope(首个 scope writer C10)",
-        "invariants": "读 ocean.json(loadOcean) 或 initial 注入；canvas 2x retina；useEffect 调 drawOcean、色板 resolvePalette、绘制点位存 pos ref；WEEK scrubber 手动 range(无 autoplay C2)、未拖跟随最新周；hover 经 nearestPoint+Tip overlay(7 字段 §9.2)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect 选中 setPinned + setScope({pinned}))；trail/箭头仅 pinned(C2)；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(in0.72/out0.06 C10)；错误/加载态降级",
-        "verification": "SSR 含 canvas+三配色切换+轴标+WEEK n/N+手动周 range+pinned 计数；Tip SSR 7 字段；命中/绘制正确性见 ocean-draw 头测(pin trail/lasso/scope 淡化)；npm build 通过；浏览器交互+性能 M2.5"
+        "purpose": "Ocean surface（PRD §9.2，M8）：Ignition × Valuation 海平面 canvas + 配色切换 + √市值尺寸 + 日期滑杆 + Play/Pause/prev/next 受控插值动画(rAF) + hover tip(ignition+估值证据) + click pin + lasso 框选 set 全局 scope(首个 scope writer C10)",
+        "invariants": "读 ocean.json(loadOcean) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)+Tip overlay(ignition+估值证据，无 RS/Val pct)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v2/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1 崩)；错误/加载态降级",
+        "verification": "SSR 含 canvas+两配色切换+ign_pct/P-S 轴标+日期 range(max=dates-1)+Play 按钮+latest EOD 标；Tip SSR 含 ignition+估值倍数+freshness、不含 RS/Val pct；命中/绘制/插值正确性见 ocean-draw 头测；npm build(tsc) 通过；浏览器交互+性能"
       }
     },
     {
@@ -1414,7 +1414,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Stock 视图 + StockStack AC（PRD §9.6，M5.4）+ 点火诊断(M7.4 PRD §10.8)的 SSR 回归门",
-        "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部/theme chip exposure%/6 估值卡/composite 5 分量/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 不被 ignition 替换(5 分量仍在)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；composite 固定权重无旋钮(early⟷reliable 已取消 PRD §16)：含「确认副读」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)",
+        "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)",
         "verification": "npm test 全过；与 Stock.tsx + StockStack 合同一致"
       }
     },
@@ -1425,9 +1425,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Stock detail 视图（PRD §9.6，M5.4 正式版 + M7.4 点火诊断）：per-name bundle 懒加载 + 四格时间轴对齐 stack + 并列第二引擎 ignition 诊断小节",
-        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+COMPOSITE(读 bundle.meta.composite 固定权重值、composite(components) 仅作 null fallback、标签「确认副读」无 k=)；6 估值卡(bundle.valuation)+composite 5 分量(固定权重 WEIGHTS、无旋钮)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退辅助确认(固定权重 k=0.5，early⟷reliable 旋钮已取消 PRD §16)、其 5 分量 stack 保留不删；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后",
-        "verification": "Stock.test SSR(注入 bundle)断言头部/theme chip exposure%/6 卡/composite 5 分量/四格 stack + 点火诊断(5 ignition 分量/点火证据/persistence timeline/🔥candidate/○未点火/step clamp/composite 固定权重无旋钮:确认副读/无 k=/无 range 滑块/无 ignition 隐藏)；浏览器 smoke 懒加载 + 四格渲染"
+        "purpose": "Stock detail 视图（PRD §9.6，M5.4 + M7.4 点火诊断 + M8）：per-name bundle 懒加载 + 四格时间轴对齐 stack + ignition 诊断小节(头条)；composite 退出用户可见层(无大分数/无 5 分量 stack)",
+        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后",
+        "verification": "Stock.test SSR(注入 bundle)断言头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 卡/无 composite 5 分量(stk-crow=0)/四格 stack + 点火诊断(5 ignition 分量/点火证据/persistence timeline/🔥candidate/○未点火/step clamp/无 k=/无 range 滑块/无 ignition 隐藏)；浏览器 smoke 懒加载 + 四格渲染"
       }
     },
     {

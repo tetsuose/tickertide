@@ -139,16 +139,29 @@ export type Scope =
   | { kind: 'theme'; key: string }
   | { kind: 'pinned'; key: null }
 
-// --- Ocean (M2.1 export/ocean.py -> public/data/ocean.json) ---
-// Weekly RS×Valuation snapshots for the canvas scatter (PRD §9.2). A stock's
-// pts[] is aligned to weeks[] (oldest→newest); a null pt = no renderable position
-// that week (stale vintage / cold history — never fabricated). See export/ocean.py.
+// --- Ocean (M8 export/ocean.py -> public/data/ocean.json, schema v2) ---
+// Ignition × Valuation daily SEA-LEVEL map (PRD §9.2): y = ign_pct (0-100, sea level
+// fixed at 90 — above = lit/igniting), x = raw trailing P/S TTM on a LOG axis (NOT a
+// valuation percentile, NOT a composite score). A stock's pts[] is aligned to dates[]
+// (oldest→newest); a null pt = no renderable position that day (missing ign_pct or ps —
+// the play tween fades it in/out, never fabricated). Composite is gone from this surface.
 
-/** One week's position for a stock. rs/val ∈ [0,100]; val low=cheap (y bottom). */
+/** One trading day's snapshot for a stock. ign_pct ∈ [0,100] (y), ps > 0 (x, log). The
+ *  candidate gate (ign_pct>=90 AND ign_persist_days>=5) is Discovery's 持续点火 (C9). All
+ *  tooltip/state fields are the REAL snapshot — the play tween lerps x/y only, never these. */
 export interface OceanPt {
-  rs: number
-  val: number
-  ps: number | null
+  ign_pct: number
+  ignition: number | null
+  ign_persist_days: number | null
+  candidate: boolean
+  ps: number
+  evs: number | null
+  pe: number | null
+  ev_ebitda: number | null
+  ret_10d: number | null
+  ret_1m: number | null
+  vol_mult: number | null
+  freshness: Freshness | null
 }
 
 export interface OceanStock {
@@ -159,16 +172,22 @@ export interface OceanStock {
   pts: (OceanPt | null)[]
 }
 
+/** Fixed axis descriptor — the export decides the axes; the client never re-derives them. */
+export interface OceanAxis {
+  x_metric: string   // 'ps' (raw trailing P/S TTM)
+  x_scale: string    // 'log'
+  y_metric: string   // 'ign_pct'
+  sea_level: number  // 90 (the ignition top-decile line)
+}
+
 export interface OceanData {
   schema_version: number
   as_of_date: string
-  metric: string
-  fresh_days: number
-  n_weeks: number
-  weeks: string[]
+  axis: OceanAxis
+  dates: string[]
+  /** [min, max] of all valid P/S in the window, for the log-scale x domain. */
+  x_domain: [number, number]
   count: number
-  fresh_cohort_latest: number
-  stale_excluded_latest: number
   stocks: OceanStock[]
 }
 
@@ -193,7 +212,11 @@ export interface RotationBucket {
   breadth_ma200: number | null
   at_high: number | null
   member_count: number | null
-  composite_median: number | null
+  /** ignition aggregates (M8): members lit (ign_pct>=90) and 持续点火 candidates
+   *  (ign_pct>=90 AND persist>=5) — composite_median is gone (composite is no longer a
+   *  user-visible concept; the league aggregates the discovery engine instead). */
+  igniting: number | null
+  candidates: number | null
   agg_evs: number | null
   rel_ret_1m: number | null
   rel_ret_3m: number | null

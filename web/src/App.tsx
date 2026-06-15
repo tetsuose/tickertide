@@ -19,25 +19,25 @@ const SURFACES: { id: SurfaceId; label: string }[] = [
   { id: 'stock', label: 'Stock' },
 ]
 
-// Discovery proper shows the top-N composite candidates (PRD §9.3 bounded/decide) —
-// the board stays a bounded shortlist, not the full universe dump.
+// Discovery proper shows the top-N 持续点火 candidates (PRD §9.3 bounded/decide) — the
+// board stays a bounded shortlist, not the full universe dump.
 const DISCOVERY_LIMIT = 20
 
 const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb: string }> = {
   ocean: {
     scale: 'wide · explore',
-    milestone: 'M2',
-    blurb: 'canvas 散点：x = RS percentile，y = Valuation percentile（底 = 便宜）；周度 scrubber + pin→trail，轴固定 RS×估值。',
+    milestone: 'M8',
+    blurb: 'Ignition × Valuation 海平面图：y = ign_pct（海平面 = 90，上方 = 点亮），x = 原始 P/S（log 轴）。日期滑杆 + Play 在相邻真实 EOD 快照间平滑插值。',
   },
   discovery: {
     scale: 'bounded · decide',
     milestone: 'M1.3 – M7',
-    blurb: 'evidence-first 卡流：按 ignition 持续点火排序（PRD §10.8，核心引擎）；每张卡 6 个原始数字 + 点火证据 + 可展开的 composite 角标（确认副读，固定权重，无旋钮）。数据来自 export/board.py 的 board.json。',
+    blurb: 'evidence-first 卡流：按 ignition 持续点火排序（PRD §10.8，核心引擎）；每张卡 6 个原始数字 + 点火证据，永不给 buy/target。数据来自 export/board.py 的 board.json。',
   },
   rotation: {
     scale: 'narrow · decide',
     milestone: 'M3',
-    blurb: 'sector / theme 的 RS-Ratio 多线图（非散点）+ enriched league 表；点 bucket → N=1 单线 + 成员卡。',
+    blurb: 'sector / theme 的 RS-Ratio 多线图（非散点）+ enriched league 表（含 # igniting / # candidates）；点 bucket → N=1 单线 + 成员卡。',
   },
   valuation: {
     scale: 'wide · explore',
@@ -47,7 +47,7 @@ const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb:
   stock: {
     scale: 'narrow · detail',
     milestone: 'M5 · 预览',
-    blurb: 'per-name 面板：头部 + 价格/MA/成交量图 + 6 估值倍数 + 5 分量（board.json 同源）。正式 M5 补 price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
+    blurb: 'per-name 面板：头部 ign_pct + 价格/MA/成交量图 + 6 估值倍数 + 点火诊断（board.json 同源）。price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
   },
 }
 
@@ -122,7 +122,7 @@ export default function App() {
 
           <div className="enginenote">
             <span className="enginelead">IGNITION</span>
-            <span className="enginehint">持续点火 = 发现核心引擎（无可调参） · composite = 确认副读（固定权重）</span>
+            <span className="enginehint">持续点火 = 发现核心引擎（无可调参） · 证据优先：raw evidence + valuation，永不给 buy/target</span>
           </div>
         </div>
 

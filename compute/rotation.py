@@ -129,7 +129,9 @@ def compute_rotation(con, n1: int | None = None, n2: int | None = None,
 # Discovery / Ocean / Stock, so the league traces back (C9). Nothing here is persisted;
 # export/rotation.py (M3.3) calls league_table() for the latest snapshot. ---
 
-AT_HIGH_PROX = 0.99   # within 1% of the 252d high counts as "at 52-week high"
+AT_HIGH_PROX = 0.99       # within 1% of the 252d high counts as "at 52-week high"
+IGN_SEA_LEVEL = 90        # ign_pct >= this = lit (== board.py IGN_TOP_DECILE; sea level, §10.8.2)
+IGN_PERSIST_MIN = 5       # consecutive lit days for a 持续点火 candidate (== board.py)
 REL_HORIZONS = {"rel_ret_1m": 21, "rel_ret_3m": 63, "rel_ret_6m": 126}  # trading days
 
 
@@ -147,17 +149,22 @@ def _bucket_members(con, bucket_type: str, as_of) -> pd.DataFrame:
 
 
 def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
-    """Per-bucket member breadth / #at-52w-high / composite median on `latest_date`, over
+    """Per-bucket member breadth / #at-52w-high / ignition aggregates on `latest_date`, over
     the bucket's MEMBERS (sector: universe.sector; theme: theme_membership PIT). The member
     numbers come from derived_daily / daily_bars — the SAME per-stock source as Discovery /
-    Ocean / Stock, so the league traces back (C9)."""
+    Ocean / Stock, so the league traces back (C9). M8: composite median is gone (composite
+    is no longer user-visible); the league aggregates the discovery engine instead —
+    `igniting` (members above the sea level, ign_pct>=90) and `candidates` (the 持续点火
+    gate, ign_pct>=90 AND ign_persist_days>=5, the SAME gate Discovery sorts by)."""
     mem = _bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
         return con.execute(
             """
             WITH m AS (
-              SELECT mr.bucket AS bucket, d.composite,
+              SELECT mr.bucket AS bucket,
+                     CASE WHEN d.ign_pct >= ? THEN 1 ELSE 0 END AS lit,
+                     CASE WHEN d.ign_pct >= ? AND d.ign_persist_days >= ? THEN 1 ELSE 0 END AS cand,
                      CASE WHEN b.close > d.ma50  THEN 1.0 ELSE 0.0 END AS gt50,
                      CASE WHEN b.close > d.ma200 THEN 1.0 ELSE 0.0 END AS gt200,
                      CASE WHEN d.high_prox >= ? THEN 1 ELSE 0 END      AS athigh
@@ -170,10 +177,11 @@ def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
                    100.0*avg(gt50)  AS breadth_ma50,
                    100.0*avg(gt200) AS breadth_ma200,
                    sum(athigh)      AS at_high,
-                   median(composite) AS composite_median
+                   sum(lit)         AS igniting,
+                   sum(cand)        AS candidates
             FROM m GROUP BY bucket
             """,
-            [AT_HIGH_PROX, latest_date],
+            [IGN_SEA_LEVEL, IGN_SEA_LEVEL, IGN_PERSIST_MIN, AT_HIGH_PROX, latest_date],
         ).df()
     finally:
         con.unregister("mem_rel")
@@ -223,10 +231,11 @@ def _rel_returns(con, bucket_type: str) -> pd.DataFrame:
 def league_table(con, bucket_type: str = BUCKET_TYPE) -> pd.DataFrame:
     """Enriched per-bucket league for Rotation (PRD §9.4), sorted by RS-Ratio. One row per
     bucket: RS-Ratio level + Δ4w + state (from bucket_rrg) PLUS member aggregates (breadth /
-    #at-52w-high / composite median / agg EV-S) from the bucket's members — sector:
+    #at-52w-high / # igniting / # candidates / agg EV-S) from the bucket's members — sector:
     universe.sector, theme: theme_membership point-in-time (C9) — PLUS the bucket's relative
-    return vs SPX. Member evidence cards are NOT built here — export filters board.json by
-    scope (DRY/C9). Returns empty if rotation未算."""
+    return vs SPX. M8: ignition aggregates replace the composite median (composite is no
+    longer user-visible). Member evidence cards are NOT built here — export filters board.json
+    by scope (DRY/C9). Returns empty if rotation未算."""
     rrg = db.read_bucket_rrg(con, bucket_type)
     if len(rrg) == 0:
         return pd.DataFrame()
@@ -269,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[rotation] latest week = {latest_wk}; enriched league by RS-Ratio:")
         show = lt.copy()
         for c in ("rs_ratio", "slope_4w", "breadth_ma50", "breadth_ma200",
-                  "composite_median", "agg_evs", "rel_ret_1m", "rel_ret_3m", "rel_ret_6m"):
+                  "igniting", "candidates", "agg_evs", "rel_ret_1m", "rel_ret_3m", "rel_ret_6m"):
             if c in show:
                 show[c] = show[c].astype(float).round(2)
         print(show.to_string(index=False))
