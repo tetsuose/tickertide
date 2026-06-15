@@ -83,7 +83,8 @@ async function ensureParquet(db: duckdb.AsyncDuckDB): Promise<void> {
       await conn.query(
         `CREATE VIEW valuation AS SELECT * REPLACE (
            strftime(as_of_period_end, '%Y-%m-%d') AS as_of_period_end,
-           strftime(as_of_filed, '%Y-%m-%d') AS as_of_filed
+           strftime(as_of_filed, '%Y-%m-%d') AS as_of_filed,
+           strftime(as_of_effective_eod, '%Y-%m-%d') AS as_of_effective_eod
          ) FROM read_parquet('valuation.parquet')`,
       )
       await conn.close()

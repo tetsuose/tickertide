@@ -53,7 +53,7 @@ def cross_section_sql(snap: str, has_themes: bool = False) -> str:
     return f"""
 WITH latest_val AS (
   SELECT v.ticker, v.pe, v.ps, v.evs, v.ev_ebitda, v.peg, v.growth, v.margin, v.rule40,
-         v.as_of_period_end, v.as_of_filed,
+         v.as_of_period_end, v.as_of_filed, v.as_of_effective_eod, v.valuation_basis,
          row_number() OVER (PARTITION BY v.ticker ORDER BY v.date DESC) AS rn
   FROM valuation_daily v WHERE v.date <= DATE '{snap}'
 )
@@ -65,8 +65,14 @@ SELECT
   v.pe, v.ps, v.evs, v.ev_ebitda, v.peg, v.growth, v.margin, v.rule40,
   v.as_of_period_end,
   v.as_of_filed,
+  v.as_of_effective_eod,
+  v.valuation_basis,
+  -- freshness = fiscal vintage age (period_end → snap), the common-vintage ruler; disclosure
+  -- lag (period_end → filed) is the separate "how late was it filed" figure (formal-filing PIT).
   CASE WHEN v.as_of_period_end IS NULL THEN NULL
        ELSE date_diff('day', v.as_of_period_end, DATE '{snap}') END AS as_of_age_days,
+  CASE WHEN v.as_of_period_end IS NULL OR v.as_of_filed IS NULL THEN NULL
+       ELSE date_diff('day', v.as_of_period_end, v.as_of_filed) END AS disclosure_lag_days,
   CASE WHEN v.as_of_period_end IS NULL THEN NULL
        WHEN date_diff('day', v.as_of_period_end, DATE '{snap}') <= {FRESH_DAYS} THEN 'fresh'
        WHEN date_diff('day', v.as_of_period_end, DATE '{snap}') <= {STALE_DAYS} THEN 'stale'

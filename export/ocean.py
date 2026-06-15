@@ -13,16 +13,17 @@ board — traceable point-for-point (C9). Composite is gone from this surface (M
 
 PAYLOAD SPLIT (schema v3, payload reduction — scales to M6 full universe):
 Drawing every animation frame needs only THREE fields per (ticker, day): `ps` (x), `ign_pct`
-(y) and `cand` (the candidate glow/ring). The other nine fields are shown ONLY in the hover
-tooltip, for one stock at one date. Measured, those nine are ~79% of the compressed payload.
+(y) and `cand` (the candidate glow/ring). The other tooltip fields are shown ONLY in the hover
+tooltip, for one stock at one date. Measured, those are the bulk of the compressed payload.
 So v3 splits the export in two:
   - BULK `ocean.json` — every stock's draw fields in a COLUMNAR layout: per stock, three
     arrays (`ps` / `ign_pct` / `cand`) index-aligned to `dates[]` (oldest→newest). A null in
     `ps`/`ign_pct` at index i = no renderable position that day (the tween fades it in/out;
     positions are never fabricated). This is the only file the client downloads up front.
-  - DETAIL `ocean/<TICKER>.json` — the nine tooltip-only fields (ignition / ign_persist_days
-    / evs / pe / ev_ebitda / ret_10d / ret_1m / vol_mult / freshness), also COLUMNAR and
-    index-aligned to the SAME `dates[]`. Fetched lazily on hover, per stock — so a session
+  - DETAIL `ocean/<TICKER>.json` — the tooltip-only fields (ignition / ign_persist_days
+    / evs / pe / ev_ebitda / ret_10d / ret_1m / vol_mult / freshness + the formal-filing PIT
+    dates as_of_period_end / as_of_effective_eod), all COLUMNAR and index-aligned to the SAME
+    `dates[]`, plus a scalar valuation_basis. Fetched lazily on hover, per stock — so a session
     only ever downloads detail for the handful of names actually inspected.
 Both files derive from the SAME per-stock pipeline in one pass (C9): every field still traces
 to derived_daily / valuation_daily / daily_bars / universe; the engine is NEVER recomputed.
@@ -76,10 +77,14 @@ STALE_DAYS = 160         # <=160d = stale (one quarter behind); >160d = overdue
 RET_10D_LAG = 10         # ret_10d window in trading days (== ignition step-rate fast window)
 RET_1M_LAG = 21          # ret_1m window (~1 trading month; == board.py RET_1M_LAG)
 
-# The nine hover-only fields shipped per stock in ocean/<TICKER>.json (columnar, dates-aligned).
+# The hover-only fields shipped per stock in ocean/<TICKER>.json (columnar, dates-aligned).
+# as_of_period_end/as_of_effective_eod are per-day dates (formal-filing PIT, §10.5) so the
+# tooltip stays honest while the date slider scrubs history; they brotli-compress to almost
+# nothing (long runs that step only at filings). valuation_basis is a scalar (see build_ocean).
 DETAIL_FIELDS = (
     "ignition", "ign_persist_days", "evs", "pe", "ev_ebitda",
     "ret_10d", "ret_1m", "vol_mult", "freshness",
+    "as_of_period_end", "as_of_effective_eod",
 )
 
 
@@ -175,10 +180,12 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> tu
         ).fetchall()
     }
     # valuation (x + tooltip) per (ticker, date) — same valuation_daily as board/Valuation (C9).
+    # as_of_period_end (fiscal vintage, drives freshness) + as_of_effective_eod (formal-filing
+    # PIT availability date) ride along for the tooltip and the cross-surface C9 date check.
     val_by = {
-        (t, d): (ps, evs, pe, ev_ebitda, period_end)
-        for t, d, ps, evs, pe, ev_ebitda, period_end in con.execute(
-            f"SELECT ticker, date, ps, evs, pe, ev_ebitda, as_of_period_end "
+        (t, d): (ps, evs, pe, ev_ebitda, period_end, eff_eod)
+        for t, d, ps, evs, pe, ev_ebitda, period_end, eff_eod in con.execute(
+            f"SELECT ticker, date, ps, evs, pe, ev_ebitda, as_of_period_end, as_of_effective_eod "
             f"FROM valuation_daily WHERE date IN ({ph})",
             dates,
         ).fetchall()
@@ -249,6 +256,7 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> tu
             candidate = persist is not None and ign_pct >= SEA_LEVEL and persist >= IGN_PERSIST_MIN
             ret = ret_by.get((t, d))
             period_end = vv[4]
+            eff_eod = vv[5]
             age = (d - period_end).days if period_end is not None else None
             ps_col.append(ps)                     # already rounded to 2dp by _ps2 (and > 0)
             ign_col.append(_num(ign_pct, 1))
@@ -262,6 +270,8 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> tu
             det["ret_1m"].append(_num(ret[1] if ret else None, 4))
             det["vol_mult"].append(_num(ig[3], 3))   # ig_vsurge (5/60 volume surge), stored col (C9)
             det["freshness"].append(freshness(age))
+            det["as_of_period_end"].append(_iso(period_end))
+            det["as_of_effective_eod"].append(_iso(eff_eod))
         sector, mktcap = meta[t]
         stocks.append({
             "ticker": t,
@@ -276,6 +286,7 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> tu
             "schema_version": SCHEMA_VERSION,
             "ticker": t,
             "n": len(dates),
+            "valuation_basis": "formal_filing_pit",  # scalar:口径 tag for the tooltip (formal-filing PIT)
             **det,
         }
 

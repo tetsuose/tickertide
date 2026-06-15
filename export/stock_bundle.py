@@ -96,18 +96,28 @@ def _price(con, ticker: str, snap, bars: list[tuple]) -> dict:
 
 
 def _revenue_q(con, ticker: str, snap) -> list[dict]:
-    """Quarterly TTM revenue (period_end <= snap) + YoY (vs 4 quarters back). Drives the
-    REVENUE bars (YoY up green / down red, PRD §9.6)."""
+    """Quarterly TTM revenue + YoY (vs 4 quarters back), drives the REVENUE bars (PRD §9.6).
+    FORMAL-FILING PIT (§10.5): a quarter appears only once its formal filing is EFFECTIVE
+    as-of snap (effective_eod_date <= snap, NOT period_end <= snap) — so the bars never show
+    a quarter the market couldn't yet know, and stay aligned with the P/S denominator (which
+    steps at effective_eod). Bars are still positioned at period_end (business period); each
+    carries filed_date / effective_eod_date / disclosure_lag_days so the Stock view can mark
+    the filing date and explain when the value enters P/S."""
     rows = con.execute(
-        "SELECT period_end, revenue_ttm FROM fundamentals_q WHERE ticker = ? AND period_end <= ? "
+        "SELECT period_end, filed_date, COALESCE(effective_eod_date, filed_date) AS eff, revenue_ttm "
+        "FROM fundamentals_q WHERE ticker = ? AND COALESCE(effective_eod_date, filed_date) <= ? "
         "ORDER BY period_end",
         [ticker, snap],
     ).fetchall()
     out = []
-    for i, (pe, rev) in enumerate(rows):
-        prev = rows[i - 4][1] if i >= 4 else None
+    for i, (pe, filed, eff, rev) in enumerate(rows):
+        prev = rows[i - 4][3] if i >= 4 else None
         yoy = (rev / prev - 1.0) if (prev and rev is not None and prev != 0) else None
-        out.append({"period_end": _iso(pe), "revenue_ttm": _num(rev), "yoy": _num(yoy, 4)})
+        lag = (filed - pe).days if (pe is not None and filed is not None) else None
+        out.append({
+            "period_end": _iso(pe), "filed_date": _iso(filed), "effective_eod_date": _iso(eff),
+            "disclosure_lag_days": lag, "revenue_ttm": _num(rev), "yoy": _num(yoy, 4),
+        })
     return out
 
 
@@ -130,7 +140,8 @@ def build_bundle(con, ticker: str, snap) -> dict:
         [ticker, snap],
     ).fetchone()
     val = con.execute(
-        "SELECT pe, ps, evs, ev_ebitda, peg, growth, margin, rule40, as_of_period_end, as_of_filed "
+        "SELECT pe, ps, evs, ev_ebitda, peg, growth, margin, rule40, as_of_period_end, as_of_filed, "
+        "as_of_effective_eod, valuation_basis "
         "FROM valuation_daily WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT 1",
         [ticker, snap],
     ).fetchone()
@@ -155,11 +166,14 @@ def build_bundle(con, ticker: str, snap) -> dict:
 
     valuation = None
     if val is not None:
+        lag = (val[9] - val[8]).days if (val[8] is not None and val[9] is not None) else None
         valuation = {
             "pe": _num(val[0], 2), "ps": _num(val[1], 2), "evs": _num(val[2], 2),
             "ev_ebitda": _num(val[3], 2), "peg": _num(val[4], 2), "growth": _num(val[5], 4),
             "margin": _num(val[6], 4), "rule40": _num(val[7], 4),
             "as_of_period_end": _iso(val[8]), "as_of_filed": _iso(val[9]),
+            "as_of_effective_eod": _iso(val[10]), "valuation_basis": val[11],
+            "disclosure_lag_days": lag,
         }
     return {
         "schema_version": SCHEMA_VERSION,
