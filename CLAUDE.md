@@ -67,7 +67,7 @@
 - 数据源：Stooq(EOD) + Nasdaq screener(universe/mktcap/GICS/PE) + EDGAR(权威基本面) + yfinance(脆弱兜底)。
 - 数学：vol-normalized EWMAC、RS=双窗超额收益横截面百分位、trend=KER/OLS t 值、composite=Σwᵢ·分量(权重固定 k=0.5，前端读引擎导出值不重算 C9；early⟷reliable 旋钮已取消)。
 - **ignition(双引擎，PRD §10.8/§16；项目核心)**：早期发现引擎(短窗口/拐点/突破)、**核心技术指标**，瞬时点火无精度、唯 persistence(持续~5日)有 lift → Discovery=持续点火榜；三级漏斗(触发→持续→翻财报)；实证 `analysis/`。**ignition 无任何可调参**(刻意)；composite 退辅助确认(固定权重)，旋钮已取消。
-- 估值：price ÷ trailing-4Q 日频(分母季度 ASOF)、`E≤0→n.m.` 退 P/S、无 forward、百分位用 common-vintage。
+- 估值：price ÷ trailing-4Q 日频(分母季度 ASOF)、**formal-filing PIT**(分母只用正式 SEC filing、ASOF 键=`effective_eod_date`(v1==filed_date)非 period_end、`valuation_basis='formal_filing_pit'`；PRD §10.5)、`E≤0→n.m.` 退 P/S、无 forward、百分位用 common-vintage(当前 fresh-cohort v1)。
 - Rotation = RS-Ratio 多线(非散点)；Ocean 轴固定 RS×估值(**RRG-axes 已砍**)。
 - 全局 scope(all|sector|theme|pinned)单一真源、跨 tab 粘滞、可见可一键清。
 - point-in-time membership 硬要求；theme 指数非市值加权。
