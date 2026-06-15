@@ -78,7 +78,7 @@ export function Tip({
       {stock.themes.length > 0 && (
         <div className="otags">{stock.themes.map((t) => <span key={t.theme}>{t.theme}</span>)}</div>
       )}
-      <div className="ohint">{basis === 'formal_filing_pit' ? 'formal-filing PIT · ' : ''}click to pin · drag to lasso scope</div>
+      <div className="ohint">{basis === 'formal_filing_pit' ? 'formal-filing PIT · ' : ''}click to pin · drag to lasso · right-click → Stock</div>
     </div>
   )
 }
@@ -89,12 +89,14 @@ export default function Ocean({
   setScope,
   pinned = [],
   setPinned,
+  onOpen,
 }: {
   initial?: OceanData
   scope: Scope
   setScope?: (s: Scope) => void
   pinned?: string[]
   setPinned?: (p: string[]) => void
+  onOpen?: (t: string) => void
 }) {
   const [data, setData] = useState<OceanData | null>(initial ?? null)
   const [err, setErr] = useState<string | null>(null)
@@ -278,6 +280,7 @@ export default function Ocean({
     setPinned?.(pinned.includes(id) ? pinned.filter((t) => t !== id) : [...pinned, id])
   }
   const onDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return // left-drag/pin only; right-click is handled by onContextMenu
     pause() // interacting → stop the tween so hit-tests hit a stable frame
     const [lx, ly] = toLogical(e)
     down.current = { x: lx, y: ly }
@@ -314,6 +317,17 @@ export default function Ocean({
     setHover(null)
     down.current = null
     setLasso(null)
+  }
+  // right-click a dot → load that ticker into the Stock surface + jump there (reuses App.openStock,
+  // the same path a Discovery card / Valuation row takes). preventDefault only on a HIT, so a
+  // right-click on empty canvas still yields the browser's native menu.
+  const onContextMenu = (e: React.MouseEvent) => {
+    const [lx, ly] = toLogical(e)
+    const id = nearestPoint(pos.current, lx, ly)
+    if (!id) return
+    e.preventDefault()
+    pause()
+    onOpen?.(id)
   }
 
   if (err) {
@@ -390,6 +404,7 @@ export default function Ocean({
           onMouseMove={onMove}
           onMouseUp={onUp}
           onMouseLeave={onLeave}
+          onContextMenu={onContextMenu}
         />
         <div className="oax-x">P/S (log) → (便宜 · 贵)</div>
         <div className="oax-y">ign_pct ↑ (点火强度)</div>
@@ -439,7 +454,7 @@ export default function Ocean({
         海平面以上 = 正在快速上涨 / 加速 / 突破 / 放量，跃出高度 ∝ ign_pct−90，与 Discovery 持续点火候选同源（C9）。横轴 =
         <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}；candidate 加光晕 +
         亮环。拖<b>日期滑杆</b>切 EOD；<b>▶ Play</b> 在相邻真实快照间平滑插值移动（仅视觉，tooltip/状态取真实快照，不伪造交易日）；
-        <b>点击 pin</b>、<b>框选 lasso</b> → set 全局 scope（跨 tab 同步、可一键清）。as_of {data.as_of_date} · {data.count} 点 ·
+        <b>点击 pin</b>、<b>框选 lasso</b> → set 全局 scope（跨 tab 同步、可一键清）；<b>右键点 dot</b> → 在 Stock tab 打开该票。as_of {data.as_of_date} · {data.count} 点 ·
         P/S 域 [{data.x_domain[0]}, {data.x_domain[1]}]。
       </div>
     </div>
