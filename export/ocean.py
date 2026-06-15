@@ -120,9 +120,13 @@ def trading_days(con, n_days: int) -> list:
     return [r[0] for r in rows][::-1]
 
 
-def _valid_ps(ps) -> bool:
-    """A renderable x-coordinate on the log axis: present and strictly positive."""
-    return ps is not None and ps > 0
+def _ps2(raw):
+    """Stored P/S (2dp) iff renderable on the log axis: a positive finite multiple, else None.
+    Validate the ROUNDED value we actually store/plot — a tiny raw ps that rounds to 0.00 is
+    NOT renderable (degenerate on a log axis). Checking the raw value but storing the rounded
+    one would let a 0.001 ps slip in as 0.00 and trip _self_check (seen on real data: MCD)."""
+    v = _num(raw, 2)
+    return v if (v is not None and v > 0) else None
 
 
 def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> dict:
@@ -188,7 +192,7 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> di
     for t in meta:
         ig = ign_by.get((t, latest))
         vv = val_by.get((t, latest))
-        if ig and ig[0] is not None and vv and _valid_ps(vv[0]):
+        if ig and ig[0] is not None and vv and _ps2(vv[0]) is not None:
             latest_tickers.append(t)
     latest_tickers.sort(key=lambda t: (meta[t][1] if meta[t][1] is not None else -1.0), reverse=True)
     if limit:
@@ -202,8 +206,8 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> di
             ig = ign_by.get((t, d))
             vv = val_by.get((t, d))
             ign_pct = ig[0] if ig else None
-            ps = vv[0] if vv else None
-            if ign_pct is None or not _valid_ps(ps):
+            ps = _ps2(vv[0]) if vv else None   # rounded-to-2dp P/S, as stored (None if degenerate)
+            if ign_pct is None or ps is None:
                 pts.append(None)  # no renderable position this day (tween fades it in/out)
                 continue
             all_ps.append(ps)
@@ -217,7 +221,7 @@ def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> di
                 "ignition": _num(ig[1], 2),
                 "ign_persist_days": int(persist) if persist is not None else None,
                 "candidate": bool(candidate),
-                "ps": _num(ps, 2),
+                "ps": ps,   # already rounded to 2dp by _ps2 (and > 0)
                 "evs": _num(vv[1], 2),
                 "pe": _num(vv[2], 2),
                 "ev_ebitda": _num(vv[3], 2),
