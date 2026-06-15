@@ -4,11 +4,27 @@ Reads the latest derived_daily/valuation_daily snapshot and assembles the
 evidence-first Discovery board (PRD §9.3, ROADMAP M1.1). One JSON object per
 stock: identity, engine composite + the 5 raw components c_* (so the client can
 show each component's weight in the fixed-weight composite WITHOUT recomputing
-the engine — C9), 6 raw evidence numbers, a ~90d OHLCV mini-chart, latest
-valuation with as-of freshness, and the previous-day composite for d/d.
+the engine — C9), 6 raw evidence numbers, latest valuation with as-of freshness,
+and the previous-day composite for d/d.
+
+PAYLOAD SPLIT (schema v2, payload reduction — the ocean-v3 idiom applied to board):
+the ~90d OHLCV mini-chart is ~96% of the raw payload, yet Discovery is bounded/
+decide (App caps the board at top-20), so only ~20 of the ~500 charts are ever on
+screen at once. So v2 splits the export in two:
+  - BULK `board.json` — every stock's card data (identity / composite + c_* / the
+    6 evidence numbers / ignition block / valuation / theme chips), WITHOUT the
+    chart. The only file the client downloads up front; it still carries every
+    field Discovery needs to sort (持续点火) and scope-filter the WHOLE universe.
+  - DETAIL `board/<TICKER>.json` — that stock's mini-chart only ({schema_version,
+    ticker, chart}). Fetched lazily by the card as it renders, so a session only
+    downloads charts for the handful of names actually shown. Measured: full board
+    brotli ~1.20MB → bulk ~51KB + 20×~2.5KB ≈ 101KB first paint (−92%).
+Both derive from the SAME daily_bars in ONE pass (C9): the chart still ships the
+same bars the evidence numbers are derived from — the split changes WHERE the
+chart lives, never WHAT it is.
 
 Three evidence numbers are NOT materialised in derived_daily; they are derived
-here from the SAME daily_bars the mini-chart ships, so card and chart stay
+here from the SAME daily_bars the chart ships, so card and chart stay
 traceable to one source (PRD §9.3 "同一份 export"):
   - ret_1m              : 21-trading-day adj_close return
   - vol_mult            : latest volume / SMA(volume, 50)   (PRD §10.6 pulse term)
@@ -43,7 +59,8 @@ checks it reproduces derived_daily.composite, AND reconstructs ignition from the
 exported raw vsurge/breakout vs the stored component to catch ignition drift, so
 an engine/export drift fails loudly here instead of silently in the browser.
 
-Output (gitignored, derived nightly): web/public/data/board.json.
+Output (gitignored, derived nightly): web/public/data/board.json (bulk, schema_version 2)
++ web/public/data/board/<TICKER>.json (per-stock mini-chart, lazily fetched on render).
 Math spec: PRD §10; freshness thresholds PRD §10.5/§9.5; schema PRD §12.
 """
 from __future__ import annotations
@@ -60,7 +77,7 @@ sys.path.insert(0, str(ROOT))
 
 from compute import db, signals  # noqa: E402
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: payload split — bulk board.json (no chart) + per-stock board/<T>.json
 DEFAULT_OUT = ROOT / "web" / "public" / "data" / "board.json"
 
 CHART_DAYS = 90          # mini-chart window (PRD §9.3: ~90d K线)
@@ -262,8 +279,16 @@ def _ignition(ig: dict, bars: list[tuple]) -> dict:
     return block
 
 
-def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 60) -> dict:
-    """Assemble the Discovery board dict from the latest DuckDB snapshot."""
+def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 60) -> tuple[dict, dict]:
+    """Assemble the Discovery board (schema v2) from the latest DuckDB snapshot.
+
+    Returns (bulk, chart_by_ticker):
+      - bulk: the dict written to board.json (every stock's card data, NO chart).
+      - chart_by_ticker: {ticker -> {schema_version, ticker, chart}} written to
+        board/<ticker>.json (the lazily-fetched per-stock mini-chart).
+    Both are built in ONE pass over the same per-stock bars so they can never
+    desync — the chart traces to the SAME daily_bars the evidence numbers do (C9).
+    """
     snap = con.execute("SELECT max(date) FROM derived_daily").fetchone()[0]
     if snap is None:
         raise RuntimeError("derived_daily is empty — run `make compute` first.")
@@ -289,6 +314,7 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
 
     stocks, max_drift, n_val = [], 0.0, 0
     ign_max_drift, n_ign, n_cand = 0.0, 0, 0
+    chart_by_ticker: dict[str, dict] = {}  # v2 split: per-stock mini-chart (board/<t>.json)
     for r in head:
         t = r[0]
         comp = {"rs": r[6], "high": r[7], "trend": r[8], "vol": r[9], "accel": r[10]}
@@ -364,8 +390,15 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
             "evidence": _evidence(d, bars, snap),
             "ignition": ign_block,
             "valuation": valuation,
-            "chart": _chart(bars, ma_rows),
         })
+        # v2 payload split: the ~90d mini-chart rides in its OWN per-stock file
+        # (board/<t>.json), built from the SAME bars/ma_rows in this pass (C9). The
+        # card fetches it lazily on render, so it stays out of the up-front bulk.
+        chart_by_ticker[t] = {
+            "schema_version": SCHEMA_VERSION,
+            "ticker": t,
+            "chart": _chart(bars, ma_rows),
+        }
 
     if max_drift > COMPOSITE_TOL:
         raise RuntimeError(
@@ -379,7 +412,7 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
             f"with derived_daily — the export is re-deriving instead of reading C9."
         )
 
-    return {
+    bulk = {
         "schema_version": SCHEMA_VERSION,
         "as_of_date": _iso(snap),
         "composite_recon_max_drift": round(max_drift, 9),
@@ -391,12 +424,69 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
         "ignition_candidates": n_cand,
         "stocks": stocks,
     }
+    _self_check(bulk, chart_by_ticker)
+    return bulk, chart_by_ticker
+
+
+# every chart list column is index-aligned to dates[] (high_52w is a scalar, excluded).
+_CHART_COLS = ("open", "high", "low", "close", "adj_close", "volume", "ma50", "ma150", "ma200")
+
+
+def _self_check(bulk: dict, chart_by_ticker: dict) -> None:
+    """Fail loudly here (not silently in the browser) if the v2 split contract breaks:
+
+    1. every bulk stock has its OWN chart file (no rendered card hits a missing chart);
+    2. each chart file's ticker matches, and its list columns are index-aligned to
+       dates[] (len==len(dates)) so MiniChart's parallel-array reads stay in bounds;
+    3. no orphan chart without a bulk stock (cross-file 1:1 — a shrinking universe
+       leaves none behind).
+    The chart VALUES are the engine's (_chart derives them from the same bars, C9);
+    this guards the SPLIT (where the chart lives + alignment), not the numbers.
+    """
+    tickers = {s["ticker"] for s in bulk["stocks"]}
+    for t in tickers:
+        det = chart_by_ticker.get(t)
+        if det is None:
+            raise RuntimeError(f"{t}: no chart file emitted (bulk stock without board/<t>.json)")
+        if det.get("ticker") != t:
+            raise RuntimeError(f"{t}: chart file ticker={det.get('ticker')} != {t}")
+        chart = det.get("chart") or {}
+        dates = chart.get("dates")
+        if not dates:
+            raise RuntimeError(f"{t}: chart has no dates[]")
+        n = len(dates)
+        for col in _CHART_COLS:
+            c = chart.get(col)
+            if c is None or len(c) != n:
+                raise RuntimeError(
+                    f"{t}: chart.{col} length {None if c is None else len(c)} != dates {n}"
+                )
+    orphans = set(chart_by_ticker) - tickers
+    if orphans:
+        raise RuntimeError(f"chart files without a bulk stock: {sorted(orphans)[:5]}")
+
+
+def _write_chart_detail(out_dir: Path, chart_by_ticker: dict) -> int:
+    """Write per-stock mini-charts to <out_dir>/board/<TICKER>.json, clearing stale
+    files first so a shrinking universe never leaves orphaned charts behind (mirrors
+    ocean._write_detail). The bulk board.json sits beside this board/ dir, untouched.
+    Returns bytes written."""
+    det_dir = out_dir / "board"
+    det_dir.mkdir(parents=True, exist_ok=True)
+    for old in det_dir.glob("*.json"):
+        old.unlink()
+    total = 0
+    for t, det in chart_by_ticker.items():
+        p = det_dir / f"{t}.json"
+        p.write_text(json.dumps(det, ensure_ascii=False, separators=(",", ":")) + "\n")
+        total += p.stat().st_size
+    return total
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="TickerTide M1.1 export: Discovery board.json.")
+    ap = argparse.ArgumentParser(description="TickerTide export: Discovery board.json (v2 bulk + per-stock chart).")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
-    ap.add_argument("--out", default=str(DEFAULT_OUT), help="output JSON path")
+    ap.add_argument("--out", default=str(DEFAULT_OUT), help="output bulk JSON path (charts -> <dir>/board/<T>.json)")
     ap.add_argument("--k", type=float, default=0.5,
                     help="composite fixed weighting (knob removed, PRD §16); must match the k `make compute` used")
     ap.add_argument("--limit", type=int, default=None, help="cap to top-N by composite (default: all)")
@@ -404,19 +494,21 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     con = db.connect(args.db)
-    board = build_board(con, k=args.k, limit=args.limit, min_bars=args.min_bars)
+    board, chart_by_ticker = build_board(con, k=args.k, limit=args.limit, min_bars=args.min_bars)
     con.close()
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(board, ensure_ascii=False, separators=(",", ":")) + "\n")
+    chart_bytes = _write_chart_detail(out.parent, chart_by_ticker)
 
     kb = out.stat().st_size / 1024
+    chart_kb = chart_bytes / 1024
     print(f"[board] {args.out}  as_of={board['as_of_date']}  stocks={board['count']}  "
           f"valuation={board['valuation_coverage']}  ignition={board['ignition_coverage']}  "
           f"ign_candidates={board['ignition_candidates']}(persist>={board['ignition_persist_min']})  "
           f"C9_drift={board['composite_recon_max_drift']}  ign_drift={board['ignition_recon_max_drift']}  "
-          f"size={kb:.1f}KB")
+          f"bulk={kb:.1f}KB  charts={len(chart_by_ticker)}×→{chart_kb:.1f}KB")
     return 0
 
 

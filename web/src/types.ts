@@ -78,7 +78,8 @@ export interface Valuation {
   freshness: Freshness | null
 }
 
-/** ~90d OHLCV mini-chart + engine MAs + 52w-high level. */
+/** OHLCV chart + engine MAs + 52w-high level. Shared shape: Discovery's ~90d mini-chart
+ *  (schema v2: now lazy per-stock, see BoardChartDetail) and the Stock bundle's ~2y price. */
 export interface ChartSeries {
   dates: string[]
   open: (number | null)[]
@@ -112,11 +113,16 @@ export interface Stock {
   /** Second engine (PRD §10.8). Optional: pre-M7 fixtures / partial exports may omit it. */
   ignition?: Ignition
   valuation: Valuation | null
-  chart: ChartSeries
+  /** schema v2 payload split: the bulk board.json no longer ships the chart (~96% of the raw
+   *  payload, yet only ~20 cards show at once) — it loads lazily per card via loadBoardChart ->
+   *  board/<TICKER>.json (BoardChartDetail). Kept OPTIONAL only as a transitional fallback: if a
+   *  stale v1 data artifact is served (a deploy reuses the last nightly's data), the card uses
+   *  this inline chart instead of fetching a 404. The v2 export never emits it. See EvidenceCard. */
+  chart?: ChartSeries
 }
 
 export interface BoardData {
-  schema_version: number
+  schema_version: number // 2 = payload split (bulk board.json without chart + board/<T>.json)
   as_of_date: string
   composite_recon_max_drift: number
   count: number
@@ -127,6 +133,17 @@ export interface BoardData {
   ignition_persist_min?: number
   ignition_recon_max_drift?: number
   stocks: Stock[]
+}
+
+/** Lazy per-stock mini-chart (export/board.py -> public/data/board/<TICKER>.json, schema v2).
+ *  Discovery's bulk board.json carries no chart; each EvidenceCard fetches its own chart on
+ *  render (loadBoardChart) so a session only downloads charts for the ~20 names actually shown.
+ *  Same daily_bars the bulk's evidence numbers derive from (C9) — the split moves WHERE the
+ *  chart lives, not WHAT it is. */
+export interface BoardChartDetail {
+  schema_version: number
+  ticker: string
+  chart: ChartSeries
 }
 
 /** The five lenses, in the contract's fixed order (PRD §9.0). */

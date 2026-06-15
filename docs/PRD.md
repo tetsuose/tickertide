@@ -242,7 +242,7 @@ Client (canvas + duckdb-wasm): renders Ocean (thousands of points) + boards; scr
   - 框选（lasso）→ **set 全局 scope**（Ocean 是 scope 的第一个写入口，C10）。
 - **respect scope**（C10）：非 scope 点 filter 掉或大幅变淡（in-scope ~0.5–0.92 按是否点亮，out ~0.06）。
 - **已砍**：旧 RS×Val 轴、(50,50) 十字线、quadrant 配色、周度 WEEK scrubber、pinned 多周 trail/箭头（时间维度由播放动画承担）；更早砍掉的 RRG-axes（`rsr`/`rsm` 字段早已删除）。
-- **payload（schema v3，体积裁剪 / 为 M6 扩量铺路）**：每帧绘制只需 3 个字段（`ps` / `ign_pct` / `candidate`），其余 9 个仅 tooltip 字段实测占压缩体积 ~79%。故 `ocean.json` 拆两层：**bulk**（`ocean.json`，每票仅三绘制字段的 columnar 数组、与 `dates[]` 同索引、全员前置下载）+ **per-stock detail**（`ocean/<TICKER>.json`，9 个 tooltip 字段 columnar、hover 时按票懒加载——只下你真去看的票）。实测 top-500 bulk brotli ≈ **100KB**（旧 v2 整合 596KB → −83%）。**勘误**：旧文写的「ocean gzip ~1.5MB」是 **board.json** 的数；ocean v2 实测 gzip 866KB / brotli 596KB。M6 全量后 bulk 仍只随票数 ×3 字段增长、detail 永远按需，故可扛数千只。两文件 columnar 且按 `dates[]` 同索引对齐、全字段 C9 同源（`derived_daily` / `valuation_daily` / `daily_bars` / `universe`）；`make ocean-c9` 额外校验 bulk↔detail 一致（bulk `cand` == ign_pct≥90 AND detail.persist≥5、detail.evs 追溯 board）。**M8 行为不变**：海平面图 / 轴 / candidate gate / 插值动画完全一致，仅首次 hover 某票多一次取数（tooltip 先显 3 个已知字段 + 骨架）。
+- **payload（schema v3，体积裁剪 / 为 M6 扩量铺路）**：每帧绘制只需 3 个字段（`ps` / `ign_pct` / `candidate`），其余 9 个仅 tooltip 字段实测占压缩体积 ~79%。故 `ocean.json` 拆两层：**bulk**（`ocean.json`，每票仅三绘制字段的 columnar 数组、与 `dates[]` 同索引、全员前置下载）+ **per-stock detail**（`ocean/<TICKER>.json`，9 个 tooltip 字段 columnar、hover 时按票懒加载——只下你真去看的票）。实测 top-500 bulk brotli ≈ **100KB**（旧 v2 整合 596KB → −83%）。**勘误**：旧文写的「ocean gzip ~1.5MB」是 **board.json** 的数；ocean v2 实测 gzip 866KB / brotli 596KB。**board.json 现已同法拆分（schema v2，见 §9.3）**：full brotli ~1.20MB → bulk ~51KB + 懒加载 90d chart。M6 全量后 bulk 仍只随票数 ×3 字段增长、detail 永远按需，故可扛数千只。两文件 columnar 且按 `dates[]` 同索引对齐、全字段 C9 同源（`derived_daily` / `valuation_daily` / `daily_bars` / `universe`）；`make ocean-c9` 额外校验 bulk↔detail 一致（bulk `cand` == ign_pct≥90 AND detail.persist≥5、detail.evs 追溯 board）。**M8 行为不变**：海平面图 / 轴 / candidate gate / 插值动画完全一致，仅首次 hover 某票多一次取数（tooltip 先显 3 个已知字段 + 骨架）。
 
 ### 9.3 Discovery（evidence-first 卡流，bounded decide）
 
@@ -252,9 +252,10 @@ Client (canvas + duckdb-wasm): renders Ocean (thousands of points) + boards; scr
 - **每张卡** = §9.1.3 evidence-card：
   - 头部：ticker + `(sector · $XXB mktcap)` + ignition 状态（🔥 持续点火 + 天数 / 否则 ign_pct 角标）。
   - theme tags（若有）。
-  - MiniChart：90 日 K 线 + MA50/150/200 + 成交量 + 52w 高虚线。
+  - MiniChart：90 日 K 线 + MA50/150/200 + 成交量 + 52w 高虚线。卡片渲染时显示骨架占位，chart 到位后填入（懒加载，见下）。
   - 6 字段行：1M / 3M / 6M / from-high / weeks-since-breakout / vol×（涨绿跌红，量≥1.5× 绿）。
   - 「why moving」AI 占位格。
+- **payload（schema v2，体积裁剪 —— ocean v3 同法落到 board）**：90d mini-chart 实测占 board.json raw 体积 ~96%，而 Discovery 是 bounded（App 截 top-20），同屏只 ~20 张图。故拆两层：**bulk**（`board.json`，每票卡面数据但**不含 chart**、全员前置下载，仍带 Discovery 排序「持续点火」+ 跨全 universe scope filter 所需的全部字段）+ **per-stock chart**（`board/<TICKER>.json`，仅该票 90d mini-chart，卡片渲染时按票懒加载——只下你真看到的票）。实测 full board brotli ~1.20MB → bulk ~51KB + 20×~2.5KB ≈ **101KB 首屏（−92%）**。bulk 与 chart **同一遍构建、同源 `daily_bars`（C9，拆分只改 chart 存放位置不改其值）**；纯 columnar 不做（chart 本就并列数组、剥离后 bulk 已 ~51KB，再 columnar 收益可忽略——同 ocean 教训）。不复用 `stock/<T>.json`（那是 2y bundle，复用首屏 223KB 且 high_52w 窗口不符要客户端重算）。
 - **交互**：点卡任意处 → 打开 Stock。（无 composite 展开面板，M8。）
 - **respect scope**：先 filter 再排序。
 
@@ -429,7 +430,7 @@ spx_daily(date, close);
 ```
 
 - 估值对齐核心：`valuation_daily` 由 `daily_bars ASOF JOIN fundamentals_q ON ticker AND date>=period_end` 生成。
-- export：把 `derived_daily` + `valuation_daily` 最新快照 + `bucket_rrg` 拆成 Parquet/JSON 分片给 client。
+- export：把 `derived_daily` + `valuation_daily` 最新快照 + `bucket_rrg` 拆成 Parquet/JSON 分片给 client。**board（schema v2）/ ocean（schema v3）均 payload 拆分**：bulk（前置下载、不含重数据）+ per-stock 懒加载分片（board=90d mini-chart `board/<T>.json`；ocean=9 个 tooltip 字段 `ocean/<T>.json`），分片与 bulk 同一遍构建、同源 C9。
 
 ---
 

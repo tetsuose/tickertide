@@ -1,15 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import board from '../lib/__fixtures__/board.sample.json'
+import chartFixture from '../lib/__fixtures__/board.chart.sample.json'
 import Discovery from './Discovery'
 import EvidenceCard from '../components/EvidenceCard'
-import type { BoardData, Stock } from '../types'
+import type { BoardData, BoardChartDetail, Stock } from '../types'
 
 // AC-M1 / AC-M7 / M8 (PRD §14, §10.8) as a committed regression gate: render Discovery +
 // EvidenceCard from the real exported fixture (board.sample.json — export/board.py product,
 // carrying the ignition block) via react-dom/server and assert the milestone's user-visible
 // contract. M8: the card is ignition-first; composite is no longer shown. No browser needed.
+// schema v2: the bulk fixture has no chart (payload split) — the mini-chart loads lazily per
+// card; tests inject board.chart.sample.json (a BoardChartDetail) to render it under SSR.
 const data = board as unknown as BoardData
+const chart = (chartFixture as unknown as BoardChartDetail).chart
 const order = (html: string) => [...html.matchAll(/ec-tk">\s*([A-Za-z0-9]+)/g)].map((m) => m[1])
 const card = (i: number) => renderToStaticMarkup(<EvidenceCard stock={data.stocks[i]} />)
 
@@ -40,11 +44,20 @@ describe('AC-M1: Discovery evidence-card board', () => {
     for (const label of ['1M', '3M', '6M', 'from high', 'week', 'vol']) expect(html).toContain(label)
   })
 
-  it('renders the mini-chart SVG with MA lines + 52w dashed line', () => {
-    const html = card(0)
+  it('renders the mini-chart SVG with MA lines + 52w dashed line (injected chart, v2 lazy)', () => {
+    const html = renderToStaticMarkup(<EvidenceCard stock={data.stocks[0]} chart={chart} />)
     expect(html).toContain('<svg')
     expect(html).toContain('var(--ma50)')
     expect(html).toContain('stroke-dasharray')
+  })
+
+  it('without a chart (schema v2 lazy split) the card shows a skeleton, not the chart SVG', () => {
+    // The bulk board.json carries no chart; the card fetches it on render. SSR runs no
+    // effects, so the fetch never fires — the card renders its text evidence + a fixed-height
+    // skeleton placeholder (no MiniChart svg). The chart is supplementary (PRD §9.3).
+    const html = card(0)
+    expect(html).toContain('ec-chart-skel')
+    expect(html).not.toContain('<svg')
   })
 })
 

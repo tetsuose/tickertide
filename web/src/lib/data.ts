@@ -1,6 +1,8 @@
-import type { BoardData, OceanData, OceanDetail, RotationData, ManifestData, StockBundle, StockIndex } from '../types'
+import type { BoardData, BoardChartDetail, OceanData, OceanDetail, RotationData, ManifestData, StockBundle, StockIndex } from '../types'
 
-// Load the nightly Discovery snapshot (export/board.py -> public/data/board.json).
+// Load the nightly Discovery snapshot (export/board.py -> public/data/board.json, schema v2):
+// every stock's card data WITHOUT the chart. Mini-charts load lazily per card via
+// loadBoardChart (payload split — full board ~1.2MB brotli → bulk ~51KB; PRD §9.3).
 // import.meta.env.BASE_URL respects Vite's base './', so the fetch works from any
 // deploy subpath; the optional `?.` keeps it safe under non-Vite runtimes (tests).
 export async function loadBoard(signal?: AbortSignal): Promise<BoardData> {
@@ -8,6 +10,16 @@ export async function loadBoard(signal?: AbortSignal): Promise<BoardData> {
   const res = await fetch(`${base}data/board.json`, { signal })
   if (!res.ok) throw new Error(`board.json HTTP ${res.status}`)
   return (await res.json()) as BoardData
+}
+
+// Load one stock's Discovery mini-chart (export/board.py -> public/data/board/<TICKER>.json, v2):
+// the ~90d OHLCV+MA chart only. Fetched by the EvidenceCard as it renders, so a session only
+// downloads charts for the ~20 names actually shown (board payload split — mirrors loadOceanDetail).
+export async function loadBoardChart(ticker: string, signal?: AbortSignal): Promise<BoardChartDetail> {
+  const base = import.meta.env?.BASE_URL ?? './'
+  const res = await fetch(`${base}data/board/${ticker}.json`, { signal })
+  if (!res.ok) throw new Error(`board/${ticker}.json HTTP ${res.status}`)
+  return (await res.json()) as BoardChartDetail
 }
 
 // Load the nightly Ocean bulk snapshot (export/ocean.py -> public/data/ocean.json, v3): the

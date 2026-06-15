@@ -446,6 +446,24 @@ body {
 .ec-chart {
   margin: 8px 0 6px;
 }
+/* Loading placeholder while the card lazily fetches its mini-chart (schema v2 split).
+   aspect-ratio matches MiniChart's 440×164 viewBox so the card never shifts on load. */
+.ec-chart-skel {
+  width: 100%;
+  aspect-ratio: 440 / 164;
+  border-radius: 3px;
+  background: var(--line);
+  animation: ec-skel-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ec-skel-pulse {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
 .ec-fields {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

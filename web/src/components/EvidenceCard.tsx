@@ -1,5 +1,7 @@
-import type { Stock } from '../types'
+import { useEffect, useState } from 'react'
+import type { Stock, ChartSeries } from '../types'
 import MiniChart from './MiniChart'
+import { loadBoardChart } from '../lib/data'
 
 // step-rate ratio = (ret10/10)/(ret50/50): the readable form of ig_accel (PRD §10.8).
 // It blows up when ret50≈0 (M7.2 pitfall: fixture TT20=685) — mathematically faithful
@@ -33,12 +35,37 @@ const pct = (v: number | null): string =>
 export default function EvidenceCard({
   stock,
   onOpen,
+  chart: chartProp,
 }: {
   stock: Stock
   onOpen?: (ticker: string) => void
+  /** Injected chart — SSR/tests pass it to skip the fetch. In the browser the card lazily
+   *  fetches its own ~90d mini-chart (schema v2 split) so the bulk board.json stays tiny. */
+  chart?: ChartSeries
 }) {
   const e = stock.evidence
   const ign = stock.ignition
+
+  // schema v2 payload split: the mini-chart is NOT in the bulk board.json — fetch this card's
+  // chart on render (board/<ticker>.json). Chart source priority: injected prop (SSR/tests) →
+  // inline chart on the bulk stock (transitional fallback: a stale v1 data artifact still
+  // carries it, so no 404) → lazy fetch. A pending/failed fetch just shows a fixed-height
+  // skeleton (the card's text evidence renders regardless — the chart is supplementary). §9.3.
+  const inline = chartProp ?? stock.chart ?? null
+  const [chart, setChart] = useState<ChartSeries | null>(inline)
+  useEffect(() => {
+    if (inline) {
+      setChart(inline)
+      return
+    }
+    const ac = new AbortController()
+    loadBoardChart(stock.ticker, ac.signal)
+      .then((d) => setChart(d.chart))
+      .catch(() => {
+        /* leave the skeleton in place; the chart is supplementary, never blocks the card */
+      })
+    return () => ac.abort()
+  }, [stock.ticker, inline])
 
   return (
     <div className="ecard" onClick={() => onOpen?.(stock.ticker)}>
@@ -112,7 +139,7 @@ export default function EvidenceCard({
       )}
 
       <div className="ec-chart">
-        <MiniChart chart={stock.chart} />
+        {chart ? <MiniChart chart={chart} /> : <div className="ec-chart-skel" aria-hidden="true" />}
       </div>
 
       <div className="ec-fields">
