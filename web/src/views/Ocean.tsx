@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
-import { loadOcean } from '../lib/data'
+import type { OceanData, OceanStock, OceanDrawPt, OceanDetail, Scope } from '../types'
+import { loadOcean, loadOceanDetail } from '../lib/data'
 import { num, pct } from '../lib/format'
 import {
-  drawOcean, nearestPoint, pointsInRect, resolvePalette, interpolateOceanPoint, clamp,
+  drawOcean, drawPtAt, nearestPoint, pointsInRect, resolvePalette, interpolateOceanPoint, clamp,
   OCEAN_GEOM, type ColorMode, type DrawnPoint, type Rect, type Palette,
 } from '../lib/ocean-draw'
 
@@ -28,8 +28,23 @@ function fmtCap(v: number | null): string {
 
 /** Hover tip (PRD §9.2): ticker / sector / ignition (pct, persistence, candidate) /
  *  valuation evidence (P/S, EV/S, P/E, EV/EBITDA, freshness) / returns / volume surge.
- *  Reads a REAL snapshot — never the interpolated play position. */
-export function Tip({ stock, pt }: { stock: OceanStock; pt: OceanPt }) {
+ *  The three DRAW fields (ign_pct / P/S / candidate) come from the bulk and show instantly;
+ *  the nine evidence fields live in the lazy per-stock OceanDetail (v3 split). While that
+ *  fetch is in flight `detail` is null and those rows show a `…` skeleton. All values are the
+ *  REAL snapshot at date index `di` — never the interpolated play position. */
+const LOADING = '…'
+export function Tip({
+  stock, draw, detail, di,
+}: { stock: OceanStock; draw: OceanDrawPt; detail: OceanDetail | null; di: number }) {
+  const loading = detail == null
+  const persist = detail?.ign_persist_days[di] ?? null
+  const evs = detail?.evs[di] ?? null
+  const pe = detail?.pe[di] ?? null
+  const evEbitda = detail?.ev_ebitda[di] ?? null
+  const ret10 = detail?.ret_10d[di] ?? null
+  const ret1m = detail?.ret_1m[di] ?? null
+  const volMult = detail?.vol_mult[di] ?? null
+  const fresh = detail?.freshness[di] ?? null
   return (
     <div className="otip">
       <div className="otip-h">
@@ -37,24 +52,24 @@ export function Tip({ stock, pt }: { stock: OceanStock; pt: OceanPt }) {
       </div>
       <div className="otrow">
         <span>ign_pct</span>
-        <b style={{ color: pt.ign_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>{pt.ign_pct.toFixed(0)}</b>
+        <b style={{ color: draw.ign_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>{draw.ign_pct.toFixed(0)}</b>
       </div>
       <div className="otrow">
         <span>持续点火</span>
-        <b>{pt.ign_persist_days ?? '—'}d{pt.candidate ? ' · 🔥candidate' : ''}</b>
+        <b>{loading ? LOADING : `${persist ?? '—'}d`}{draw.candidate ? ' · 🔥candidate' : ''}</b>
       </div>
-      <div className="otrow"><span>P/S</span><b>{pt.ps != null ? pt.ps.toFixed(1) : 'n.m.'}</b></div>
-      <div className="otrow"><span>EV/S</span><b>{num(pt.evs)}</b></div>
-      <div className="otrow"><span>P/E</span><b>{pt.pe != null ? pt.pe.toFixed(1) : 'n.m.'}</b></div>
-      <div className="otrow"><span>EV/EBITDA</span><b>{num(pt.ev_ebitda)}</b></div>
-      <div className="otrow"><span>10d / 1m</span><b>{pct(pt.ret_10d)} / {pct(pt.ret_1m)}</b></div>
+      <div className="otrow"><span>P/S</span><b>{draw.ps != null ? draw.ps.toFixed(1) : 'n.m.'}</b></div>
+      <div className="otrow"><span>EV/S</span><b>{loading ? LOADING : num(evs)}</b></div>
+      <div className="otrow"><span>P/E</span><b>{loading ? LOADING : pe != null ? pe.toFixed(1) : 'n.m.'}</b></div>
+      <div className="otrow"><span>EV/EBITDA</span><b>{loading ? LOADING : num(evEbitda)}</b></div>
+      <div className="otrow"><span>10d / 1m</span><b>{loading ? LOADING : `${pct(ret10)} / ${pct(ret1m)}`}</b></div>
       <div className="otrow">
         <span>vol surge</span>
-        <b style={{ color: (pt.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
-          {pt.vol_mult != null ? pt.vol_mult.toFixed(2) + '×' : '—'}
+        <b style={{ color: (volMult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
+          {loading ? LOADING : volMult != null ? volMult.toFixed(2) + '×' : '—'}
         </b>
       </div>
-      <div className="otrow"><span>val freshness</span><b>{pt.freshness ?? '—'}</b></div>
+      <div className="otrow"><span>val freshness</span><b>{loading ? LOADING : fresh ?? '—'}</b></div>
       <div className="otrow"><span>mkt cap</span><b>{fmtCap(stock.mktcap)}</b></div>
       {stock.themes.length > 0 && (
         <div className="otags">{stock.themes.map((t) => <span key={t.theme}>{t.theme}</span>)}</div>
@@ -85,6 +100,8 @@ export default function Ocean({
   const [dateIndex, setDateIndex] = useState<number | null>(null) // null = follow latest
   const [playing, setPlaying] = useState(false)
   const [hover, setHover] = useState<DrawnPoint | null>(null)
+  const [detail, setDetail] = useState<OceanDetail | null>(null) // hovered stock's lazy hover detail (null = loading/absent)
+  const detailCache = useRef<Map<string, OceanDetail>>(new Map())
   const [lasso, setLasso] = useState<Rect | null>(null)
 
   const cv = useRef<HTMLCanvasElement>(null)
@@ -113,10 +130,39 @@ export default function Ocean({
     return () => ac.abort()
   }, [initial])
 
-  // ocean.json must be schema v2 (M8). A frontend-only deploy can transiently serve an
-  // OLD v1 payload (no dates/axis/x_domain) until a nightly re-export lands — guard so the
-  // surface degrades to a notice instead of crashing on `data.dates.length`.
-  const okSchema = !!data && data.schema_version === 2 && Array.isArray(data.dates) && !!data.axis
+  // Lazily fetch the hovered stock's per-stock hover detail (v3 split): the bulk carries only
+  // the 3 draw fields, so the tooltip's 9 evidence fields load on demand, per name. Cached per
+  // ticker; the effect's cleanup aborts an in-flight fetch when the hover moves, so a stale
+  // ticker's detail never lands. Applied only when it aligns to the bulk window (n===dates).
+  useEffect(() => {
+    const tk = hover?.ticker ?? null
+    if (!tk) {
+      setDetail(null)
+      return
+    }
+    const cached = detailCache.current.get(tk)
+    if (cached) {
+      setDetail(cached)
+      return
+    }
+    setDetail(null) // show the `…` skeleton until it arrives
+    const ac = new AbortController()
+    loadOceanDetail(tk, ac.signal)
+      .then((d) => {
+        if (!data || d.n !== data.dates.length) return // misaligned (transient partial deploy) — ignore
+        detailCache.current.set(tk, d)
+        setDetail(d)
+      })
+      .catch(() => {
+        /* aborted or missing — tooltip keeps the 3 draw fields, `…` for the rest */
+      })
+    return () => ac.abort()
+  }, [hover?.ticker, data])
+
+  // ocean.json must be schema v3 (M8 payload split — columnar bulk + lazy per-stock detail). A
+  // frontend-only deploy can transiently serve an OLD v1/v2 payload until a nightly re-export
+  // lands — guard so the surface degrades to a notice instead of crashing on the columns.
+  const okSchema = !!data && data.schema_version === 3 && Array.isArray(data.dates) && !!data.axis
   // Effective date index: scrubbed value, else the latest snapshot.
   const di = okSchema ? dateIndex ?? data!.dates.length - 1 : 0
   useEffect(() => {
@@ -291,7 +337,7 @@ export default function Ocean({
       <div className="placeholder">
         <div className="ph-tag">数据升级中</div>
         <div className="ph-msg">
-          ocean.json 为旧 schema（v{data.schema_version ?? '?'}）。M8 Ocean 需要 schema v2 —— 触发一次{' '}
+          ocean.json 为旧 schema（v{data.schema_version ?? '?'}）。M8 Ocean 需要 schema v3 —— 触发一次{' '}
           <code>nightly.yml</code> 重算生产数据（仅 push web 不更新数据，见 PROJECT-STATUS §6）。
         </div>
       </div>
@@ -299,15 +345,14 @@ export default function Ocean({
   }
 
   const isLatest = di === data.dates.length - 1
-  // tooltip reads a REAL snapshot at the resting frame (phase 0 → the current date's pt).
+  // tooltip reads a REAL snapshot at the resting frame (phase 0 → the current date's draw pt).
+  // hoverDi = the date index that snapshot maps to (di, or di+1 when di is a gap that fades in),
+  // so the lazy detail is read at the SAME index the draw fields came from.
   const hoverStock = hover ? data.stocks.find((s) => s.ticker === hover.ticker) : undefined
-  const hoverPt = hoverStock
-    ? interpolateOceanPoint(
-        hoverStock.pts[di] ?? null,
-        di < data.dates.length - 1 ? hoverStock.pts[di + 1] ?? null : hoverStock.pts[di] ?? null,
-        0,
-      )?.snap ?? null
-    : null
+  const hPrev = hoverStock ? drawPtAt(hoverStock, di) : null
+  const hNext = hoverStock ? (isLatest ? hPrev : drawPtAt(hoverStock, di + 1)) : null
+  const hoverDraw = hoverStock ? interpolateOceanPoint(hPrev, hNext, 0)?.snap ?? null : null
+  const hoverDi = hPrev ? di : Math.min(di + 1, data.dates.length - 1)
 
   return (
     <div className="ocean">
@@ -345,12 +390,17 @@ export default function Ocean({
         <div className="oax-x">P/S (log) → (便宜 · 贵)</div>
         <div className="oax-y">ign_pct ↑ (点火强度)</div>
         <div className="oquad">↑ 海平面以上 = 持续点火</div>
-        {hover && hoverStock && hoverPt && (
+        {hover && hoverStock && hoverDraw && (
           <div
             className="otipwrap"
             style={{ left: `${(hover.px / OCEAN_GEOM.w) * 100}%`, top: `${(hover.py / OCEAN_GEOM.h) * 100}%` }}
           >
-            <Tip stock={hoverStock} pt={hoverPt} />
+            <Tip
+              stock={hoverStock}
+              draw={hoverDraw}
+              detail={detail?.ticker === hoverStock.ticker ? detail : null}
+              di={hoverDi}
+            />
           </div>
         )}
       </div>

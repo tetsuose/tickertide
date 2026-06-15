@@ -464,31 +464,38 @@ Valuation 表 duckdb-wasm 浏览器查询可排序；as-of 三档上色正确；
 - **App 顶栏引擎说明**：去掉「composite = 确认副读」那半句；现为「持续点火 = 发现核心引擎（无可调参） · 证据优先：raw evidence + valuation，永不给 buy/target」。
 - **composite 计算层保留**（`compute/run.py` 的 composite 列、`derived_daily.composite`、`board.json` 的 composite 字段、`web/src/lib/composite.ts`）作**计算层暂存**，但 **UI / 产品文案不再暴露**。新产品脊柱 = ignition core + valuation + raw evidence。
 
-### 数据契约（`export/ocean.py` → `web/public/data/ocean.json`，schema v2）
+### 数据契约（`export/ocean.py` → `web/public/data/ocean.json`，schema v3）
+
+> **v3（2026-06-15，payload 裁剪——为 M6 扩量铺路）**：bulk 只留 3 个绘制字段（columnar） + per-stock 懒加载 detail（9 个 tooltip 字段）；详见 PRD §9.2「payload」。
 
 ```
-{ schema_version: 2, as_of_date,
+// bulk：web/public/data/ocean.json（全员前置下载，每票仅三绘制字段的 columnar 数组）
+{ schema_version: 3, as_of_date,
   axis: { x_metric:"ps", x_scale:"log", y_metric:"ign_pct", sea_level:90 },
   dates: ["YYYY-MM-DD" × N],        // EOD 日频快照（默认最近 60 交易日），老→新
-  x_domain,                         // log P/S 轴域，由数据计算
-  count,
+  x_domain, count,                  // log P/S 轴域由数据计算
   stocks: [ { ticker, sector, mktcap, themes,
-              pts: [ { ign_pct, ignition, ign_persist_days, candidate,
-                       ps, evs, pe, ev_ebitda, ret_10d, ret_1m, vol_mult, freshness } × N ] } ] }
+              ps:[…×N], ign_pct:[…×N], cand:[0|1 ×N] } ] }   // 与 dates[] 同索引；ps|ign_pct=null→该日无位置
+
+// per-stock 懒加载 detail：web/public/data/ocean/<TICKER>.json（hover 时按票取）
+{ schema_version: 3, ticker, n,    // n==len(dates)，9 列 columnar 与 dates[] 同索引、null 恰在 bulk 无位置日
+  ignition:[…], ign_persist_days:[…], evs:[…], pe:[…], ev_ebitda:[…],
+  ret_10d:[…], ret_1m:[…], vol_mult:[…], freshness:[…] }
 ```
 
-- **C9 同源**：所有字段来自同一份 per-stock 管线（`derived_daily` / `valuation_daily` / `daily_bars` / `universe`）；前端绝不重算引擎。
+- **C9 同源**：所有字段（bulk + detail）来自同一份 per-stock 管线（`derived_daily` / `valuation_daily` / `daily_bars` / `universe`），一遍构建不失同步；前端绝不重算引擎。
 - **C10**：Ocean 仍是 scope 第一个 writer（lasso → set 全局 scope）。
 
 ### 验收（全绿）
 
-- 行为：`make fixture-pipeline` · `make check`（CHECK_OK）· `make web-test`（109 passed）· `make web-build`（tsc clean + vite built）。
+- 行为：`make fixture-pipeline` · `make check`（CHECK_OK）· `make web-test`（111 passed）· `make web-build`（tsc clean + vite built）。
 - gate：`make ocean-c9` / `rotation-c9` / `theme-c9` / `ignition-c9` / `ac-m7` 全 **GATE_PASS**。
-- C9 守卫更新：`export/check_ocean.py` 断言 `ocean.pts[-1]` 的 `ign_pct == board.ignition.ign_pct`、`candidate == board candidate`、`ps == board.valuation.ps`；`compute/rotation.py` + `export/rotation.py` + `export/check_rotation.py` 改 igniting/candidates 聚合。
+- C9 守卫更新：`export/check_ocean.py` 断言 bulk `ign_pct[-1] == board.ignition.ign_pct`、`cand[-1] == board candidate`、`ps[-1] == board.valuation.ps`，并校验 v3 拆分一致（detail.n==len(dates)、bulk cand==ign_pct≥90&detail.persist≥5、detail.evs 追溯 board）；`compute/rotation.py` + `export/rotation.py` + `export/check_rotation.py` 改 igniting/candidates 聚合。
 
-### 已知后续（M8 未做，留优化）
+### 已知后续
 
-- **payload 体积**：生产 `ocean.json` 较大（60 天 × ~500–6766 票 × 12 字段 pt；top-500 约 ~6MB，gzip ~1.5MB）。分片 / 裁剪是后续优化（M8 未做）。
+- **payload 体积 ✅ DONE（2026-06-15，schema v3）**：先实测纠偏——生产 `ocean.json`（top-500）over-the-wire 实为 gzip 866KB / brotli 596KB（旧文写的「gzip ~1.5MB」其实是 board.json 的数）。裁剪杠杆：每帧绘制只需 3 字段，9 个 tooltip 字段占压缩体积 ~79% → 拆 **bulk（3 绘制字段 columnar）+ per-stock 懒加载 detail**。实测 bulk brotli 596KB → **100KB（−83%）**，且 M6 全量后 bulk 仅随票数 ×3 字段、detail 永远按需，故扛得住数千只。（实测旁证：纯 columnar 单独只省 14%——gzip 早把重复 key 压掉了，故不单做。）
+- **board.json 体积**：仍是整合 array-of-objects（90d charts），gzip ~1.57MB；Discovery bounded/decide 仅 top-20，可后续同法裁剪（M8 未做）。
 
 ---
 

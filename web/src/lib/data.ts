@@ -1,4 +1,4 @@
-import type { BoardData, OceanData, RotationData, ManifestData, StockBundle, StockIndex } from '../types'
+import type { BoardData, OceanData, OceanDetail, RotationData, ManifestData, StockBundle, StockIndex } from '../types'
 
 // Load the nightly Discovery snapshot (export/board.py -> public/data/board.json).
 // import.meta.env.BASE_URL respects Vite's base './', so the fetch works from any
@@ -10,12 +10,24 @@ export async function loadBoard(signal?: AbortSignal): Promise<BoardData> {
   return (await res.json()) as BoardData
 }
 
-// Load the nightly Ocean weekly snapshots (export/ocean.py -> public/data/ocean.json).
+// Load the nightly Ocean bulk snapshot (export/ocean.py -> public/data/ocean.json, v3): the
+// columnar draw fields (ps/ign_pct/cand) for every stock. The nine hover-only fields are NOT
+// here — they load lazily per stock via loadOceanDetail (payload reduction; scales to M6).
 export async function loadOcean(signal?: AbortSignal): Promise<OceanData> {
   const base = import.meta.env?.BASE_URL ?? './'
   const res = await fetch(`${base}data/ocean.json`, { signal })
   if (!res.ok) throw new Error(`ocean.json HTTP ${res.status}`)
   return (await res.json()) as OceanData
+}
+
+// Load one stock's Ocean hover detail (export/ocean.py -> public/data/ocean/<TICKER>.json, v3):
+// the nine tooltip-only fields (columnar, index-aligned to ocean.json's dates). Fetched on hover
+// so a session only ever downloads detail for the names actually inspected (M8 payload split).
+export async function loadOceanDetail(ticker: string, signal?: AbortSignal): Promise<OceanDetail> {
+  const base = import.meta.env?.BASE_URL ?? './'
+  const res = await fetch(`${base}data/ocean/${ticker}.json`, { signal })
+  if (!res.ok) throw new Error(`ocean/${ticker}.json HTTP ${res.status}`)
+  return (await res.json()) as OceanDetail
 }
 
 // Load a nightly Rotation snapshot (export/rotation.py). Two files: sector ->

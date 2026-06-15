@@ -13,7 +13,7 @@
 // COLOR SoT: theme.css owns the hex values; JS holds only CSS-variable NAMES here (never
 // raw hex). resolvePalette() reads their computed hex at runtime in the browser; tests pass
 // a fake var→hex palette.
-import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
+import type { OceanData, OceanStock, OceanDrawPt, Scope } from '../types'
 
 // Plot box in logical px (canvas backs at 2x for retina). 880×470 with L/R/T/B insets:
 // left for the ign_pct axis labels, bottom for the P/S log-axis labels.
@@ -165,12 +165,23 @@ export function withAlpha(hex: string, a: number): string {
 
 // --- play-animation interpolation (visual only) ---
 
+/** Reconstruct a stock's DRAW snapshot at date index i from the v3 columnar bulk, or null if
+ *  there's no renderable position that day (ps or ign_pct missing). The candidate flag is the
+ *  precomputed gate (cand[i]===1); ign_persist_days etc. are not here (they live in OceanDetail,
+ *  fetched lazily on hover). This is the single place the columnar arrays become a point. */
+export function drawPtAt(s: OceanStock, i: number): OceanDrawPt | null {
+  const ps = s.ps[i]
+  const ign = s.ign_pct[i]
+  if (ps == null || ign == null) return null
+  return { ps, ign_pct: ign, candidate: s.cand[i] === 1 }
+}
+
 /** One animation frame for a stock: interpolated position (data space) + the REAL snapshot
- *  it reads tooltip/state from + a fade alpha. position is lerped; `snap` is NEVER synthesized. */
+ *  it reads draw state from + a fade alpha. position is lerped; `snap` is NEVER synthesized. */
 export interface FramePoint {
   ps: number
   ign_pct: number
-  snap: OceanPt
+  snap: OceanDrawPt
   fade: number   // 0..1 — 1 fully present; <1 while fading in/out at a gap
 }
 
@@ -181,7 +192,7 @@ export interface FramePoint {
  *  - next only (prev missing): hold at next, fade IN (fade = phase).
  *  - neither: null (not drawn). */
 export function interpolateOceanPoint(
-  prev: OceanPt | null, next: OceanPt | null, phase: number,
+  prev: OceanDrawPt | null, next: OceanDrawPt | null, phase: number,
 ): FramePoint | null {
   const t = clamp(phase, 0, 1)
   if (prev && next) {
@@ -300,8 +311,8 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
   const ph = lastDate ? 0 : o.phase
   const drawn: DrawnPoint[] = []
   for (const s of o.data.stocks) {
-    const prev = s.pts[o.dateIndex] ?? null
-    const next = lastDate ? prev : s.pts[o.dateIndex + 1] ?? null
+    const prev = drawPtAt(s, o.dateIndex)
+    const next = lastDate ? prev : drawPtAt(s, o.dateIndex + 1)
     const fp = interpolateOceanPoint(prev, next, ph)
     if (!fp) continue
     const member =
@@ -372,8 +383,8 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
     for (const tk of o.pinned) {
       const s = byTicker.get(tk)
       if (!s) continue
-      const prev = s.pts[o.dateIndex] ?? null
-      const next = lastDate ? prev : s.pts[o.dateIndex + 1] ?? null
+      const prev = drawPtAt(s, o.dateIndex)
+      const next = lastDate ? prev : drawPtAt(s, o.dateIndex + 1)
       const fp = interpolateOceanPoint(prev, next, ph)
       if (!fp) continue
       const X = sx(fp.ps)
