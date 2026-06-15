@@ -1,23 +1,15 @@
 import { useEffect, useState } from 'react'
-import type { StockBundle, Components, IgnitionComponents } from '../types'
+import type { StockBundle, IgnitionComponents } from '../types'
 import { loadStockBundle, loadStockIndex } from '../lib/data'
-import { WEIGHTS, composite } from '../lib/composite'
 import StockStack from '../components/StockStack'
-import { fmtMktcap, fmtMonthDay, fmtStepRate, num, pct, scoreColor } from '../lib/format'
+import { fmtMktcap, fmtMonthDay, fmtStepRate, num, pct } from '../lib/format'
 
 // Stock detail (PRD §9.6, M5.4) — per-name, NOT scope-filtered. Reads one lazily-fetched
 // bundle (export/stock_bundle.py) for ANY universe ticker, not board.json's top-N. The core
 // is the time-aligned price↔fundamentals stack (StockStack: PRICE/VOLUME/REVENUE/P-S sharing
 // one x axis with quarter gridlines), upgrading the #53 preview's single MiniChart. `initial`
 // injects a bundle for SSR/tests. Same valuation_daily/fundamentals_q as every surface (C9).
-
-const COMPONENTS: { key: keyof Components; label: string }[] = [
-  { key: 'rs', label: 'RS' },
-  { key: 'high', label: '52WH' },
-  { key: 'trend', label: 'TREND' },
-  { key: 'vol', label: 'VOL' },
-  { key: 'accel', label: 'ACCEL' },
-]
+// The headline is the ignition read (the core engine); composite is no longer shown (M8).
 
 // ignition's 5 raw self-relative components (PRD §10.8). Unlike composite's c_* ∈ [0,1],
 // these are the engine's RAW signals (the [0,1] normalization happens cross-sectionally in
@@ -120,11 +112,6 @@ export default function Stock({
     )
 
   const m = bundle.meta
-  const comps = bundle.components
-  // composite at the fixed weighting (no knob, PRD §16): prefer the engine's exported
-  // value (C9), fall back to the frontend recompute only when meta.composite is null.
-  const score = m.composite ?? (comps ? composite(comps) : 0)
-  const w = WEIGHTS
   const v = bundle.valuation
   const ign = bundle.ignition
   const opts = tickers.length ? tickers : [m.ticker]
@@ -162,9 +149,11 @@ export default function Stock({
             </div>
           )}
         </div>
-        <div className="stk-score" style={{ color: scoreColor(score) }}>
-          <div className="stk-scorev">{score.toFixed(0)}</div>
-          <div className="stk-scorel">COMPOSITE · 确认副读</div>
+        {/* headline = the ignition read (the core engine, PRD §10.8). green when 持续点火
+            candidate (above the sea level AND sustained). Composite is gone (M8). */}
+        <div className="stk-score" style={{ color: ign?.candidate ? 'var(--score-hi)' : 'var(--txt)' }}>
+          <div className="stk-scorev">{ign?.ign_pct == null ? '—' : ign.ign_pct.toFixed(0)}</div>
+          <div className="stk-scorel">IGN PCT · 发现核心</div>
         </div>
       </div>
 
@@ -270,27 +259,8 @@ export default function Stock({
         ))}
       </div>
 
-      <div className="stk-comp">
-        <div className="stk-compt">composite 5 分量（原始值 ∈ [0,1] · 固定权重，无旋钮）</div>
-        {comps &&
-          COMPONENTS.map(({ key, label }) => {
-            const cv = comps[key]
-            const wv = w[key]
-            return (
-              <div key={key} className="stk-crow">
-                <span className="stk-cl">{label}</span>
-                <span className="stk-cbar">
-                  <span className="stk-cfill" style={{ width: `${Math.round((cv ?? 0) * 100)}%` }} />
-                </span>
-                <b>{cv == null ? '—' : cv.toFixed(2)}</b>
-                <em>{Math.round((wv ?? 0) * 100)}%</em>
-              </div>
-            )
-          })}
-      </div>
-
       <div className="foot">
-        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。点火诊断（ignition，§10.8）是并列的第二台引擎（发现，短窗口，项目核心）：无可调参，刚起步在加速 → 翻财报终筛；composite 退为确认副读（固定权重，无旋钮）。来自 per-name bundle（懒加载，与 board/Discovery/Valuation 同源 C9）。最新 filing AI 摘要留 M5 之后。as_of {bundle.as_of_date}。
+        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。头部 + 点火诊断（ignition，§10.8）= 发现核心引擎（短窗口，无可调参）：刚起步在加速 → 翻财报终筛。composite 不再作为用户可见概念（M8）。来自 per-name bundle（懒加载，与 board/Discovery/Ocean/Valuation 同源 C9）。最新 filing AI 摘要留后续。as_of {bundle.as_of_date}。
       </div>
     </div>
   )

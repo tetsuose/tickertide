@@ -11,10 +11,11 @@ const bundle = stock as unknown as StockBundle
 const count = (html: string, cls: string) => html.split(cls).length - 1
 
 describe('Stock detail (M5.4, per-name bundle)', () => {
-  it('renders the per-name header from the bundle', () => {
+  it('renders the per-name header with the ignition headline (not composite)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} ticker={bundle.meta.ticker} />)
     expect(html).toContain(`stk-tk">${bundle.meta.ticker}<`)
-    expect(html).toContain('COMPOSITE')
+    expect(html).toContain('IGN PCT')        // M8 headline = ignition
+    expect(html).not.toContain('COMPOSITE')   // composite headline removed
   })
 
   it('renders theme chips with exposure %', () => {
@@ -25,10 +26,10 @@ describe('Stock detail (M5.4, per-name bundle)', () => {
     expect(html).toContain(`${Math.round((bundle.meta.themes[0].exposure ?? 0) * 100)}%`)
   })
 
-  it('shows the 6 valuation cards + 5 components', () => {
+  it('shows the 6 valuation cards (composite 5-component stack is gone, M8)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
     expect(count(html, 'stk-vcard')).toBe(6)
-    expect(count(html, 'stk-crow')).toBe(5)
+    expect(count(html, 'stk-crow')).toBe(0)   // composite components removed
     expect(html).toContain('Rule of 40')
   })
 
@@ -53,7 +54,7 @@ const igEvidence = (over: Partial<NonNullable<StockBundle['ignition']>['evidence
 })
 const candidateIgnition = {
   ignition: 82.07,
-  ign_pct: 96.6,
+  ign_pct: 96.0,
   ign_persist_days: 6,
   candidate: true,
   components: { accel: 0.0087, expand: 1.2455, vsurge: 0.9938, breakout: 1.0, rsturn: 0.0566 },
@@ -78,12 +79,13 @@ describe('Stock 点火诊断 (M7.4, second engine — ignition)', () => {
     expect(html).toContain('stk-igntl')
   })
 
-  it('does NOT replace composite (parallel engine; composite stays a fixed-weight side-read)', () => {
-    // composite stack is still its own section; ignition is additive, not a replacement.
+  it('M8: composite is no longer a user-visible concept (no stack, no big score)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
-    expect(html).toContain('stk-comp')
-    expect(count(html, 'stk-crow')).toBe(5) // composite's 5 components untouched
-    expect(html).toContain('COMPOSITE')
+    expect(html).not.toContain('stk-comp')   // composite 5-component stack removed
+    expect(count(html, 'stk-crow')).toBe(0)
+    expect(html).not.toContain('COMPOSITE')  // composite headline removed
+    // the ignition diagnostic (the core engine) remains the focus.
+    expect(html).toContain('点火诊断')
   })
 
   it('marks a 持续点火 candidate (🔥) with the streak (uses TT22 real block)', () => {
@@ -109,11 +111,10 @@ describe('Stock 点火诊断 (M7.4, second engine — ignition)', () => {
     expect(html).toContain('&gt;20×')
   })
 
-  it('composite is a fixed-weight side-read with no knob (PRD §16): no per-k label, no slider', () => {
-    // the early⟷reliable knob is gone — Stock takes no k prop. The composite header reads
-    // 确认副读 (fixed weighting), never "k=…", and the surface carries no range slider.
+  it('ignition is the headline, with no knob (PRD §16): no per-k label, no slider, no early⟷reliable', () => {
+    // ignition has no tunable parameter; Stock takes no k prop and carries no range slider.
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
-    expect(html).toContain('确认副读')
+    expect(html).toContain('发现核心')      // ignition headline label
     expect(html).not.toContain('k=')
     expect(html).not.toContain('type="range"')
     expect(html).not.toContain('early')

@@ -5,8 +5,9 @@ enriched league. This export assembles, per bucket (sector M3 / theme M4):
   - rs_ratio[] aligned to a shared weeks[] axis (oldest->newest; missing weeks null),
     the SAME alignment Ocean uses for pts[] so the client just zips series to axis;
   - the league snapshot: level / slope_4w / state + member aggregates (breadth /
-    #at-52w-high / composite median / agg EV-S / multi-horizon rel return) — all from
-    compute.rotation.league_table, the SAME source as Discovery/Ocean/Stock (C9);
+    #at-52w-high / # igniting / # candidates / agg EV-S / multi-horizon rel return) — all
+    from compute.rotation.league_table, the SAME source as Discovery/Ocean/Stock (C9). M8:
+    ignition aggregates replace the composite median (composite is no longer user-visible);
   - members[]: top-N member tickers; the client filters board.json by scope=sector for
     the actual evidence cards, so rotation.json carries only the ticker list (DRY/C9);
   - etf: the SPDR ticker from ingest/sector_etf_map.txt (audit; bucket joins by name).
@@ -68,10 +69,11 @@ def _etf_map() -> dict:
 
 
 def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
-    """Top-N member tickers per bucket by composite on `latest_date`. Bucket membership is
-    rotation._bucket_members (sector: universe.sector; theme: theme_membership point-in-time,
-    many-to-many) — the SAME source the league uses (C9). The client filters board.json by
-    scope for the actual evidence cards (DRY/C9); this carries the ticker list only."""
+    """Top-N member tickers per bucket by ignition (ign_pct) on `latest_date`. Bucket
+    membership is rotation._bucket_members (sector: universe.sector; theme: theme_membership
+    point-in-time, many-to-many) — the SAME source the league uses (C9). M8: ordered by the
+    discovery engine, not composite. The client filters board.json by scope for the actual
+    evidence cards (DRY/C9); this carries the ticker list only."""
     mem = rotation._bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
@@ -79,8 +81,8 @@ def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
             """
             SELECT mr.bucket AS bucket, d.ticker
             FROM derived_daily d JOIN mem_rel mr ON mr.ticker = d.ticker
-            WHERE d.date = ? AND d.composite IS NOT NULL
-            ORDER BY mr.bucket, d.composite DESC
+            WHERE d.date = ? AND d.ign_pct IS NOT NULL
+            ORDER BY mr.bucket, d.ign_pct DESC
             """,
             [latest_date],
         ).fetchall()
@@ -129,7 +131,8 @@ def build_rotation(con, bucket_type: str = BUCKET_TYPE, n_weeks: int = DEFAULT_W
             "breadth_ma200": _num(lr.get("breadth_ma200"), 1),
             "at_high": _int(lr.get("at_high")),
             "member_count": _int(lr.get("member_count")),
-            "composite_median": _num(lr.get("composite_median"), 2),
+            "igniting": _int(lr.get("igniting")),
+            "candidates": _int(lr.get("candidates")),
             "agg_evs": _num(lr.get("agg_evs"), 2),
             "rel_ret_1m": _num(lr.get("rel_ret_1m"), 4),
             "rel_ret_3m": _num(lr.get("rel_ret_3m"), 4),

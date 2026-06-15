@@ -1,35 +1,43 @@
-"""M2.1 ocean export: DuckDB weekly snapshots -> web/public/data/ocean.json.
+"""M8 ocean export: DuckDB daily snapshots -> web/public/data/ocean.json (schema v2).
 
-Ocean is the wide-explore surface (PRD §9.2): a canvas scatter of the whole
-universe on a fixed RS×Valuation plane, scrubbed week by week with pinned trails.
-Unlike the Discovery board (one latest snapshot per stock), Ocean needs a weekly
-POSITION SEQUENCE per stock, so the client can scrub the scrubber and draw trails.
+Ocean is the wide-explore surface (PRD §9.2), rebuilt in M8 from the old RS×Valuation
+weekly scatter into an **Ignition × Valuation daily SEA-LEVEL map**:
+  - y = `ign_pct` (0-100, the ignition cross-sectional percentile, §10.8) with a fixed
+    "sea level" at ign_pct = 90. Above the line = lit (igniting / accelerating / breaking
+    out / surging volume); jump-height ∝ ign_pct - 90.
+  - x = raw trailing P/S TTM (`ps`) on a LOG axis — the raw multiple, NOT a valuation
+    percentile and NOT a composite valuation score (no implicit threshold params, §16).
 
-Each stock carries `pts[]` aligned to `weeks[]` (oldest→newest), one point per week:
-  - rs  : derived_daily.rs_pct  (0-100 cross-sectional RS percentile, x-axis;
-          the SAME column Discovery/Stock show, so a point is traceable — C9)
-  - val : common-vintage valuation percentile (0-100, y-axis, bottom=cheap;
-          PRD §10.5). Computed by compute.valuation.common_vintage — the SAME
-          function the M5 Valuation screener will reuse, so the percentile口径
-          never forks between the two surfaces (C9; M2 defines, M5 refines the
-          coverage threshold).
-  - ps  : the raw P/S multiple behind `val` (for the hover tip, PRD §9.2), so the
-          number that produced the y-position travels with the point.
+A `candidate` (ign_pct>=90 AND ign_persist_days>=5) is the SAME gate Discovery sorts by
+(§10.8.2), so an Ocean point above the sea level is the SAME population as the Discovery
+board — traceable point-for-point (C9). Composite is gone from this surface (M8).
 
-Week-ends are the last trading day of each ISO week (date_trunc('week', …)); the
-newest week-end is the latest snapshot (== board.json as_of), so Ocean's current
-positions match the Discovery/Stock numbers exactly.
+Unlike the Discovery board (one latest snapshot per stock), Ocean needs a daily POSITION
+SEQUENCE per stock so the client can scrub a date slider and tween the play animation
+between adjacent real EOD snapshots. Each stock carries `pts[]` aligned to `dates[]`
+(oldest→newest), one point per trading day:
+  - ign_pct / ignition / ign_persist_days / candidate : verbatim from derived_daily — the
+        SAME columns board.py ships (C9); the engine is NEVER recomputed here.
+  - ps / evs / pe / ev_ebitda / freshness : from valuation_daily (C9). `ps` is the x-axis;
+        the rest + the §10.5 as-of freshness bucket ride along for the tooltip.
+  - ret_10d / ret_1m / vol_mult : evidence numbers from the SAME daily_bars the Discovery
+        card uses (board.py's idiom) — ret_Nd = adj_close/LAG(adj_close,N)-1; vol_mult is
+        derived_daily.ig_vsurge (the 5/60 volume surge), a stored column read verbatim.
 
-Inclusion rule: a stock is exported iff it has BOTH a non-null rs AND a fresh
-common-vintage val on the LATEST week — i.e. it has a renderable (x,y) on the
-default view (so AC-M2 "≥500 points render" holds). Stale / n.m. / no-fundamentals
-stocks have no y-coordinate and are absent (consistent with §10.5 "stale 不进
-percentile"). For OLDER weeks a stock may be stale or lack warm history → that
-week's pt is `null` (the trail simply doesn't extend there; positions are never
-fabricated).
+Animation contract (M8): pts carry ONLY real EOD snapshots. The client lerps positions
+between adjacent dates for the play tween but reads tooltip/state off the real snapshot —
+no fabricated intra-window trading days here (PRD §9.2 §9-9.10).
 
-Output (gitignored, derived nightly): web/public/data/ocean.json.
-Math spec: PRD §10.2 (rs_pct) / §10.5 (common-vintage); UX: §9.2; schema: §12.
+Inclusion rule: a stock is exported iff on the LATEST date it has BOTH a valid ign_pct
+AND a valid ps (>0) AND is in the universe — i.e. it has a renderable (x,y) on the default
+view. For older dates a stock's pt is null where either coordinate is missing (the tween
+fades it in/out; positions are never fabricated).
+
+`x_domain` = [min, max] of every valid P/S across the exported window, computed from the
+data for the client's log scale — NO hard-coded valuation threshold (PRD §9.2/§16).
+
+Output (gitignored, derived nightly): web/public/data/ocean.json (schema_version 2).
+Math spec: PRD §10.8 (ignition) / §10.5 (P/S); UX: §9.2; schema: PRD §12 / File-Contracts.
 """
 from __future__ import annotations
 
@@ -43,14 +51,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from compute import db, valuation  # noqa: E402
+from compute import db  # noqa: E402
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_OUT = ROOT / "web" / "public" / "data" / "ocean.json"
 
-DEFAULT_WEEKS = 14       # ~1 quarter of weekly snapshots (aligns with the UX contract)
-DEFAULT_METRIC = "ps"    # default valuation axis (PRD §9.2/§10.5: P/S)
-FRESH_DAYS = 95          # common-vintage freshness cutoff (PRD §10.5/§9.5)
+DEFAULT_DAYS = 60        # ~3 months of daily EOD snapshots (M8 sea-level animation window)
+SEA_LEVEL = 90           # ign_pct sea level (== board.py IGN_TOP_DECILE; top decile, §10.8.2)
+IGN_PERSIST_MIN = 5      # candidate persistence gate (== board.py IGN_PERSIST_MIN)
+FRESH_DAYS = 95          # valuation as-of freshness cutoff (PRD §10.5/§9.5; == board.py)
+STALE_DAYS = 160         # <=160d = stale (one quarter behind); >160d = overdue
+RET_10D_LAG = 10         # ret_10d window in trading days (== ignition step-rate fast window)
+RET_1M_LAG = 21          # ret_1m window (~1 trading month; == board.py RET_1M_LAG)
+
+
+def freshness(age_days: int | None) -> str | None:
+    """As-of bucket per PRD §9.5/§10.5: fresh <=95d, stale <=160d, else overdue (== board.py)."""
+    if age_days is None:
+        return None
+    if age_days <= FRESH_DAYS:
+        return "fresh"
+    if age_days <= STALE_DAYS:
+        return "stale"
+    return "overdue"
 
 
 def _num(x, ndigits: int | None = None):
@@ -77,70 +100,80 @@ def _table_exists(con, name: str) -> bool:
 
 
 def _themes(con, ticker: str, snap, has_themes: bool) -> list[dict]:
-    """Point-in-time theme memberships (PRD §7). Empty until M4; table may not exist."""
+    """Point-in-time theme chips as-of the latest snapshot (PRD §7 C3): per theme the latest
+    as_of_date<=snap with exposure>0, via the canonical db.theme_membership_asof — the SAME
+    PIT query board.py uses, so Ocean's chips match the Discovery card's (C9). Highest
+    exposure first. Empty until themes are seeded; table may not exist pre-M4."""
     if not has_themes:
         return []
-    rows = con.execute(
-        "SELECT theme, exposure FROM theme_membership "
-        "WHERE ticker = ? AND as_of_date <= ? ORDER BY exposure DESC NULLS LAST",
-        [ticker, snap],
-    ).fetchall()
-    return [{"theme": t, "exposure": _num(e, 4)} for t, e in rows]
+    m = db.theme_membership_asof(con, snap, ticker=ticker).sort_values("exposure", ascending=False)
+    return [{"theme": r.theme, "exposure": _num(r.exposure, 4)} for r in m.itertuples()]
 
 
-def week_ends(con, n_weeks: int) -> list:
-    """The last trading day of each of the most recent `n_weeks` ISO weeks, oldest
-    first. date_trunc('week', …) buckets by Monday-anchored ISO week (no year-edge
-    collision); max(date) per bucket is that week's last traded day. The newest
-    equals max(derived_daily.date) = the latest snapshot."""
+def trading_days(con, n_days: int) -> list:
+    """The most recent `n_days` distinct trading days in derived_daily, oldest first. The
+    newest == max(derived_daily.date) == board/Discovery as_of, so Ocean's default (latest)
+    positions match the Discovery numbers exactly (C9)."""
     rows = con.execute(
-        """
-        SELECT wk_end FROM (
-          SELECT max(date) AS wk_end
-          FROM (SELECT DISTINCT date FROM derived_daily)
-          GROUP BY date_trunc('week', date)
-        ) ORDER BY wk_end DESC LIMIT ?
-        """,
-        [int(n_weeks)],
+        "SELECT DISTINCT date FROM derived_daily ORDER BY date DESC LIMIT ?", [int(n_days)]
     ).fetchall()
     return [r[0] for r in rows][::-1]
 
 
-def build_ocean(con, n_weeks: int = DEFAULT_WEEKS, metric: str = DEFAULT_METRIC,
-                fresh_days: int = FRESH_DAYS, limit: int | None = None) -> dict:
-    """Assemble the Ocean weekly-snapshot dict from DuckDB."""
-    if metric not in valuation.VINTAGE_METRICS:
-        raise ValueError(f"metric {metric!r} not in {valuation.VINTAGE_METRICS}")
+def _valid_ps(ps) -> bool:
+    """A renderable x-coordinate on the log axis: present and strictly positive."""
+    return ps is not None and ps > 0
+
+
+def build_ocean(con, n_days: int = DEFAULT_DAYS, limit: int | None = None) -> dict:
+    """Assemble the Ocean daily-snapshot dict (schema v2) from DuckDB."""
     if db.count(con, "derived_daily") == 0:
         raise RuntimeError("derived_daily is empty — run `make compute` first.")
-    weeks = week_ends(con, n_weeks)
-    if not weeks:
+    dates = trading_days(con, n_days)
+    if not dates:
         raise RuntimeError("no trading dates in derived_daily.")
-    latest = weeks[-1]
+    latest = dates[-1]
     has_themes = _table_exists(con, "theme_membership")
 
-    ph = ",".join(["?"] * len(weeks))
-    # rs (x) for every (ticker, week) — same column Discovery/Stock surface (C9).
-    rs_by = {
-        (t, d): v
-        for t, d, v in con.execute(
-            f"SELECT ticker, date, rs_pct FROM derived_daily WHERE date IN ({ph})", weeks
+    ph = ",".join(["?"] * len(dates))
+    # ignition (y + lit state) per (ticker, date) — verbatim derived_daily columns (C9).
+    # vol_mult = ig_vsurge (5/60 volume surge), the SAME stored column board ships as 放量×.
+    ign_by = {
+        (t, d): (ign_pct, ignition, persist, vsurge)
+        for t, d, ign_pct, ignition, persist, vsurge in con.execute(
+            f"SELECT ticker, date, ign_pct, ignition, ign_persist_days, ig_vsurge "
+            f"FROM derived_daily WHERE date IN ({ph})",
+            dates,
         ).fetchall()
     }
-    # raw metric (for the tip) for every (ticker, week). `metric` is allowlist-checked above.
-    ps_by = {
-        (t, d): v
-        for t, d, v in con.execute(
-            f"SELECT ticker, date, {metric} FROM valuation_daily WHERE date IN ({ph})", weeks
+    # valuation (x + tooltip) per (ticker, date) — same valuation_daily as board/Valuation (C9).
+    val_by = {
+        (t, d): (ps, evs, pe, ev_ebitda, period_end)
+        for t, d, ps, evs, pe, ev_ebitda, period_end in con.execute(
+            f"SELECT ticker, date, ps, evs, pe, ev_ebitda, as_of_period_end "
+            f"FROM valuation_daily WHERE date IN ({ph})",
+            dates,
         ).fetchall()
     }
-    # val (y) per week = common-vintage percentile, the SAME function M5 reuses (C9).
-    val_by, fresh_latest, stale_latest = {}, 0, 0
-    for wk in weeks:
-        _, pct, n_fresh, n_stale = valuation.common_vintage(con, metric, wk, fresh_days)
-        val_by[wk] = pct
-        if wk == latest:
-            fresh_latest, stale_latest = n_fresh, n_stale
+    # ret_10d / ret_1m (evidence) per (ticker, date): adj_close/LAG(adj_close,N)-1 over the
+    # FULL daily_bars history (the lag must see bars before the window), filtered to the
+    # window. Same source + formula board.py derives ret_1m from (C9 evidence, not engine).
+    ret_by = {
+        (t, d): (r10, r1m)
+        for t, d, r10, r1m in con.execute(
+            f"""
+            WITH r AS (
+              SELECT ticker, date,
+                     adj_close / NULLIF(lag(adj_close, {RET_10D_LAG}) OVER w, 0) - 1 AS ret_10d,
+                     adj_close / NULLIF(lag(adj_close, {RET_1M_LAG}) OVER w, 0) - 1 AS ret_1m
+              FROM daily_bars
+              WINDOW w AS (PARTITION BY ticker ORDER BY date)
+            )
+            SELECT ticker, date, ret_10d, ret_1m FROM r WHERE date IN ({ph})
+            """,
+            dates,
+        ).fetchall()
+    }
 
     meta = {
         t: (sector, mktcap)
@@ -149,91 +182,115 @@ def build_ocean(con, n_weeks: int = DEFAULT_WEEKS, metric: str = DEFAULT_METRIC,
         ).fetchall()
     }
 
-    # Candidates: renderable on the latest week (both x and y present), present in
-    # universe. Sort by mktcap desc so big caps paint first (small drawn on top).
-    val_latest = val_by[latest]
-    cands = [
-        t for t in val_latest
-        if rs_by.get((t, latest)) is not None and t in meta
-    ]
-    cands.sort(key=lambda t: (meta[t][1] if meta[t][1] is not None else -1.0), reverse=True)
+    # Inclusion: renderable on the LATEST date (valid ign_pct AND valid ps) AND in universe.
+    # Sort by mktcap desc so big caps paint first (small drawn on top, as the canvas expects).
+    latest_tickers = []
+    for t in meta:
+        ig = ign_by.get((t, latest))
+        vv = val_by.get((t, latest))
+        if ig and ig[0] is not None and vv and _valid_ps(vv[0]):
+            latest_tickers.append(t)
+    latest_tickers.sort(key=lambda t: (meta[t][1] if meta[t][1] is not None else -1.0), reverse=True)
     if limit:
-        cands = cands[:limit]
+        latest_tickers = latest_tickers[:limit]
 
+    all_ps: list[float] = []
     stocks = []
-    for t in cands:
+    for t in latest_tickers:
         pts = []
-        for wk in weeks:
-            r = rs_by.get((t, wk))
-            v = val_by[wk].get(t)
-            if r is None or v is None:
-                pts.append(None)
-            else:
-                pts.append({"rs": _num(r, 1), "val": _num(v, 1), "ps": _num(ps_by.get((t, wk)), 2)})
+        for d in dates:
+            ig = ign_by.get((t, d))
+            vv = val_by.get((t, d))
+            ign_pct = ig[0] if ig else None
+            ps = vv[0] if vv else None
+            if ign_pct is None or not _valid_ps(ps):
+                pts.append(None)  # no renderable position this day (tween fades it in/out)
+                continue
+            all_ps.append(ps)
+            persist = ig[2]
+            candidate = persist is not None and ign_pct >= SEA_LEVEL and persist >= IGN_PERSIST_MIN
+            ret = ret_by.get((t, d))
+            period_end = vv[4]
+            age = (d - period_end).days if period_end is not None else None
+            pts.append({
+                "ign_pct": _num(ign_pct, 1),
+                "ignition": _num(ig[1], 2),
+                "ign_persist_days": int(persist) if persist is not None else None,
+                "candidate": bool(candidate),
+                "ps": _num(ps, 2),
+                "evs": _num(vv[1], 2),
+                "pe": _num(vv[2], 2),
+                "ev_ebitda": _num(vv[3], 2),
+                "ret_10d": _num(ret[0] if ret else None, 4),
+                "ret_1m": _num(ret[1] if ret else None, 4),
+                "vol_mult": _num(ig[3], 3),   # ig_vsurge (5/60 volume surge), stored col (C9)
+                "freshness": freshness(age),
+            })
         sector, mktcap = meta[t]
         stocks.append({
             "ticker": t,
             "sector": sector,
-            "mktcap": _num(mktcap),     # raw USD, same unit as board.json (client renders √(mktcap/1e9))
+            "mktcap": _num(mktcap),     # raw USD (client renders radius √(mktcap/1e9), same as board)
             "themes": _themes(con, t, latest, has_themes),
             "pts": pts,
         })
 
-    _self_check(stocks, weeks, val_latest, ps_by, latest)
+    # log-scale x domain from the data (no hard-coded valuation threshold, §16). all_ps is
+    # non-empty whenever any stock is included (inclusion requires a valid latest ps).
+    x_domain = [round(min(all_ps), 4), round(max(all_ps), 4)] if all_ps else [0.1, 100.0]
+
+    _self_check(stocks, dates, x_domain)
 
     return {
         "schema_version": SCHEMA_VERSION,
         "as_of_date": _iso(latest),
-        "metric": metric,
-        "fresh_days": fresh_days,
-        "n_weeks": len(weeks),
-        "weeks": [_iso(w) for w in weeks],
+        "axis": {"x_metric": "ps", "x_scale": "log", "y_metric": "ign_pct", "sea_level": SEA_LEVEL},
+        "dates": [_iso(d) for d in dates],
+        "x_domain": x_domain,
         "count": len(stocks),
-        "fresh_cohort_latest": fresh_latest,
-        "stale_excluded_latest": stale_latest,
         "stocks": stocks,
     }
 
 
-def _self_check(stocks: list[dict], weeks: list, val_latest: dict, ps_by: dict, latest) -> None:
-    """Fail loudly here (not silently in the browser) if the contract breaks.
+def _self_check(stocks: list[dict], dates: list, x_domain: list) -> None:
+    """Fail loudly here (not silently in the browser) if the contract breaks:
 
-    1. every stock has len(pts)==len(weeks) and a NON-NULL latest pt (renderable);
-    2. val orientation is bottom=cheap — the cheapest-P/S stock outranks the
-       dearest, i.e. low val == cheap (guards an accidental sort flip vs §10.5).
+    1. every stock has len(pts)==len(dates) and a NON-NULL latest pt (renderable default);
+    2. every non-null pt has ign_pct ∈ [0,100] and ps > 0 (log axis needs positive x);
+    3. candidate ⇒ above the sea level (ign_pct >= SEA_LEVEL) — guards the gate/axis pairing;
+    4. x_domain is a positive ordered interval (so the client's log scale is well-defined).
     """
-    n = len(weeks)
+    n = len(dates)
     for s in stocks:
         if len(s["pts"]) != n:
-            raise RuntimeError(f"{s['ticker']}: pts length {len(s['pts'])} != n_weeks {n}")
+            raise RuntimeError(f"{s['ticker']}: pts length {len(s['pts'])} != n_days {n}")
         if s["pts"][-1] is None:
             raise RuntimeError(f"{s['ticker']}: latest pt is null but stock was included")
-
-    cohort = [(t, ps_by.get((t, latest))) for t in val_latest if ps_by.get((t, latest)) is not None]
-    if len(cohort) > 1:
-        cheap = min(cohort, key=lambda x: x[1])[0]
-        dear = max(cohort, key=lambda x: x[1])[0]
-        if val_latest[cheap] > val_latest[dear]:
-            raise RuntimeError(
-                f"val orientation flipped: cheapest {cheap} (val={val_latest[cheap]:.1f}) ranks above "
-                f"dearest {dear} (val={val_latest[dear]:.1f}); §10.5 requires bottom=cheap."
-            )
+        for p in s["pts"]:
+            if p is None:
+                continue
+            if p["ps"] is None or p["ps"] <= 0:
+                raise RuntimeError(f"{s['ticker']}: non-null pt has ps={p['ps']} (log axis needs ps>0)")
+            if p["ign_pct"] is None or not (0 <= p["ign_pct"] <= 100):
+                raise RuntimeError(f"{s['ticker']}: ign_pct={p['ign_pct']} out of [0,100]")
+            if p["candidate"] and p["ign_pct"] < SEA_LEVEL:
+                raise RuntimeError(
+                    f"{s['ticker']}: candidate below sea level (ign_pct={p['ign_pct']} < {SEA_LEVEL})"
+                )
+    if not (x_domain[0] > 0 and x_domain[0] <= x_domain[1]):
+        raise RuntimeError(f"x_domain {x_domain} is not a positive ordered interval (log scale).")
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="TickerTide M2.1 export: Ocean weekly snapshots ocean.json.")
+    ap = argparse.ArgumentParser(description="TickerTide M8 export: Ocean ignition×valuation daily ocean.json.")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="output JSON path")
-    ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS, help="number of weekly snapshots")
-    ap.add_argument("--metric", default=DEFAULT_METRIC, choices=valuation.VINTAGE_METRICS,
-                    help="valuation metric for the y-axis percentile (default ps)")
-    ap.add_argument("--fresh-days", type=int, default=FRESH_DAYS, help="common-vintage freshness cutoff")
+    ap.add_argument("--days", type=int, default=DEFAULT_DAYS, help="number of daily EOD snapshots")
     ap.add_argument("--limit", type=int, default=None, help="cap to top-N by mktcap (default: all)")
     args = ap.parse_args(argv)
 
     con = db.connect(args.db)
-    ocean = build_ocean(con, n_weeks=args.weeks, metric=args.metric,
-                        fresh_days=args.fresh_days, limit=args.limit)
+    ocean = build_ocean(con, n_days=args.days, limit=args.limit)
     con.close()
 
     out = Path(args.out)
@@ -241,10 +298,10 @@ def main(argv: list[str] | None = None) -> int:
     out.write_text(json.dumps(ocean, ensure_ascii=False, separators=(",", ":")) + "\n")
 
     kb = out.stat().st_size / 1024
-    print(f"[ocean] {args.out}  as_of={ocean['as_of_date']}  weeks={ocean['n_weeks']}  "
-          f"stocks={ocean['count']}  metric={ocean['metric']}  "
-          f"fresh={ocean['fresh_cohort_latest']}  stale_excluded={ocean['stale_excluded_latest']}  "
-          f"size={kb:.1f}KB")
+    n_cand = sum(1 for s in ocean["stocks"] if s["pts"][-1]["candidate"])
+    print(f"[ocean] {args.out}  as_of={ocean['as_of_date']}  days={len(ocean['dates'])}  "
+          f"stocks={ocean['count']}  candidates_latest={n_cand}  "
+          f"x_domain={ocean['x_domain']}  sea_level={ocean['axis']['sea_level']}  size={kb:.1f}KB")
     return 0
 
 

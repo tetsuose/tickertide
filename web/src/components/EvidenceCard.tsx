@@ -1,14 +1,5 @@
-import { useState } from 'react'
-import type { Stock, Components } from '../types'
+import type { Stock } from '../types'
 import MiniChart from './MiniChart'
-
-// composite score color (PRD 附录C): >=62 grn / >=47 amb / else dim.
-function scoreColor(score: number | null): string {
-  if (score == null) return 'var(--score-lo)'
-  if (score >= 62) return 'var(--score-hi)'
-  if (score >= 47) return 'var(--score-mid)'
-  return 'var(--score-lo)'
-}
 
 // step-rate ratio = (ret10/10)/(ret50/50): the readable form of ig_accel (PRD §10.8).
 // It blows up when ret50≈0 (M7.2 pitfall: fixture TT20=685) — mathematically faithful
@@ -35,43 +26,19 @@ function fmtMktcap(v: number | null): string {
 const pct = (v: number | null): string =>
   v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%'
 
-// 5 components in fixed-weight order, with display labels (PRD §9.1.1 / §10.6).
-const COMPONENTS: { key: keyof Components; label: string }[] = [
-  { key: 'rs', label: 'RS' },
-  { key: 'high', label: '52WH' },
-  { key: 'trend', label: 'TREND' },
-  { key: 'vol', label: 'VOL' },
-  { key: 'accel', label: 'ACCEL' },
-]
-
-// evidence-card = the collapsed state of a Stock (PRD §9.1.3): scannable raw
-// facts; composite is an expandable badge, never a buy/target. The 5 raw
-// components + their weights are revealed on the badge (no black box).
+// evidence-card = the collapsed state of a Stock (PRD §9.1.3): scannable raw facts,
+// ignition-first. Composite is NO LONGER shown (M8 — composite is not a user-visible
+// concept). The card header surfaces the 持续点火 state; the 点火证据 strip + the 6 raw
+// evidence numbers + the mini-chart carry the rest. Click anywhere → open Stock.
 export default function EvidenceCard({
   stock,
-  weights,
-  score,
   onOpen,
-  defaultOpen = false,
 }: {
   stock: Stock
-  /** fixed composite weights (WEIGHTS, no knob) — shown per component for informed consent. */
-  weights: Components
-  /** the engine's composite at the fixed weighting (stock.composite, C9). Side-read badge. */
-  score: number
   onOpen?: (ticker: string) => void
-  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(defaultOpen)
   const e = stock.evidence
   const ign = stock.ignition
-  // d/d: the engine's day-over-day composite move at the fixed weighting. Both the
-  // badge (score = stock.composite) and this delta are the engine's exported composite
-  // (no knob, PRD §16), so the delta lines up with the badge exactly.
-  const dd =
-    stock.composite != null && stock.composite_prev != null
-      ? stock.composite - stock.composite_prev
-      : null
 
   return (
     <div className="ecard" onClick={() => onOpen?.(stock.ticker)}>
@@ -84,38 +51,20 @@ export default function EvidenceCard({
         </div>
         <div className="ec-headr">
           {/* 持续点火 badge: this IS the Discovery sort signal (PRD §10.8.2). candidate
-              = top-decile ign_pct AND sustained ≥persist_min days. */}
-          {ign?.candidate && (
+              = top-decile ign_pct AND sustained ≥persist_min days. When not a candidate, a
+              dim ign_pct chip still gives the ignition read (composite badge is gone, M8). */}
+          {ign?.candidate ? (
             <span
               className="ec-ign"
               title={`持续点火 candidate: ign_pct ${ign.ign_pct?.toFixed(0)} · 持续 ${ign.ign_persist_days}d`}
             >
               🔥 {ign.ign_persist_days}d
             </span>
-          )}
-          {dd != null && (
-            <span
-              className="ec-dd"
-              style={{ color: dd >= 0 ? 'var(--grn)' : 'var(--red)' }}
-              title="d/d composite (engine default weighting)"
-            >
-              {dd >= 0 ? '▲' : '▼'}
-              {Math.abs(dd).toFixed(1)}
+          ) : ign?.ign_pct != null ? (
+            <span className="ec-ignpct" title="ignition 横截面百分位（≥90 = 海平面以上 = 点亮）">
+              ign {ign.ign_pct.toFixed(0)}
             </span>
-          )}
-          {/* composite is now a 已确认 (confirmation) side-read, NOT the sort key (M7.3). */}
-          <button
-            className="ec-badge"
-            style={{ color: scoreColor(score) }}
-            onClick={(ev) => {
-              ev.stopPropagation()
-              setOpen(!open)
-            }}
-            aria-expanded={open}
-            title="composite（已确认副读，固定权重；非点火榜排序）"
-          >
-            {score.toFixed(0)} <i>▾</i>
-          </button>
+          ) : null}
         </div>
       </div>
 
@@ -159,26 +108,6 @@ export default function EvidenceCard({
               {t.theme}
             </span>
           ))}
-        </div>
-      )}
-
-      {open && (
-        <div className="ec-comp" onClick={(ev) => ev.stopPropagation()}>
-          {COMPONENTS.map(({ key, label }) => {
-            const cv = stock.components[key] // raw component ∈ [0,1]
-            const wv = weights[key]
-            return (
-              <div key={key} className="ec-crow">
-                <span>{label}</span>
-                <span className="ec-bar">
-                  <span className="ec-bar-fill" style={{ width: `${Math.round((cv ?? 0) * 100)}%` }} />
-                </span>
-                <b>{cv == null ? '—' : cv.toFixed(2)}</b>
-                <em>{Math.round((wv ?? 0) * 100)}%</em>
-              </div>
-            )
-          })}
-          <div className="ec-note">composite = Σ wᵢ·分量（原始分的加权和，无黑箱）</div>
         </div>
       )}
 

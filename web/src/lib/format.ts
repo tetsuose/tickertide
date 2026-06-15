@@ -21,14 +21,6 @@ export function pct(v: number | null | undefined, d = 0): string {
   return v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(d) + '%'
 }
 
-/** composite score color (PRD 附录C): >=62 hi / >=47 mid / else lo. */
-export function scoreColor(score: number | null | undefined): string {
-  if (score == null) return 'var(--score-lo)'
-  if (score >= 62) return 'var(--score-hi)'
-  if (score >= 47) return 'var(--score-mid)'
-  return 'var(--score-lo)'
-}
-
 // --- ignition 点火证据 formatters (PRD §10.8, M7.3/M7.4) ---
 // step-rate ratio = (ret10/10)/(ret50/50): the readable form of ig_accel. It blows up when
 // ret50≈0 (M7.2 pitfall: fixture TT20=685) — faithful but useless on screen. Clamp the

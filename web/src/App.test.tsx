@@ -4,9 +4,10 @@ import App from './App'
 
 // The early⟷reliable knob is gone (PRD §9.0/§16): ignition is the project's core
 // discovery engine and has no tunable parameter, so the global top-bar slider + the 5
-// weight bars + RELIABLE/EARLY labels were removed. composite stays as a fixed-weight
-// confirmation side-read. renderToStaticMarkup runs no effects, so the surfaces render
-// their loading placeholders — enough to assert the top-bar chrome.
+// weight bars + RELIABLE/EARLY labels were removed. M8: composite is no longer a
+// user-visible concept either — the engine note reads ignition + evidence-first.
+// renderToStaticMarkup runs no effects, so the surfaces render their loading
+// placeholders — enough to assert the top-bar chrome.
 describe('App top bar: early⟷reliable knob removed (PRD §16)', () => {
   const html = renderToStaticMarkup(<App />)
 

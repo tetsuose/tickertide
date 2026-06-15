@@ -4,23 +4,23 @@ import ocean from '../lib/__fixtures__/ocean.sample.json'
 import Ocean, { Tip } from './Ocean'
 import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 import {
-  radiusFor, colorVar, quadrantVar, makeScales, withAlpha, drawOcean, nearestPoint,
-  pointsInRect, inScope, SECTOR_VAR, OCEAN_GEOM, TRAIL_CAP,
-  type CanvasLike, type Palette, type DrawnPoint,
+  radiusFor, colorVar, makeScales, withAlpha, logTicks, fmtPsTick, lerp, lerpLog, clamp,
+  interpolateOceanPoint, drawOcean, nearestPoint, pointsInRect, inScope, SECTOR_VAR,
+  OCEAN_GEOM, type CanvasLike, type Palette, type DrawnPoint, type DrawOpts,
 } from '../lib/ocean-draw'
 
-// AC-M2.2 (ROADMAP) as a committed regression gate: the Ocean canvas renders the
-// latest week's ≥500 points on the fixed RS×Val plane with √mktcap sizing and the
-// three color modes. The real <canvas> never runs headlessly, so we test the pure
-// draw lib (geometry / color / size) and drawOcean against a recording mock ctx,
-// plus the component scaffold via SSR. Fixture: export/ocean.py on a 520-ticker
-// synthetic DB (seed 7) -> 517 stocks (regenerate: make fixture-pipeline
-// FIXTURE_ARGS="--tickers 520 --seed 7" && python export/ocean.py --out <here>).
+// AC-M8: the Ocean canvas is an Ignition × Valuation SEA-LEVEL map — y = ign_pct (0-100,
+// sea level at 90), x = raw P/S on a LOG axis — scrubbed by a date slider with smooth play
+// interpolation between real EOD snapshots. The real <canvas> never runs headlessly, so we
+// test the pure draw lib (geometry / color / size / interpolation) + drawOcean against a
+// recording mock ctx, plus the component scaffold via SSR. Fixture: export/ocean.py on a
+// 520-ticker synthetic DB (seed 7) (regenerate: make fixture-pipeline FIXTURE_ARGS="--tickers
+// 520 --seed 7" && python export/ocean.py --out <here>).
 const data = ocean as unknown as OceanData
 const ALL: Scope = { kind: 'all', key: null }
+const latest = data.dates.length - 1
 
-// A mock 2D context recording the calls drawOcean makes. Any palette var resolves
-// to a valid hex so withAlpha() parses; we assert structure, not exact colors.
+// A mock 2D context recording the calls drawOcean makes.
 function mockCtx() {
   const calls = { arc: [] as number[][], fillRect: 0, stroke: 0, clearRect: 0, text: [] as string[] }
   const ctx: CanvasLike & { calls: typeof calls } = {
@@ -38,42 +38,75 @@ function mockCtx() {
   return ctx
 }
 const PAL: Palette = new Proxy({}, { get: () => '#2ec07a' })
-const latest = data.n_weeks - 1
+const base = (over: Partial<DrawOpts> = {}): DrawOpts => ({
+  data, dateIndex: latest, phase: 0, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL, ...over,
+})
+
+// a tiny hand-built dataset for isolated draw assertions (candidate glow etc.).
+function synth(stocks: OceanStock[], xDomain: [number, number] = [1, 100]): OceanData {
+  return {
+    schema_version: 2, as_of_date: '2026-06-05',
+    axis: { x_metric: 'ps', x_scale: 'log', y_metric: 'ign_pct', sea_level: 90 },
+    dates: ['2026-06-04', '2026-06-05'], x_domain: xDomain, count: stocks.length, stocks,
+  }
+}
+function mkPt(over: Partial<OceanPt> = {}): OceanPt {
+  return {
+    ign_pct: 50, ignition: 40, ign_persist_days: 0, candidate: false, ps: 5,
+    evs: 5, pe: 20, ev_ebitda: 12, ret_10d: 0.01, ret_1m: 0.03, vol_mult: 1.1, freshness: 'fresh', ...over,
+  }
+}
 
 describe('Ocean draw lib (pure)', () => {
   it('radiusFor grows with √mktcap and clamps to [1.6, 11]', () => {
-    // base 2.0 (UX contract jsx) -> formula min is 2.0; the 1.6 floor is a guard bound.
-    expect(radiusFor(null)).toBeCloseTo(2.0)            // null -> 2 + √0
-    expect(radiusFor(0)).toBeCloseTo(2.0)
-    expect(radiusFor(1e9)).toBeCloseTo(2.34)            // $1B: 2 + √1·0.34
-    expect(radiusFor(25e9)).toBeCloseTo(3.7)            // $25B: 2 + 5·0.34
-    expect(radiusFor(1e16)).toBe(11)                    // huge -> clamp ceiling
-    expect(radiusFor(-5)).toBeGreaterThanOrEqual(1.6)   // negative guarded -> >= floor
+    expect(radiusFor(null)).toBeCloseTo(2.0)
+    expect(radiusFor(1e9)).toBeCloseTo(2.34)
+    expect(radiusFor(25e9)).toBeCloseTo(3.7)
+    expect(radiusFor(1e16)).toBe(11)
+    expect(radiusFor(-5)).toBeGreaterThanOrEqual(1.6)
   })
 
-  it('makeScales maps domain 0-100 to the plot box; y inverts so val=0 is the BOTTOM (cheap)', () => {
+  it('makeScales: y inverts (ign 0 at bottom, 100 top) and the sea level sits at ign 90', () => {
     const g = OCEAN_GEOM
-    const { sx, sy, plotW, plotH } = makeScales(g)
-    expect(sx(0)).toBe(g.pl)
-    expect(sx(100)).toBeCloseTo(g.pl + plotW)
-    expect(sy(0)).toBeCloseTo(g.pt + plotH)             // cheap at bottom
-    expect(sy(100)).toBe(g.pt)                          // dear at top
-    expect(sy(0)).toBeGreaterThan(sy(100))              // bottom=cheap orientation
+    const sc = makeScales(data.x_domain, 90, g)
+    expect(sc.sy(0)).toBeCloseTo(g.pt + sc.plotH)        // ign 0 at bottom
+    expect(sc.sy(100)).toBe(g.pt)                         // ign 100 at top
+    expect(sc.sy(0)).toBeGreaterThan(sc.sy(100))          // bottom..top orientation
+    expect(sc.seaY).toBeCloseTo(sc.sy(90))                // sea level === sy(90)
+    expect(sc.sy(100)).toBeLessThan(sc.seaY)              // above the line is higher up
+    expect(sc.seaY).toBeLessThan(sc.sy(0))
   })
 
-  it('quadrantVar: strong+cheap=lead, strong+dear=weak, weak+cheap=improving, weak+dear=dim', () => {
-    expect(quadrantVar({ rs: 80, val: 20, ps: 1 })).toBe('--q-lead')
-    expect(quadrantVar({ rs: 80, val: 80, ps: 1 })).toBe('--q-weak')
-    expect(quadrantVar({ rs: 20, val: 20, ps: 1 })).toBe('--q-impr')
-    expect(quadrantVar({ rs: 20, val: 80, ps: 1 })).toBe('--dim2')
+  it('makeScales: P/S x is a monotone LOG scale over x_domain', () => {
+    const g = OCEAN_GEOM
+    const sc = makeScales([2, 20], 90, g)
+    expect(sc.sx(2)).toBeCloseTo(g.pl)                    // domain lo -> left edge
+    expect(sc.sx(20)).toBeCloseTo(g.pl + sc.plotW)        // domain hi -> right edge
+    expect(sc.sx(2)).toBeLessThan(sc.sx(6))               // monotone increasing
+    expect(sc.sx(6)).toBeLessThan(sc.sx(20))
+    // log midpoint: √(2·20) maps to the pixel midpoint (linear in log space).
+    expect(sc.sx(Math.sqrt(40))).toBeCloseTo(g.pl + sc.plotW / 2, 1)
+  })
+
+  it('logTicks gives 1-2-5 ticks within the domain; fmtPsTick formats them', () => {
+    expect(logTicks(2, 20)).toEqual([2, 5, 10, 20])
+    expect(logTicks(0.5, 3)).toEqual([0.5, 1, 2])
+    expect(fmtPsTick(5)).toBe('5')
+    expect(fmtPsTick(0.5)).toBe('0.5')
+    expect(fmtPsTick(12.3)).toBe('12')
+  })
+
+  it('lerp / lerpLog / clamp', () => {
+    expect(lerp(0, 10, 0.5)).toBe(5)
+    expect(lerpLog(1, 100, 0.5)).toBeCloseTo(10)          // geometric midpoint
+    expect(clamp(5, 0, 3)).toBe(3)
+    expect(clamp(-1, 0, 3)).toBe(0)
   })
 
   it('colorVar resolves sector var; theme falls back when no active theme', () => {
-    const pt: OceanPt = { rs: 60, val: 40, ps: 5 }
-    const s = { ticker: 'X', sector: 'Information Technology', mktcap: 1e9, themes: [], pts: [pt] } as OceanStock
-    expect(colorVar(s, pt, 'sector', null)).toBe('--sec-tech')
-    expect(colorVar(s, pt, 'theme', null)).toBe('--dim2')      // no theme selected -> faded
-    expect(colorVar(s, pt, 'quadrant', null)).toBe('--q-lead') // rs60 strong + val40 cheap (<50)
+    const s = { ticker: 'X', sector: 'Information Technology', mktcap: 1e9, themes: [], pts: [] } as OceanStock
+    expect(colorVar(s, 'sector', null)).toBe('--sec-tech')
+    expect(colorVar(s, 'theme', null)).toBe('--dim2')
   })
 
   it('withAlpha turns a hex into rgba and survives a bad hex', () => {
@@ -87,135 +120,142 @@ describe('Ocean draw lib (pure)', () => {
   })
 })
 
-describe('AC-M2.2: drawOcean renders the latest week', () => {
-  it('draws one point per stock with a non-null latest pt, and ≥500 of them', () => {
-    const ctx = mockCtx()
-    const drawn = drawOcean(ctx, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
-    const renderable = data.stocks.filter((s) => s.pts[latest]).length
-    expect(ctx.calls.arc.length).toBe(renderable)
-    expect(renderable).toBe(data.count)               // ocean.py invariant: all latest pts non-null
-    expect(ctx.calls.arc.length).toBeGreaterThanOrEqual(500)
-    expect(drawn.length).toBe(renderable)             // all in scope -> all returned for hit-testing
+// AC-M8: interpolateOceanPoint — visual tween between real snapshots; state is never faked.
+describe('AC-M8: play interpolation', () => {
+  const a = mkPt({ ps: 2, ign_pct: 40 })
+  const b = mkPt({ ps: 8, ign_pct: 95, candidate: true })
+
+  it('both present: lerps x (log) + y; snap is the NEAREST real snapshot (never synthesized)', () => {
+    const mid = interpolateOceanPoint(a, b, 0.5)!
+    expect(mid.ps).toBeCloseTo(lerpLog(2, 8, 0.5))        // log-space lerp of x
+    expect(mid.ign_pct).toBeCloseTo(67.5)                 // linear lerp of y
+    expect(mid.fade).toBe(1)
+    expect(interpolateOceanPoint(a, b, 0.25)!.snap).toBe(a) // nearer prev
+    expect(interpolateOceanPoint(a, b, 0.75)!.snap).toBe(b) // nearer next
+    // the interpolated x stays between the two real snapshots
+    expect(mid.ps).toBeGreaterThan(2)
+    expect(mid.ps).toBeLessThan(8)
   })
 
-  it('paints the static layer: clear + strong/cheap quadrant tint + crosshair', () => {
+  it('prev present, next missing → fade OUT (held at prev)', () => {
+    const fp = interpolateOceanPoint(a, null, 0.3)!
+    expect(fp.snap).toBe(a)
+    expect(fp.ps).toBe(2)
+    expect(fp.fade).toBeCloseTo(0.7)                      // 1 - phase
+  })
+
+  it('prev missing, next present → fade IN (held at next)', () => {
+    const fp = interpolateOceanPoint(null, b, 0.3)!
+    expect(fp.snap).toBe(b)
+    expect(fp.ign_pct).toBe(95)
+    expect(fp.fade).toBeCloseTo(0.3)                      // phase
+  })
+
+  it('neither present → not drawn', () => {
+    expect(interpolateOceanPoint(null, null, 0.5)).toBeNull()
+  })
+})
+
+describe('AC-M8: drawOcean paints the sea-level map', () => {
+  it('draws the backdrop (clear + below-sea darken + above-sea wash) and the waterline', () => {
     const ctx = mockCtx()
-    drawOcean(ctx, { data, week: latest, colorBy: 'quadrant', activeTheme: null, scope: ALL, palette: PAL })
+    drawOcean(ctx, base())
     expect(ctx.calls.clearRect).toBe(1)
-    expect(ctx.calls.fillRect).toBe(1)                // the bottom-right quadrant tint
-    expect(ctx.calls.stroke).toBeGreaterThanOrEqual(1) // crosshair
+    expect(ctx.calls.fillRect).toBeGreaterThanOrEqual(2)  // below-sea + above-sea bands
+    expect(ctx.calls.stroke).toBeGreaterThanOrEqual(1)    // gridlines + waterline
+    expect(ctx.calls.text.some((t) => t.includes('sea level'))).toBe(true)
   })
 
-  it('points sit inside the plot box (domain 0-100 -> pixels)', () => {
+  it('returns one drawn point per stock with a non-null latest pt, and ≥500 of them', () => {
     const ctx = mockCtx()
-    drawOcean(ctx, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
+    const drawn = drawOcean(ctx, base())
+    const renderable = data.stocks.filter((s) => s.pts[latest]).length
+    expect(renderable).toBe(data.count)                  // ocean.py invariant: all latest pts non-null
+    expect(drawn.length).toBe(renderable)                // all in scope -> all returned for hit-testing
+    expect(drawn.length).toBeGreaterThanOrEqual(500)
+  })
+
+  it('points sit inside the plot box', () => {
+    const ctx = mockCtx()
+    const drawn = drawOcean(ctx, base())
     const g = OCEAN_GEOM
-    for (const [x, y] of ctx.calls.arc) {
-      expect(x).toBeGreaterThanOrEqual(g.pl - 0.001)
-      expect(x).toBeLessThanOrEqual(g.w - g.pr + 0.001)
-      expect(y).toBeGreaterThanOrEqual(g.pt - 0.001)
-      expect(y).toBeLessThanOrEqual(g.h - g.pb + 0.001)
+    for (const p of drawn) {
+      expect(p.px).toBeGreaterThanOrEqual(g.pl - 0.001)
+      expect(p.px).toBeLessThanOrEqual(g.w - g.pr + 0.001)
+      expect(p.py).toBeGreaterThanOrEqual(g.pt - 0.001)
+      expect(p.py).toBeLessThanOrEqual(g.h - g.pb + 0.001)
     }
   })
 
-  it('respects scope=sector: only in-sector points are non-faded (C10)', () => {
-    const sector = data.stocks[0].sector as string
-    const ctx = mockCtx()
-    const drawn = drawOcean(ctx, {
-      data, week: latest, colorBy: 'sector', activeTheme: null,
-      scope: { kind: 'sector', key: sector }, palette: PAL,
-    })
-    const inSector = data.stocks.filter((s) => s.sector === sector && s.pts[latest]).length
-    expect(drawn.length).toBe(inSector)               // only in-scope returned
-    expect(drawn.length).toBeLessThan(data.count)     // others faded out
-    expect(ctx.calls.arc.length).toBe(data.count)     // faded still drawn (as 1.2px dots)
-  })
-})
-
-describe('AC-M2.2: Ocean component scaffold (SSR)', () => {
-  const html = renderToStaticMarkup(<Ocean initial={data} scope={ALL} />)
-  it('renders the canvas + 3 color-mode toggles + axis labels', () => {
-    expect(html).toContain('<canvas')
-    for (const m of ['sector', 'theme', 'quadrant']) expect(html).toContain(`>${m}</button>`)
-    expect(html).toContain('RS percentile')
-    expect(html).toContain('Valuation')
-  })
-  it('labels the latest week', () => {
-    expect(html).toContain(`WEEK ${data.n_weeks}/${data.n_weeks}`)
-    expect(html).toContain(data.weeks[latest])
-  })
-})
-
-// AC-M2.3 (ROADMAP): manual WEEK scrubber (no autoplay — C2) moves the points;
-// hover → nearest-neighbor tip(ticker/sector/RS/Val/P-S/mktcap/themes).
-describe('AC-M2.3: scrubber + hover', () => {
-  const PTS: DrawnPoint[] = [
-    { ticker: 'A', px: 100, py: 100, r: 4 },
-    { ticker: 'B', px: 300, py: 200, r: 6 },
-  ]
-
-  it('nearestPoint hits within ~r+5px, picks the closest, misses far away', () => {
-    expect(nearestPoint(PTS, 101, 102)).toBe('A')          // on top of A
-    expect(nearestPoint(PTS, 304, 203)).toBe('B')          // on top of B
-    expect(nearestPoint(PTS, 800, 400)).toBe(null)         // empty space -> no tip
-    expect(nearestPoint([], 1, 1)).toBe(null)              // nothing drawn
+  it('a candidate point is highlighted with a glow halo + bright ring (extra arcs + stroke)', () => {
+    const xs: [number, number] = [1, 100]
+    const plain = synth([{ ticker: 'A', sector: 'Energy', mktcap: 1e9, themes: [], pts: [null, mkPt({ ign_pct: 95, candidate: false })] }], xs)
+    const cand = synth([{ ticker: 'A', sector: 'Energy', mktcap: 1e9, themes: [], pts: [null, mkPt({ ign_pct: 95, candidate: true, ign_persist_days: 7 })] }], xs)
+    const cp = mockCtx(); drawOcean(cp, base({ data: plain, dateIndex: 1 }))
+    const cc = mockCtx(); drawOcean(cc, base({ data: cand, dateIndex: 1 }))
+    expect(cc.calls.arc.length).toBeGreaterThan(cp.calls.arc.length)   // glow + ring add arcs
+    expect(cc.calls.stroke).toBeGreaterThan(cp.calls.stroke)           // the bright ring strokes
   })
 
-  it('scrubbing the week moves points (different positions than the latest week)', () => {
-    const c0 = mockCtx()
-    drawOcean(c0, { data, week: 0, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
-    const cN = mockCtx()
-    drawOcean(cN, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
-    const moved = c0.calls.arc.some(([x, y], i) => {
-      const b = cN.calls.arc[i]
-      return b && (Math.abs(x - b[0]) > 0.5 || Math.abs(y - b[1]) > 0.5)
+  it('a sea-level y placement: an ign_pct=95 point is above the waterline, ign_pct=50 below', () => {
+    const xs: [number, number] = [1, 100]
+    const d = synth([
+      { ticker: 'HI', sector: 'Energy', mktcap: 1e9, themes: [], pts: [null, mkPt({ ign_pct: 95 })] },
+      { ticker: 'LO', sector: 'Energy', mktcap: 1e9, themes: [], pts: [null, mkPt({ ign_pct: 50 })] },
+    ], xs)
+    const drawn = drawOcean(mockCtx(), base({ data: d, dateIndex: 1 }))
+    const sc = makeScales(xs, 90)
+    const hi = drawn.find((p) => p.ticker === 'HI')!
+    const lo = drawn.find((p) => p.ticker === 'LO')!
+    expect(hi.py).toBeLessThan(sc.seaY)                  // above sea
+    expect(lo.py).toBeGreaterThan(sc.seaY)               // below sea
+  })
+
+  it('scrubbing the date moves points', () => {
+    const d0 = drawOcean(mockCtx(), base({ dateIndex: 0 }))
+    const dN = drawOcean(mockCtx(), base({ dateIndex: latest }))
+    const byT = new Map(dN.map((p) => [p.ticker, p]))
+    const moved = d0.some((p) => {
+      const q = byT.get(p.ticker)
+      return q && (Math.abs(p.px - q.px) > 0.5 || Math.abs(p.py - q.py) > 0.5)
     })
     expect(moved).toBe(true)
   })
 
-  it('drawOcean adds a hover ring (one extra stroke) for the hovered point', () => {
-    const base = mockCtx()
-    drawOcean(base, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
-    const withHover = mockCtx()
-    drawOcean(withHover, {
-      data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL,
-      hover: data.stocks[0].ticker,
-    })
-    expect(withHover.calls.stroke).toBe(base.calls.stroke + 1)
+  it('respects scope=sector: only in-sector points are non-faded (C10)', () => {
+    const sector = data.stocks[0].sector as string
+    const drawn = drawOcean(mockCtx(), base({ scope: { kind: 'sector', key: sector } }))
+    const inSector = data.stocks.filter((s) => s.sector === sector && s.pts[latest]).length
+    expect(drawn.length).toBe(inSector)                  // only in-scope returned
+    expect(drawn.length).toBeLessThan(data.count)        // others faded out
   })
 
-  it('Tip shows ticker / sector / RS / Val / P-S / mkt cap', () => {
-    const s = data.stocks[0]
-    const pt = s.pts[latest] as OceanPt
-    const html = renderToStaticMarkup(<Tip stock={s} pt={pt} />)
-    expect(html).toContain(s.ticker)
-    if (s.sector) expect(html).toContain(s.sector)
-    for (const label of ['RS pct', 'Val pct', 'P/S', 'Mkt cap']) expect(html).toContain(label)
-    expect(html).toContain(pt.rs.toFixed(0))
-  })
-
-  it('renders a manual week range input (max = n_weeks-1, no autoplay)', () => {
-    const html = renderToStaticMarkup(<Ocean initial={data} scope={ALL} />)
-    expect(html).toContain('type="range"')
-    expect(html).toContain(`max="${data.n_weeks - 1}"`)
-    expect(html).toContain('week scrubber')
+  it('adds a hover ring (one extra stroke) for the hovered point', () => {
+    const b0 = mockCtx(); drawOcean(b0, base())
+    const bh = mockCtx(); drawOcean(bh, base({ hover: data.stocks[0].ticker }))
+    expect(bh.calls.stroke).toBe(b0.calls.stroke + 1)
   })
 })
 
-// AC-M2.4 (ROADMAP): pin→trail+arrow (only pinned — C2); lasso→set global scope
-// (Ocean = first scope writer — C10); non-scope points fade.
-describe('AC-M2.4: pin trail + lasso scope', () => {
-  const RECT: DrawnPoint[] = [
+// hit-testing + pin/lasso scope (C10 — Ocean is the first scope writer).
+describe('AC-M8: hit-testing + pin/lasso scope', () => {
+  const PTS: DrawnPoint[] = [
     { ticker: 'A', px: 100, py: 100, r: 4 },
-    { ticker: 'B', px: 200, py: 150, r: 5 },
+    { ticker: 'B', px: 300, py: 200, r: 6 },
     { ticker: 'C', px: 700, py: 400, r: 6 },
   ]
 
+  it('nearestPoint hits within ~r+5px, picks the closest, misses far away', () => {
+    expect(nearestPoint(PTS, 101, 102)).toBe('A')
+    expect(nearestPoint(PTS, 304, 203)).toBe('B')
+    expect(nearestPoint(PTS, 800, 460)).toBe(null)
+    expect(nearestPoint([], 1, 1)).toBe(null)
+  })
+
   it('pointsInRect selects only enclosed tickers (and handles an inverted drag)', () => {
-    expect(pointsInRect(RECT, { x0: 50, y0: 50, x1: 250, y1: 200 }).sort()).toEqual(['A', 'B'])
-    expect(pointsInRect(RECT, { x0: 250, y0: 200, x1: 50, y1: 50 }).sort()).toEqual(['A', 'B']) // inverted
-    expect(pointsInRect(RECT, { x0: 600, y0: 350, x1: 800, y1: 450 })).toEqual(['C'])
-    expect(pointsInRect(RECT, { x0: 0, y0: 0, x1: 10, y1: 10 })).toEqual([])
+    expect(pointsInRect(PTS, { x0: 50, y0: 50, x1: 350, y1: 250 }).sort()).toEqual(['A', 'B'])
+    expect(pointsInRect(PTS, { x0: 350, y0: 250, x1: 50, y1: 50 }).sort()).toEqual(['A', 'B'])
+    expect(pointsInRect(PTS, { x0: 600, y0: 350, x1: 800, y1: 450 })).toEqual(['C'])
   })
 
   it("inScope('pinned') is membership in the pinned set", () => {
@@ -225,62 +265,52 @@ describe('AC-M2.4: pin trail + lasso scope', () => {
     expect(inScope(s, { kind: 'all', key: null }, [])).toBe(true)
   })
 
-  it('a pinned stock gets a trail + ticker label (only pinned — C2)', () => {
+  it('a pinned stock under the label cap gets an emphasized dot + ticker label', () => {
     const tk = data.stocks[0].ticker
-    const base = mockCtx()
-    drawOcean(base, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
-    const withPin = mockCtx()
-    drawOcean(withPin, {
-      data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL, pinned: [tk],
-    })
-    expect(withPin.calls.stroke).toBeGreaterThan(base.calls.stroke) // trail + dot ring strokes
-    expect(withPin.calls.text).toContain(tk)                         // ticker label on the trail head
-    expect(base.calls.text).toHaveLength(0)                          // nothing labeled without pins
-  })
-
-  it('scope=pinned fades all but the pinned stocks (C10)', () => {
-    const tks = data.stocks.slice(0, 3).map((s) => s.ticker)
-    const ctx = mockCtx()
-    const drawn = drawOcean(ctx, {
-      data, week: latest, colorBy: 'sector', activeTheme: null,
-      scope: { kind: 'pinned', key: null }, palette: PAL, pinned: tks,
-    })
-    expect(drawn.map((p) => p.ticker).sort()).toEqual([...tks].sort()) // only pinned non-faded
-    expect(ctx.calls.arc.length).toBeGreaterThanOrEqual(data.count)    // faded ones still drawn as dots (+ pin dots)
-  })
-
-  it('a large pinned set (lasso scope) caps trails: no per-stock label/trail — the fade carries it (C2)', () => {
-    // A lasso pins a whole REGION for scope filtering, not for tracing. Past
-    // TRAIL_CAP drawOcean must NOT emit a trail + ticker label per stock (the
-    // spaghetti this guards); the scope fade alone marks the selection. fillText
-    // is only ever the pinned trail-head label, so an empty text log == no trails.
-    const many = data.stocks.slice(0, TRAIL_CAP + 20).map((s) => s.ticker) // well over the cap
-    const ctx = mockCtx()
-    const drawn = drawOcean(ctx, {
-      data, week: latest, colorBy: 'sector', activeTheme: null,
-      scope: { kind: 'pinned', key: null }, palette: PAL, pinned: many,
-    })
-    expect(ctx.calls.text).toHaveLength(0)                              // no N labels => no N trails
-    expect(drawn.map((p) => p.ticker).sort()).toEqual([...many].sort()) // fade still marks exactly the lassoed set
-    // contrast: at the cap each pinned stock IS fully labeled (trail head + ticker).
-    const few = data.stocks.slice(0, TRAIL_CAP).map((s) => s.ticker)
-    const cf = mockCtx()
-    drawOcean(cf, {
-      data, week: latest, colorBy: 'sector', activeTheme: null,
-      scope: { kind: 'pinned', key: null }, palette: PAL, pinned: few,
-    })
-    expect(cf.calls.text.sort()).toEqual([...few].sort())              // <= cap => one label per pinned stock
+    const b0 = mockCtx(); drawOcean(b0, base())
+    const bp = mockCtx(); drawOcean(bp, base({ pinned: [tk] }))
+    expect(bp.calls.text).toContain(tk)                  // ticker label on the pin
+    expect(b0.calls.text).not.toContain(tk)
   })
 
   it('drawing a lasso rect adds a selection rectangle (fillRect + stroke)', () => {
-    const base = mockCtx()
-    drawOcean(base, { data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL })
-    const withLasso = mockCtx()
-    drawOcean(withLasso, {
-      data, week: latest, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL,
-      lassoRect: { x0: 100, y0: 100, x1: 300, y1: 250 },
-    })
-    expect(withLasso.calls.fillRect).toBe(base.calls.fillRect + 1) // quadrant tint + lasso fill
-    expect(withLasso.calls.stroke).toBe(base.calls.stroke + 1)     // + the rect outline
+    const b0 = mockCtx(); drawOcean(b0, base())
+    const bl = mockCtx(); drawOcean(bl, base({ lassoRect: { x0: 100, y0: 100, x1: 300, y1: 250 } }))
+    expect(bl.calls.fillRect).toBe(b0.calls.fillRect + 1)
+    expect(bl.calls.stroke).toBe(b0.calls.stroke + 1)
+  })
+})
+
+describe('AC-M8: Ocean component scaffold (SSR)', () => {
+  const html = renderToStaticMarkup(<Ocean initial={data} scope={ALL} />)
+  it('renders the canvas + color-mode toggles + the ignition/P-S axis labels', () => {
+    expect(html).toContain('<canvas')
+    for (const m of ['sector', 'theme']) expect(html).toContain(`>${m}</button>`)
+    expect(html).toContain('ign_pct')
+    expect(html).toContain('P/S')
+  })
+  it('renders a date slider (max = dates-1) + a play button, opening on the latest EOD', () => {
+    expect(html).toContain('type="range"')
+    expect(html).toContain(`max="${data.dates.length - 1}"`)
+    expect(html).toContain('date slider')
+    expect(html).toContain('▶')                          // play control
+    expect(html).toContain('latest EOD')
+    expect(html).toContain(data.dates[latest])
+  })
+})
+
+describe('AC-M8: Tip shows ignition + valuation evidence (not RS/Val pct)', () => {
+  const s = data.stocks[0]
+  const pt = s.pts[latest] as OceanPt
+  const html = renderToStaticMarkup(<Tip stock={s} pt={pt} />)
+  it('shows ticker + ignition + the valuation multiples + freshness', () => {
+    expect(html).toContain(s.ticker)
+    for (const label of ['ign_pct', '持续点火', 'P/S', 'EV/S', 'P/E', 'EV/EBITDA', 'vol surge', 'val freshness'])
+      expect(html).toContain(label)
+    expect(html).toContain(pt.ign_pct.toFixed(0))
+  })
+  it('no longer shows the old RS percentile / Val percentile rows', () => {
+    expect(html).not.toContain('RS pct')
+    expect(html).not.toContain('Val pct')
   })
 })

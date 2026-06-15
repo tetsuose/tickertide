@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import type { OceanData, OceanStock, OceanPt, Scope } from '../types'
 import { loadOcean } from '../lib/data'
+import { num, pct } from '../lib/format'
 import {
-  drawOcean, nearestPoint, pointsInRect, resolvePalette, OCEAN_GEOM,
-  type ColorMode, type DrawnPoint, type Rect,
+  drawOcean, nearestPoint, pointsInRect, resolvePalette, interpolateOceanPoint, clamp,
+  OCEAN_GEOM, type ColorMode, type DrawnPoint, type Rect, type Palette,
 } from '../lib/ocean-draw'
 
-// Ocean (PRD §9.2): the wide-explore canvas scatter on a FIXED RS×Valuation plane
-// (x = RS percentile weak→strong, y = Valuation percentile bottom=cheap→top=dear),
-// (50,50) crosshair, a green strong+cheap quadrant = the emerging-leader corner.
-// M2.2 static scatter; M2.3 manual scrubber (no autoplay — C2) + hover tip; M2.4
-// click→pin (colored trail + current-position arrow, ONLY pinned — C2) and lasso
-// drag→set the global scope (Ocean is the first scope WRITER — C10). `initial` +
-// the App-owned pinned/scope/setScope make the surface injectable for tests/SSR.
-const MODES: ColorMode[] = ['sector', 'theme', 'quadrant']
-const CLICK_SLOP2 = 16 // (4px)^2 — drags shorter than this count as a click (pin)
+// Ocean (PRD §9.2, M8): the wide-explore canvas as an Ignition × Valuation SEA-LEVEL map.
+// y = ign_pct (0-100) with a fixed sea level at ign_pct = 90 — above the line = lit (the
+// SAME 持续点火 population Discovery surfaces, C9); x = raw trailing P/S TTM on a LOG axis
+// (NOT a valuation percentile). A date slider scrubs EOD snapshots; Play tweens positions
+// smoothly between adjacent REAL snapshots (interpolation is visual only — tooltip/state
+// read the real snapshot). Dragging the slider pauses + resets the tween (phase=0); the
+// surface opens on the latest EOD. Click→pin, lasso→set global scope (Ocean is the first
+// scope writer — C10). Composite is gone from this surface.
+const MODES: ColorMode[] = ['sector', 'theme']
+const CLICK_SLOP2 = 16   // (4px)^2 — drags shorter than this count as a click (pin)
+const STEP_MS = 1000     // ms per EOD transition during play (PRD §9.2: 900–1200ms)
 
 function fmtCap(v: number | null): string {
   if (v == null) return '—'
@@ -23,23 +26,38 @@ function fmtCap(v: number | null): string {
   return '$' + (v / 1e6).toFixed(0) + 'M'
 }
 
-/** Hover tip (PRD §9.2): ticker / sector / RS pct / Val pct / P/S / mkt cap / themes. */
+/** Hover tip (PRD §9.2): ticker / sector / ignition (pct, persistence, candidate) /
+ *  valuation evidence (P/S, EV/S, P/E, EV/EBITDA, freshness) / returns / volume surge.
+ *  Reads a REAL snapshot — never the interpolated play position. */
 export function Tip({ stock, pt }: { stock: OceanStock; pt: OceanPt }) {
   return (
     <div className="otip">
       <div className="otip-h">
         <b>{stock.ticker}</b> <span className="dim">{stock.sector ?? '—'}</span>
       </div>
-      <div className="otrow"><span>RS pct</span><b>{pt.rs.toFixed(0)}</b></div>
-      <div className="otrow"><span>Val pct</span><b>{pt.val.toFixed(0)}</b></div>
+      <div className="otrow">
+        <span>ign_pct</span>
+        <b style={{ color: pt.ign_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>{pt.ign_pct.toFixed(0)}</b>
+      </div>
+      <div className="otrow">
+        <span>持续点火</span>
+        <b>{pt.ign_persist_days ?? '—'}d{pt.candidate ? ' · 🔥candidate' : ''}</b>
+      </div>
       <div className="otrow"><span>P/S</span><b>{pt.ps != null ? pt.ps.toFixed(1) : 'n.m.'}</b></div>
-      <div className="otrow"><span>Mkt cap</span><b>{fmtCap(stock.mktcap)}</b></div>
+      <div className="otrow"><span>EV/S</span><b>{num(pt.evs)}</b></div>
+      <div className="otrow"><span>P/E</span><b>{pt.pe != null ? pt.pe.toFixed(1) : 'n.m.'}</b></div>
+      <div className="otrow"><span>EV/EBITDA</span><b>{num(pt.ev_ebitda)}</b></div>
+      <div className="otrow"><span>10d / 1m</span><b>{pct(pt.ret_10d)} / {pct(pt.ret_1m)}</b></div>
+      <div className="otrow">
+        <span>vol surge</span>
+        <b style={{ color: (pt.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
+          {pt.vol_mult != null ? pt.vol_mult.toFixed(2) + '×' : '—'}
+        </b>
+      </div>
+      <div className="otrow"><span>val freshness</span><b>{pt.freshness ?? '—'}</b></div>
+      <div className="otrow"><span>mkt cap</span><b>{fmtCap(stock.mktcap)}</b></div>
       {stock.themes.length > 0 && (
-        <div className="otags">
-          {stock.themes.map((t) => (
-            <span key={t.theme}>{t.theme}</span>
-          ))}
-        </div>
+        <div className="otags">{stock.themes.map((t) => <span key={t.theme}>{t.theme}</span>)}</div>
       )}
       <div className="ohint">click to pin · drag to lasso scope</div>
     </div>
@@ -62,14 +80,27 @@ export default function Ocean({
   const [data, setData] = useState<OceanData | null>(initial ?? null)
   const [err, setErr] = useState<string | null>(null)
   const [colorBy, setColorBy] = useState<ColorMode>('sector')
-  // theme color mode needs a selected theme; the picker arrives with M4 memberships.
+  // theme color mode needs a selected theme; the picker arrives with a later milestone.
   const [activeTheme] = useState<string | null>(null)
-  const [week, setWeek] = useState<number | null>(null) // null = follow latest until scrubbed
+  const [dateIndex, setDateIndex] = useState<number | null>(null) // null = follow latest
+  const [playing, setPlaying] = useState(false)
   const [hover, setHover] = useState<DrawnPoint | null>(null)
-  const [lasso, setLasso] = useState<Rect | null>(null) // active drag rectangle
+  const [lasso, setLasso] = useState<Rect | null>(null)
+
   const cv = useRef<HTMLCanvasElement>(null)
-  const pos = useRef<DrawnPoint[]>([]) // last-drawn point positions, for hit-testing
-  const down = useRef<{ x: number; y: number } | null>(null) // mousedown anchor (click vs drag)
+  const pos = useRef<DrawnPoint[]>([])          // last-drawn (interpolated) positions, for hit-testing
+  const down = useRef<{ x: number; y: number } | null>(null)
+  const paletteRef = useRef<Palette>({})
+  // animation refs (the rAF loop owns phase + the live date index; React state mirrors them
+  // so the slider/label re-render, but per-frame tweening never re-renders React — NFR-8).
+  const phaseRef = useRef(0)
+  const diRef = useRef(0)
+  const playingRef = useRef(false)
+  const rafRef = useRef<number | null>(null)
+  const lastTsRef = useRef<number | null>(null)
+  // the rAF loop calls the LATEST draw closure (refreshed every render) so it sees current
+  // colorBy / scope / hover / pinned without being re-created.
+  const drawRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     if (initial) return
@@ -82,24 +113,111 @@ export default function Ocean({
     return () => ac.abort()
   }, [initial])
 
-  // Effective week: scrubbed value, else the latest snapshot.
-  const wk = data ? week ?? data.n_weeks - 1 : 0
-
+  // ocean.json must be schema v2 (M8). A frontend-only deploy can transiently serve an
+  // OLD v1 payload (no dates/axis/x_domain) until a nightly re-export lands — guard so the
+  // surface degrades to a notice instead of crashing on `data.dates.length`.
+  const okSchema = !!data && data.schema_version === 2 && Array.isArray(data.dates) && !!data.axis
+  // Effective date index: scrubbed value, else the latest snapshot.
+  const di = okSchema ? dateIndex ?? data!.dates.length - 1 : 0
   useEffect(() => {
+    diRef.current = di
+  }, [di])
+
+  // draw closure — refreshed every render (sees current state); called by the redraw effect
+  // and by the rAF play loop. Reads diRef/phaseRef so the loop can advance without re-render.
+  drawRef.current = () => {
     const c = cv.current
-    if (!c || !data) return
+    if (!c || !data || !okSchema) return
     const ctx = c.getContext('2d')
     if (!ctx) return
     const g = OCEAN_GEOM
-    c.width = g.w * 2
-    c.height = g.h * 2
+    if (c.width !== g.w * 2) {
+      c.width = g.w * 2
+      c.height = g.h * 2
+    }
     ctx.setTransform(2, 0, 0, 2, 0, 0)
-    const palette = resolvePalette(document.documentElement)
     pos.current = drawOcean(ctx, {
-      data, week: wk, colorBy, activeTheme, scope, palette,
+      data, dateIndex: diRef.current, phase: phaseRef.current,
+      colorBy, activeTheme, scope, palette: paletteRef.current,
       hover: hover?.ticker ?? null, pinned, lassoRect: lasso,
     })
-  }, [data, wk, colorBy, activeTheme, scope, hover, pinned, lasso])
+  }
+
+  // resolve the palette once in the browser (theme.css owns the hex), then redraw.
+  useEffect(() => {
+    paletteRef.current = resolvePalette(document.documentElement)
+    drawRef.current()
+  }, [data])
+
+  // declarative redraw after every commit (data load / colorBy / scope / hover / pin / lasso /
+  // a scrubbed dateIndex). The play loop draws its own frames imperatively.
+  useEffect(() => {
+    drawRef.current()
+  })
+
+  const pause = () => {
+    playingRef.current = false
+    setPlaying(false)
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+    lastTsRef.current = null
+  }
+
+  const tick = (ts: number) => {
+    if (!playingRef.current || !data) return
+    if (lastTsRef.current == null) lastTsRef.current = ts
+    const dt = Math.min(ts - lastTsRef.current, STEP_MS) // cap dt so a tab refocus doesn't jump
+    lastTsRef.current = ts
+    let ph = phaseRef.current + dt / STEP_MS
+    let idx = diRef.current
+    const last = data.dates.length - 1
+    while (ph >= 1) {
+      ph -= 1
+      idx += 1
+      if (idx >= last) {
+        idx = last
+        ph = 0
+        pause() // reached the latest EOD → auto-stop (PRD §9.2)
+        break
+      }
+    }
+    phaseRef.current = ph
+    if (idx !== diRef.current) {
+      diRef.current = idx
+      setDateIndex(idx)
+    }
+    drawRef.current()
+    if (playingRef.current) rafRef.current = requestAnimationFrame(tick)
+  }
+
+  const play = () => {
+    if (!data) return
+    const last = data.dates.length - 1
+    if (diRef.current >= last) {
+      // at the end → replay from the oldest snapshot.
+      diRef.current = 0
+      setDateIndex(0)
+    }
+    phaseRef.current = 0
+    lastTsRef.current = null
+    playingRef.current = true
+    setPlaying(true)
+    rafRef.current = requestAnimationFrame(tick)
+  }
+
+  // cleanup the loop on unmount.
+  useEffect(() => () => {
+    playingRef.current = false
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+  }, [])
+
+  const goto = (i: number) => {
+    pause()
+    phaseRef.current = 0
+    const idx = data ? clamp(i, 0, data.dates.length - 1) : 0
+    diRef.current = idx
+    setDateIndex(idx)
+  }
 
   const toLogical = (e: React.MouseEvent): [number, number] => {
     const c = cv.current!
@@ -110,6 +228,7 @@ export default function Ocean({
     setPinned?.(pinned.includes(id) ? pinned.filter((t) => t !== id) : [...pinned, id])
   }
   const onDown = (e: React.MouseEvent) => {
+    pause() // interacting → stop the tween so hit-tests hit a stable frame
     const [lx, ly] = toLogical(e)
     down.current = { x: lx, y: ly }
     setLasso({ x0: lx, y0: ly, x1: lx, y1: ly })
@@ -118,7 +237,7 @@ export default function Ocean({
   const onMove = (e: React.MouseEvent) => {
     const [lx, ly] = toLogical(e)
     if (down.current) {
-      setLasso((r) => (r ? { ...r, x1: lx, y1: ly } : r)) // dragging: grow the lasso, no hover
+      setLasso((r) => (r ? { ...r, x1: lx, y1: ly } : r))
       return
     }
     const id = nearestPoint(pos.current, lx, ly)
@@ -133,7 +252,7 @@ export default function Ocean({
     if (!d) return
     const moved = (lx - d.x) ** 2 + (ly - d.y) ** 2 > CLICK_SLOP2
     if (!moved) {
-      const id = nearestPoint(pos.current, lx, ly) // click → toggle pin (trail)
+      const id = nearestPoint(pos.current, lx, ly) // click → toggle pin
       if (id) togglePin(id)
     } else if (rect) {
       const sel = pointsInRect(pos.current, rect) // drag → lasso sets the global scope
@@ -162,13 +281,33 @@ export default function Ocean({
     return (
       <div className="placeholder">
         <div className="ph-tag">LOADING</div>
-        <div className="ph-msg">读取 Ocean 周度快照…</div>
+        <div className="ph-msg">读取 Ocean 日度快照…</div>
+      </div>
+    )
+  }
+  if (!okSchema) {
+    // 旧 schema（v1）—— 仅前端部署时数据 artifact 还是旧的（M8 数据契约错配）。
+    return (
+      <div className="placeholder">
+        <div className="ph-tag">数据升级中</div>
+        <div className="ph-msg">
+          ocean.json 为旧 schema（v{data.schema_version ?? '?'}）。M8 Ocean 需要 schema v2 —— 触发一次{' '}
+          <code>nightly.yml</code> 重算生产数据（仅 push web 不更新数据，见 PROJECT-STATUS §6）。
+        </div>
       </div>
     )
   }
 
+  const isLatest = di === data.dates.length - 1
+  // tooltip reads a REAL snapshot at the resting frame (phase 0 → the current date's pt).
   const hoverStock = hover ? data.stocks.find((s) => s.ticker === hover.ticker) : undefined
-  const hoverPt = hoverStock ? hoverStock.pts[wk] : null
+  const hoverPt = hoverStock
+    ? interpolateOceanPoint(
+        hoverStock.pts[di] ?? null,
+        di < data.dates.length - 1 ? hoverStock.pts[di + 1] ?? null : hoverStock.pts[di] ?? null,
+        0,
+      )?.snap ?? null
+    : null
 
   return (
     <div className="ocean">
@@ -186,19 +325,10 @@ export default function Ocean({
         </div>
         <div className="ocscrub">
           {pinned.length > 0 && <span className="ocpins">📌 {pinned.length} pinned</span>}
-          <span className="ocweek">
-            WEEK {wk + 1}/{data.n_weeks} · {data.weeks[wk]}
+          <span className="ocdate">
+            {data.dates[di]}
+            {isLatest ? ' · latest EOD' : ''}
           </span>
-          <input
-            className="ocrange"
-            type="range"
-            min={0}
-            max={data.n_weeks - 1}
-            step={1}
-            value={wk}
-            onChange={(e) => setWeek(parseInt(e.target.value, 10))}
-            aria-label="week scrubber"
-          />
         </div>
       </div>
 
@@ -212,9 +342,9 @@ export default function Ocean({
           onMouseUp={onUp}
           onMouseLeave={onLeave}
         />
-        <div className="oax-x">RS percentile → (weak · strong)</div>
-        <div className="oax-y">Valuation ↑ (cheap · expensive)</div>
-        <div className="oquad">cheap &amp; strengthening</div>
+        <div className="oax-x">P/S (log) → (便宜 · 贵)</div>
+        <div className="oax-y">ign_pct ↑ (点火强度)</div>
+        <div className="oquad">↑ 海平面以上 = 持续点火</div>
         {hover && hoverStock && hoverPt && (
           <div
             className="otipwrap"
@@ -225,11 +355,38 @@ export default function Ocean({
         )}
       </div>
 
+      <div className="octimeline">
+        <button className="octl-btn" onClick={() => (playing ? pause() : play())} aria-label={playing ? 'pause' : 'play'}>
+          {playing ? '⏸' : '▶'}
+        </button>
+        <button className="octl-btn" onClick={() => goto(di - 1)} disabled={di <= 0} aria-label="prev day">
+          ◀
+        </button>
+        <input
+          className="ocrange"
+          type="range"
+          min={0}
+          max={data.dates.length - 1}
+          step={1}
+          value={di}
+          onChange={(e) => goto(parseInt(e.target.value, 10))}
+          aria-label="date slider"
+        />
+        <button className="octl-btn" onClick={() => goto(di + 1)} disabled={isLatest} aria-label="next day">
+          ▶
+        </button>
+        <span className="ocdaten">
+          {di + 1}/{data.dates.length}
+        </span>
+      </div>
+
       <div className="foot">
-        固定轴 <b>RS percentile × Valuation percentile</b>（底 = 便宜）；右下绿象限 = 强 + 便宜 = 要找的 emerging
-        leader。拖 WEEK 滑杆切周（无 autoplay）；悬停出 tip；<b>点击 pin</b> 出彩色 trail + 箭头（仅 pinned）；
-        <b>框选 lasso</b> → set 全局 scope（其他 tab 同步过滤、可在顶部一键清）。点大小 = √市值；颜色按 {colorBy}。as_of{' '}
-        {data.as_of_date} · {data.count} 点 · metric {data.metric}。
+        <b>Ignition × Valuation 海平面图</b>：纵轴 = ign_pct（点火横截面百分位），<b>海平面 = ign_pct 90</b>（top decile）；
+        海平面以上 = 正在快速上涨 / 加速 / 突破 / 放量，跃出高度 ∝ ign_pct−90，与 Discovery 持续点火候选同源（C9）。横轴 =
+        <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}；candidate 加光晕 +
+        亮环。拖<b>日期滑杆</b>切 EOD；<b>▶ Play</b> 在相邻真实快照间平滑插值移动（仅视觉，tooltip/状态取真实快照，不伪造交易日）；
+        <b>点击 pin</b>、<b>框选 lasso</b> → set 全局 scope（跨 tab 同步、可一键清）。as_of {data.as_of_date} · {data.count} 点 ·
+        P/S 域 [{data.x_domain[0]}, {data.x_domain[1]}]。
       </div>
     </div>
   )

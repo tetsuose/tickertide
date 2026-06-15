@@ -1,6 +1,6 @@
 # TickerTide — 项目现状 & 算法 Handoff
 
-> **写于 2026-06-14,给新 session 接手用。** 这是现状快照 + 算法精要 + 文件/工作流导航。
+> **写于 2026-06-14,M8 更新 2026-06-15,给新 session 接手用。** 这是现状快照 + 算法精要 + 文件/工作流导航。
 > **算法权威规格(SoT)仍是 `docs/PRD.md` §10.8**;本文自包含到「读完能继续开发」,细节冲突以 PRD §16「已定死」为准。
 > 上手顺序:本文 → `CLAUDE.md`(入口约束)→ PRD §10.8(算法)→ ROADMAP「M7」(里程碑)。
 
@@ -8,7 +8,7 @@
 
 ## 0. 一句话
 
-盘后(EOD)、美股专属的 momentum 监控工具。**双引擎:`ignition`(核心发现)+ `composite`(辅助确认)→ 5 个 surface → 生产上线 `tickertide.pages.dev`(Cloudflare Pages,nightly 自动部署)。**
+盘后(EOD)、美股专属的 momentum 监控工具。**脊柱 = `ignition`(核心发现)+ valuation + raw evidence;`composite` 自 M8 起退为计算层暂存、不再用户可见。Ocean 已重构为 Ignition × Valuation 海平面图(y=ign_pct、海平面 90、x=log P/S + 日期滑杆动画)。5 个 surface → 生产上线 `tickertide.pages.dev`(Cloudflare Pages,nightly 自动部署)。**
 
 ---
 
@@ -62,7 +62,7 @@
 
 ### 2.5 composite(辅助确认,固定权重)
 
-`score = 100·Σ wᵢ·componentᵢ`,5 分量 ∈[0,1]:`rs_pct`、`high_proximity`、`trend_quality`、`volume`、`rs_accel`(长窗口,源码 `compute/signals.py`)。**固定 k=0.5**(权重 `rs=.215, high=.22, trend=.17, vol=.12, accel=.275`)。退为「已成型 leader」副读角标(可展开看 5 分量,informed-consent),**不可拨**。`early⟷reliable` 旋钮已取消。
+`score = 100·Σ wᵢ·componentᵢ`,5 分量 ∈[0,1]:`rs_pct`、`high_proximity`、`trend_quality`、`volume`、`rs_accel`(长窗口,源码 `compute/signals.py`)。**固定 k=0.5**(权重 `rs=.215, high=.22, trend=.17, vol=.12, accel=.275`)。**自 M8 起 composite 退出全部用户可见层(Discovery / Stock / Rotation / 顶栏都不再显示),仅作计算层暂存**(`compute/run.py` 的 composite 列、`derived_daily.composite`、`board.json` 字段、`web/src/lib/composite.ts` 保留但 UI/文案不暴露)。`early⟷reliable` 旋钮已取消。
 
 ### 2.6 实证数字(都在 `analysis/`)
 
@@ -78,7 +78,8 @@ compute/ignition.py (5 分量 per-stock)
   → compute/run.py (横截面 percentile + ignition + ign_pct + persistence islands)
   → derived_daily 扩列: ig_accel,ig_expand,ig_vsurge,ig_breakout,ig_rsturn, ignition, ign_pct, ign_persist_days
   → export/board.py (ignition 块 + candidate + 点火证据) → board.json
-  → web Discovery (持续点火排序) / Stock (点火诊断小节)
+  → export/ocean.py (ign_pct × raw P/S 日频快照, schema v2) → ocean.json   ← M8
+  → web Discovery (持续点火排序) / Stock (点火诊断小节) / Ocean (海平面图 + Play 动画)
 ```
 **C9 同源守卫**:`export/check_ignition.py`(`make ignition-c9`)+ `compute/check_ac_m7.py`(`make ac-m7`,AC-M7 五条门禁)。ignition 永不在 export / 前端重算,一律读 `derived_daily` 导出值。
 
@@ -92,17 +93,18 @@ compute/ignition.py (5 分量 per-stock)
 | **M7 ignition 双引擎** | ✅ DONE | #64–#68 |
 | 取消 early⟷reliable 旋钮(ignition 核心、composite 固定 k=0.5) | ✅ | #69 |
 | cleanup(nightly 加 ignition-c9 + board.py 去 knob 残留) | ✅ | #70 |
+| **M8 Ocean 重构(Ignition 海平面图 + 动画;composite 退出 UI)** | ✅ DONE | `feat/m8-ocean-ignition-sea-level` |
 | **生产上线** | ✅ `tickertide.pages.dev`(Access 锁 sejonep)|nightly 自动部署 |
 
-线上现状:Discovery 是真正的 ignition 持续点火榜(506 票 / 10 candidate),前端无旋钮(IGNITION 引擎说明替代),composite 退固定 k=0.5 副读。
+线上现状:Discovery 是真正的 ignition 持续点火榜(506 票 / 10 candidate),前端无旋钮(IGNITION 引擎说明替代)。**M8 起 composite 退出全部用户可见层(仅计算层暂存 k=0.5);Ocean 重构为 Ignition × Valuation 海平面图 + 日期滑杆/Play 插值动画(注:M8 在 `feat/m8-ocean-ignition-sea-level` 分支,上表 main SHA 为 M8 前)。**
 
 ---
 
 ## 4. 文件地图(改算法看这些)
 
 - **compute**:`ignition.py`(5 分量)·`run.py`(横截面+persist 接线)·`signals.py`(composite 数学)·`check.py`(AC 抽查)·`check_ac_m7.py`(AC-M7 门禁)
-- **export**:`board.py`(Discovery 数据+ignition 块)·`stock_bundle.py`(Stock per-name+ignition)·`check_ignition.py`(C9)
-- **web**:`src/views/Discovery.tsx`(持续点火排序)·`src/views/Stock.tsx`(点火诊断)·`src/components/EvidenceCard.tsx`(点火证据卡)·`src/lib/composite.ts`(固定权重)·`src/App.tsx`(顶栏,已无旋钮)
+- **export**:`board.py`(Discovery 数据+ignition 块)·`stock_bundle.py`(Stock per-name+ignition)·`ocean.py`(M8 Ocean 海平面图 schema v2,ign_pct × log P/S 日频)·`check_ignition.py`(C9)·`check_ocean.py`(M8 Ocean↔board C9)
+- **web**:`src/views/Discovery.tsx`(持续点火排序)·`src/views/Stock.tsx`(点火诊断)·`src/views/Ocean.tsx`(M8 海平面图 + 日期滑杆/Play 动画)·`src/lib/ocean-draw.ts`(M8 Ocean 纯绘制+插值)·`src/components/EvidenceCard.tsx`(点火证据卡)·`src/lib/composite.ts`(固定权重,**M8 起仅计算层保留、UI 不暴露**)·`src/App.tsx`(顶栏,已无旋钮、已无 composite 说明)
 - **analysis**(实证,非管线):`verify_ignition.py`(timing)·`precision_ignition.py`(precision)
 - **schema**:`ingest/schema.sql`(derived_daily 扩列)
 
@@ -133,6 +135,8 @@ compute/ignition.py (5 分量 per-stock)
 
 ## 7. 未决 / 下一步候选(PRD §17)
 
+- **M8 Ocean 接手说明**:新 Ocean = **Ignition × Valuation 海平面图**——y=`ign_pct`、固定海平面线 `ign_pct=90`(=Discovery 点亮阈值)、x=**原始 trailing P/S TTM 的 log 刻度**(非百分位、无隐含阈值参数);海平面之上的点 = 持续点火 candidate(`ign_pct≥90 AND ign_persist_days≥5`,与 Discovery 同一道 gate,C9)。日期滑杆 scrub EOD 快照(默认开最新),Play 用 rAF 在相邻**真实** EOD 快照间 tween(900–1200ms/段);**插值仅视觉,tooltip/状态永读真实快照、绝不读伪造中间值**。砍掉旧象限色/(50,50) 十字线/周 scrubber/pin 多周尾迹。数据契约见 `export/ocean.py`(`ocean.json` schema v2)+ ROADMAP「M8」段。
+- **M8 payload 后续(未做)**:生产 `ocean.json` 较大(60 天 × ~500–6766 票 × 12 字段 pt;top-500 约 ~6MB,gzip ~1.5MB)→ 分片 / 裁剪是后续优化。
 - **persist 天数**:默认 5,用 `analysis/precision_ignition.py` 复核 5/7/10 定 final。
 - **全 universe**:nightly 默认 top-500 by mktcap(偏大中盘);ignition habitat 在中小盘,扩到全 ~6766 只 candidate 会更多(M6 扩量)。
 - **是否叠加估值过滤**(ignition ∩ 不贵):PRD §17 未决。
@@ -147,7 +151,7 @@ compute/ignition.py (5 分量 per-stock)
 |---|---|
 | `docs/PRD.md` | 产品规格 SoT;**§10.8 = ignition 算法权威**;§16 已定死 |
 | `docs/BUILD-PLAN.md` | 数学规格出处;§4.8 ignition |
-| `docs/ROADMAP.md` | 里程碑;「M7」段 = ignition 落地方案 + 进度 |
+| `docs/ROADMAP.md` | 里程碑;「M7」段 = ignition 落地方案、「M8」段 = Ocean 重构(海平面图 + composite 退出 UI)+ 进度 |
 | `CLAUDE.md` | 项目薄入口(约束 + 导航) |
 | `docs/progress/M7-ignition.md` | M7 执行细节 / subagent 交接(**gitignore,仅本地**) |
 | `docs/runtime/File-Contracts.json` | 文件合同账本(gate 用) |
