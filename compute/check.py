@@ -3,8 +3,9 @@
 Usage: python3 compute/check.py [--db data/tickertide.duckdb]
 
 Reads the DB and asserts the M0 invariants (universe present, bars complete with no
-NULL close, composite generated with 5 components in [0,1], valuation present with
-no lookahead and no negative P/E). Prints a top-by-composite spot check, then a
+NULL close, composite generated with 5 components in [0,1], fundamentals formal-filing
+only, valuation present as formal-filing PIT — effective_eod with no lookahead, the
+formal_filing_pit basis, no negative P/E). Prints a top-by-composite spot check, then a
 PASS/FAIL line per check. Exits non-zero if any hard check fails (CI-friendly).
 """
 from __future__ import annotations
@@ -64,11 +65,34 @@ def run_checks(con) -> list[tuple[str, bool, str]]:
             persist_ok = (g[4] is None) or (g[4] >= 0)
             checks.append(("ign_persist_days >= 0", persist_ok, f"persist∈[{g[4]},{g[5]}]"))
 
+    # fundamentals_q formal-filing only (AC-7, PRD §10.5): v1 ingests ONLY formal SEC
+    # filings — no preliminary / 8-K earnings / press release / estimate rows.
+    fq = db.count(con, "fundamentals_q")
+    if fq > 0:
+        non_formal = con.execute(
+            "SELECT count(*) FROM fundamentals_q WHERE source_type IS DISTINCT FROM 'formal_filing'"
+        ).fetchone()[0]
+        checks.append(("fundamentals formal-filing only (AC-7)", non_formal == 0, f"{non_formal} non-formal rows"))
+
     vd = db.count(con, "valuation_daily")
     checks.append(("valuation_daily present", vd > 0, f"{vd} rows"))
     if vd > 0:
         la = con.execute("SELECT count(*) FROM valuation_daily WHERE as_of_filed > date").fetchone()[0]
         checks.append(("ASOF point-in-time (no lookahead)", la == 0, f"{la} lookahead rows"))
+        # formal-filing PIT (PRD §10.5): the ASOF key actually joined on is as_of_effective_eod
+        # (v1 == as_of_filed). Assert no lookahead on it (AC-2), the v1 filed==effective ordering,
+        # the filing-after-period ordering, and that every row carries the formal_filing_pit basis
+        # — so no surface can silently mix a different口径.
+        la_eff = con.execute("SELECT count(*) FROM valuation_daily WHERE as_of_effective_eod > date").fetchone()[0]
+        checks.append(("effective_eod no lookahead (<=date)", la_eff == 0, f"{la_eff} lookahead rows"))
+        ord_ef = con.execute("SELECT count(*) FROM valuation_daily WHERE as_of_filed > as_of_effective_eod").fetchone()[0]
+        checks.append(("filed <= effective_eod (v1: equal)", ord_ef == 0, f"{ord_ef} out-of-order rows"))
+        ord_pf = con.execute("SELECT count(*) FROM valuation_daily WHERE as_of_period_end > as_of_filed").fetchone()[0]
+        checks.append(("period_end <= filed (filing after period)", ord_pf == 0, f"{ord_pf} out-of-order rows"))
+        basis_bad = con.execute(
+            "SELECT count(*) FROM valuation_daily WHERE valuation_basis IS DISTINCT FROM 'formal_filing_pit'"
+        ).fetchone()[0]
+        checks.append(("valuation_basis = formal_filing_pit", basis_bad == 0, f"{basis_bad} off-basis rows"))
         neg_pe = con.execute("SELECT count(*) FROM valuation_daily WHERE pe < 0").fetchone()[0]
         checks.append(("no negative P/E (E<=0 -> n.m.)", neg_pe == 0, f"{neg_pe} negative-pe rows"))
 

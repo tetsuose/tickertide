@@ -178,8 +178,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M0+AC-M7 验收抽查：pipeline 跑完后 sanity-check DuckDB（PRD §14/§10.8）",
-        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E / ignition 已生成且 ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(C9 同源 derived_daily)",
-        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS（含 ignition 三项）；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
+        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / fundamentals formal-filing only(AC-7)、valuation formal-filing PIT(effective_eod 无 lookahead AC-2、filed≤effective_eod、period_end≤filed、valuation_basis=formal_filing_pit、无负 P/E) / ignition 已生成且 ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(C9 同源 derived_daily)",
+        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS（含 ignition 三项）；空/坏 DB 输出 CHECK_FAIL 并 exit 1；formal-filing PIT 各项(AC-7/AC-2/basis/排序)PASS"
       }
     },
     {
@@ -550,8 +550,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M8 C9 跨 surface 校验：ocean.json(v3 columnar bulk) 点位可追溯到 board/Discovery 数字（AC-M8「海平面以上点 = Discovery candidate」），并证 v3 payload 拆分(bulk 三绘制字段 + per-stock 懒加载 detail 九字段)未破 C9",
-        "invariants": "读同一 DB 导出的 board.json + ocean.json + ocean/<T>.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean bulk ign_pct[-1] == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean bulk cand[-1] == board.ignition.candidate(同持续点火 gate)；ps=ocean bulk ps[-1] == board.valuation.ps(同 valuation_daily.ps)；v3 拆分一致：detail.n==len(ocean.dates)(窗口对齐)、bulk 预算的 cand == (ign_pct≥90 AND detail.ign_persist_days[-1]≥5)(gate 不因拆分失同步)、detail.evs[-1] == board.valuation.evs(detail 估值追溯同一 board 数)；容差仅取整(ign 0.1/ps 0.01/evs 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
-        "verification": "make ocean-c9（先 fixture-pipeline + make export 出 bulk + ocean/ detail）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked/detail_checked/gate_checked/evs_checked 计数一致；构造不符(含 gate 失同步)可触发 GATE_FAIL"
+        "invariants": "读同一 DB 导出的 board.json + ocean.json + ocean/<T>.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean bulk ign_pct[-1] == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean bulk cand[-1] == board.ignition.candidate(同持续点火 gate)；ps=ocean bulk ps[-1] == board.valuation.ps(同 valuation_daily.ps)；v3 拆分一致：detail.n==len(ocean.dates)(窗口对齐)、bulk 预算的 cand == (ign_pct≥90 AND detail.ign_persist_days[-1]≥5)(gate 不因拆分失同步)、detail.evs[-1] == board.valuation.evs 且 detail.as_of_effective_eod[-1] == board.valuation.as_of_effective_eod(detail 估值+formal-filing PIT 可得日追溯同一 board valuation_daily 行，§10.5)、detail.valuation_basis∈{formal_filing_pit,NULL}；容差仅取整(ign 0.1/ps 0.01/evs 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
+        "verification": "make ocean-c9（先 fixture-pipeline + make export 出 bulk + ocean/ detail）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked/detail_checked/gate_checked/evs_checked/aoe_checked 计数一致；构造不符(含 gate 失同步)可触发 GATE_FAIL"
       }
     },
     {
@@ -574,8 +574,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.5 AC-M5 + C9 验收：valuation.parquet/stock bundle 追溯到 board.json(同一引擎)",
-        "invariants": "只读、CI 友好(任一问题 exit 非0)；duckdb 读 parquet 验列齐(pe/ps/.../peg/margin/freshness/themes)+freshness∈{fresh,stale,overdue,NULL}；C9 valuation↔board 同票 ps/pe 一致(同 valuation_daily，tol 0.02)；C9 stock↔valuation 抽 8 票 bundle ps_series 末值==screener ps；前端行为(duckdb-wasm 排序/三档色/pctile/四格)由 web 测试+浏览器 smoke 覆盖、本 check 只验数据侧；valuation.parquet 缺失 SKIP exit 0",
-        "verification": "make valuation-c9 对 fixture export 输出 GATE_PASS、c9_valuation_board=全票、c9_stock_valuation 抽样；gate.yml offline 与 nightly 串入"
+        "invariants": "只读、CI 友好(任一问题 exit 非0)；duckdb 读 parquet 验列齐(pe/ps/.../peg/margin/freshness/themes + as_of_effective_eod/valuation_basis/disclosure_lag_days)+freshness∈{fresh,stale,overdue,NULL}+valuation_basis∈{formal_filing_pit,NULL}；C9 valuation↔board 同票 ps/pe 一致(同 valuation_daily，tol 0.02)+同 valuation_basis+as_of_effective_eod 日期精确一致(无容差)；C9 stock↔valuation 抽 8 票 bundle ps_series 末值==screener ps + bundle valuation.as_of_effective_eod/valuation_basis==screener(formal-filing PIT 追溯 AC-5/6)；前端行为(duckdb-wasm 排序/三档色/pctile/四格)由 web 测试+浏览器 smoke 覆盖、本 check 只验数据侧；valuation.parquet 缺失 SKIP exit 0",
+        "verification": "make valuation-c9 对 fixture export 输出 GATE_PASS、c9_valuation_board=全票、c9_stock_valuation 抽样；gate.yml offline 与 nightly 串入；formal-filing PIT：valuation_basis/as_of_effective_eod 列齐且 C9 日期精确一致"
       }
     },
     {
