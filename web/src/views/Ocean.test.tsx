@@ -99,6 +99,18 @@ describe('Ocean draw lib (pure)', () => {
     expect(sc.seaY).toBeLessThan(sc.sy(0))
   })
 
+  it('makeScales: split y-axis puts the sea level at the vertical midpoint, magnifying the above-sea band', () => {
+    const g = OCEAN_GEOM
+    const sc = makeScales(data.x_domain, 90, g)
+    const mid = g.pt + sc.plotH / 2
+    expect(sc.seaY).toBeCloseTo(mid)                       // waterline anchors the plot midpoint
+    expect(sc.sy(90)).toBeCloseTo(mid)                     // sy(seaLevel) === seaY
+    expect(sc.sy(45)).toBeCloseTo(g.pt + sc.plotH * 0.75)  // below-sea [0,90] owns the lower half
+    expect(sc.sy(95)).toBeCloseTo(g.pt + sc.plotH * 0.25)  // above-sea [90,100] owns the upper half
+    // the upper band is magnified: 5 ign_pct above the line span more px than 5 below it.
+    expect(sc.sy(90) - sc.sy(95)).toBeGreaterThan(sc.sy(45) - sc.sy(50))
+  })
+
   it('makeScales: P/S x is a monotone LOG scale over x_domain', () => {
     const g = OCEAN_GEOM
     const sc = makeScales([2, 20], 90, g)
@@ -340,6 +352,10 @@ describe('AC-M8: Ocean component scaffold (SSR)', () => {
     expect(html).toContain('▶')                          // play control
     expect(html).toContain('latest EOD')
     expect(html).toContain(data.dates[latest])
+  })
+  it('accepts an onOpen prop and documents the right-click → Stock affordance', () => {
+    const h = renderToStaticMarkup(<Ocean initial={data} scope={ALL} onOpen={() => {}} />)
+    expect(h).toContain('右键')                            // foot documents right-click → open in Stock
   })
 })
 
