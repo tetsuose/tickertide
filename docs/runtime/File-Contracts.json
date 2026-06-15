@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-13T16:57:39.235126+00:00",
+  "updated_at": "2026-06-15T01:29:04.515561+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -337,6 +337,18 @@
         "invariants": "FR/NFR 可追溯；与 equity-monitor-v2.jsx UX 与 §10 数学一致；活文档，需求/边界变化先回写本文",
         "verification": "FR 覆盖五 surface + 引擎；不可妥协约束与 §7 一致；配色表与 UX 合同一致"
       }
+    },
+    {
+      "path": "docs/PROJECT-STATUS.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "新 session 接手用的项目现状 + 算法 handoff:双引擎(ignition 核心 + composite 辅助)现状快照、ignition 算法精要(5 短窗口分量 + persistence + 三级漏斗)、文件/工作流/部署机制导航;自包含到可继续开发,但算法 SoT 仍指向 PRD §10.8",
+        "invariants": "不替代 PRD(SoT 仍 PRD §16/§10.8,冲突以 PRD 为准);指针化不复制权威规格全文;现状/PR 号/main commit/算法描述写于该时点、须与 main 实际一致",
+        "verification": "文中文件路径有效(compute/ignition.py、export/board.py、analysis/*.py 等存在);PR 号与 main commit 与 git log 一致;算法描述与 PRD §10.8 + compute/ignition.py 同步"
+      },
+      "notes": "2026-06-14 创建;新 session 上手第一文档,与 CLAUDE.md/PRD 互补不重复"
     },
     {
       "notes": "",
@@ -1011,6 +1023,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/App.test.tsx",
       "kind": "code",
       "module": "web",
@@ -1019,8 +1032,7 @@
         "purpose": "App 顶栏回归门（vitest）：断言 early⟷reliable 旋钮已移除（PRD §9.0/§16，核心转 ignition、ignition 无可调参）",
         "invariants": "renderToStaticMarkup(<App/>) 无 fetch（effects 不跑、各 surface 显 loading 占位）即足以验顶栏 chrome；断言顶栏不含 range 滑块(type=range/class=knob/aria-label 旋钮)、不含 RELIABLE/EARLY 标与权重条(wbars/wbfill)；断言改以 IGNITION 引擎说明(enginenote + IGNITION + 无可调参)替代；仍渲染 5-lens tab 组 + 默认 Discovery surface",
         "verification": "npm test / make web-test 全绿（本文件 4 用例）；与 App.tsx 合同一致（顶栏两部分、无旋钮）"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1492,5 +1504,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "b3cbbdd27bf4b328dfe5a2aab3cbbe6370349a0a707389c07bc3d0a39ebd3d20"
+  "last_structure_digest": "706377098f6978c530777387e1673b1aa7ca7f16ec8e47a687ec0f32bd19b266"
 }
