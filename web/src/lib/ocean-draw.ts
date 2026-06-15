@@ -109,13 +109,16 @@ export function inScope(s: OceanStock, scope: Scope, pinned: string[] = []): boo
 
 export interface Scales {
   sx: (ps: number) => number       // raw P/S -> px (log scale over x_domain)
-  sy: (ignPct: number) => number   // ign_pct -> px (0 at bottom, 100 at top)
+  sy: (ignPct: number) => number   // ign_pct -> px (split axis: 0 bottom, seaLevel mid, 100 top)
   plotW: number
   plotH: number
-  seaY: number                     // px of the sea level (ign_pct === seaLevel)
+  seaY: number                     // px of the sea level (=== sy(seaLevel)) — the plot midpoint
 }
 
-/** x = log10 P/S mapped over [x_domain] -> plot width; y = ign_pct 0-100 (top=lit). */
+/** x = log10 P/S mapped over [x_domain] -> plot width; y = ign_pct on a SPLIT (broken) axis:
+ *  the sea level (ign 90) sits at the plot's vertical MIDPOINT, so the narrow above-sea band
+ *  [seaLevel,100] (the lit catch zone — the only ign_pct worth resolving finely) and the wide
+ *  below-sea band [0,seaLevel] each own half the height — different px-per-pct on each side. */
 export function makeScales(
   xDomain: readonly [number, number], seaLevel: number, g: Geom = OCEAN_GEOM,
 ): Scales {
@@ -125,12 +128,24 @@ export function makeScales(
   const hi = Math.max(lo * 1.0001, xDomain[1])   // guard a degenerate [v,v] domain
   const l0 = Math.log10(lo)
   const l1 = Math.log10(hi)
+  const sea = clamp(seaLevel, 0, 100)
+  const midY = g.pt + plotH / 2                  // the waterline anchors the vertical midpoint
+  const half = plotH / 2
+  // piecewise-linear y: [0,sea]→lower half (bottom..mid), (sea,100]→upper half (mid..top).
+  // anchors sy(0)=bottom, sy(sea)=mid, sy(100)=top hold, so the existing orientation invariants
+  // and the above/below-sea hit-tests are preserved — only the px-per-pct slope differs per band.
+  const sy = (v: number): number => {
+    const vc = clamp(v, 0, 100)
+    return vc <= sea
+      ? g.pt + plotH - (sea <= 0 ? 1 : vc / sea) * half           // below sea → lower half
+      : midY - (sea >= 100 ? 0 : (vc - sea) / (100 - sea)) * half // above sea → upper half
+  }
   return {
     plotW,
     plotH,
     sx: (ps) => g.pl + clamp((Math.log10(Math.max(1e-6, ps)) - l0) / (l1 - l0), 0, 1) * plotW,
-    sy: (v) => g.pt + plotH - (clamp(v, 0, 100) / 100) * plotH,
-    seaY: g.pt + plotH - (clamp(seaLevel, 0, 100) / 100) * plotH,
+    sy,
+    seaY: midY,
   }
 }
 
@@ -289,8 +304,9 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
     ctx.stroke()
     ctx.fillText(fmtPsTick(v), X - 6, botY + 14)
   }
-  // ign_pct y ticks (0 / 50 / 90 / 100), 90 = the sea level.
-  for (const v of [0, 50, seaLevel, 100]) {
+  // ign_pct y ticks. 90 = the sea level (plot midpoint); 95 anchors the magnified above-sea
+  // half so the expanded catch-zone band stays readable on the split axis.
+  for (const v of [0, 50, seaLevel, 95, 100]) {
     ctx.fillStyle = v === seaLevel ? o.palette['--grn'] || '#2ec07a' : o.palette['--dim'] || '#56616f'
     ctx.fillText(String(v), g.pl - 24, sy(v) + 3)
   }

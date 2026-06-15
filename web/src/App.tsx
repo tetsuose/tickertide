@@ -148,7 +148,7 @@ export default function App() {
           {tab === 'discovery' ? (
             <Discovery scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} onOpen={openStock} />
           ) : tab === 'ocean' ? (
-            <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} />
+            <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} onOpen={openStock} />
           ) : tab === 'rotation' ? (
             <Rotation scope={scope} setScope={setScope} onJumpTab={setTab} />
           ) : tab === 'valuation' ? (
