@@ -2,8 +2,10 @@
 
 Math spec: PRD §10.5. All multiples = price/EV ÷ trailing-4Q, computed daily —
 numerator (price, mktcap=shares×close, EV) is daily; the denominator steps at each
-filing. The ASOF JOIN keys on filed_date (NOT period_end) so a given trading day
-only ever sees financials already public on that day (point-in-time, anti-lookahead).
+filing. FORMAL-FILING PIT: the ASOF JOIN keys on effective_eod_date (v1 == filed_date,
+NEVER period_end) so a given trading day only ever sees financials already formally
+filed and effective on that day (anti-lookahead). A quarter ending Mar 31 but filed in
+Apr enters P/S in Apr, not Mar. Output tags valuation_basis='formal_filing_pit'.
 
   pe        = close / eps_ttm                         (eps_ttm<=0 -> NULL = n.m., fall back to ps)
   ps        = (shares*close) / revenue_ttm
@@ -35,7 +37,11 @@ from compute import db  # noqa: E402
 _SQL = """
 INSERT INTO valuation_daily
 WITH fe AS (
-  SELECT ticker, period_end, filed_date, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm,
+  SELECT ticker, period_end, filed_date,
+    -- formal-filing PIT ASOF key (PRD §10.5): the EOD from which this filing is usable.
+    -- v1 == filed_date; COALESCE guards rows back-filled before the column existed.
+    COALESCE(effective_eod_date, filed_date) AS effective_eod_date,
+    revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm,
     CASE WHEN datediff('day', LAG(period_end, 4) OVER w, period_end) BETWEEN 330 AND 400
          THEN revenue_ttm / NULLIF(LAG(revenue_ttm, 4) OVER w, 0) - 1 END AS growth,
     CASE WHEN revenue_ttm > 0 AND ebitda_ttm IS NOT NULL THEN ebitda_ttm / revenue_ttm END AS margin
@@ -43,12 +49,14 @@ WITH fe AS (
   WINDOW w AS (PARTITION BY ticker ORDER BY period_end)
 ),
 j AS (
+  -- ASOF key is effective_eod_date, NEVER period_end: a trading day only sees a filing once
+  -- it is formally available (period_end is the fiscal period, not an availability date).
   SELECT b.ticker, b.date, b.adj_close AS px,
-         f.period_end, f.filed_date, f.revenue_ttm, f.shares, f.total_debt, f.cash,
+         f.period_end, f.filed_date, f.effective_eod_date, f.revenue_ttm, f.shares, f.total_debt, f.cash,
          f.ebitda_ttm, f.eps_ttm, f.growth, f.margin
   FROM daily_bars b
   ASOF LEFT JOIN fe f
-    ON b.ticker = f.ticker AND b.date >= f.filed_date
+    ON b.ticker = f.ticker AND b.date >= f.effective_eod_date
 )
 SELECT ticker, date,
   CASE WHEN eps_ttm > 0 THEN px / eps_ttm END AS pe,
@@ -60,7 +68,8 @@ SELECT ticker, date,
   CASE WHEN eps_ttm > 0 AND growth > 0 THEN (px / eps_ttm) / (growth * 100) END AS peg,
   growth, margin,
   CASE WHEN growth IS NOT NULL AND margin IS NOT NULL THEN growth * 100 + margin * 100 END AS rule40,
-  period_end AS as_of_period_end, filed_date AS as_of_filed
+  period_end AS as_of_period_end, filed_date AS as_of_filed,
+  effective_eod_date AS as_of_effective_eod, 'formal_filing_pit' AS valuation_basis
 FROM j
 WHERE revenue_ttm IS NOT NULL AND shares IS NOT NULL
 """

@@ -138,10 +138,12 @@ def make_bars(rng: np.random.Generator, dates: list[date], closes: np.ndarray) -
 
 def fundamentals_rows(rng: np.random.Generator, profile: str, end: date,
                       last_close: float, shares: float) -> list[tuple]:
-    """Trailing-4Q rows (period_end, filed, revenue_ttm, shares, total_debt, cash,
-    ebitda_ttm, eps_ttm), point-in-time (filed >= period_end, filed <= end). The
-    most-recent period_end's age vs `end` sets the freshness bucket the exporter
-    reports; revenue compounds so YoY growth is positive and PEG/Rule-40 compute."""
+    """Trailing-4Q rows in db.FUNDAMENTALS_COLS order (period_end, filed, effective_eod_date,
+    source_type, source_form, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm),
+    formal-filing PIT (filed >= period_end, filed <= end; effective_eod_date == filed, v1).
+    The most-recent period_end's age vs `end` sets the freshness bucket the exporter reports;
+    revenue compounds so YoY growth is positive and PEG/Rule-40 compute. Adding the three
+    provenance fields draws NO rng, so the other fixture tables stay byte-identical."""
     if profile == "none":
         return []
 
@@ -171,7 +173,9 @@ def fundamentals_rows(rng: np.random.Generator, profile: str, end: date,
             ebitda = -abs(rev * float(rng.uniform(0.02, 0.10)))
         eps = (rev * net_margin) / shares
         rows.append((
-            pe.isoformat(), filed.isoformat(), float(rev), float(shares),
+            pe.isoformat(), filed.isoformat(),
+            filed.isoformat(), db.SOURCE_FORMAL_FILING, db.SOURCE_FORM_UNKNOWN,
+            float(rev), float(shares),
             float(rev * debt_ratio), float(rev * cash_ratio), float(ebitda), float(eps),
         ))
     return rows

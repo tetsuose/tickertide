@@ -131,23 +131,41 @@ def clear_derived(con: duckdb.DuckDBPyConnection) -> None:
 
 # --- M0.2 fundamentals (EDGAR) ---
 
+# Formal-filing PIT provenance (PRD §10.5). v1 ingests ONLY formal SEC filings, so every
+# fundamentals_q row carries these constants; they exist as the seam for a future v2 that
+# would also ingest preliminary/8-K rows (and compute a real effective_eod_date from the
+# EDGAR accepted-timestamp). source_form is 'unknown' until the filing form is tracked.
+SOURCE_FORMAL_FILING = "formal_filing"
+SOURCE_FORM_UNKNOWN = "unknown"
+
+# fundamentals_q columns written by upsert_fundamentals, in row order (excl. ticker). Named
+# in the INSERT so physical column order (CREATE vs ALTER-appended migration) can't desync.
+FUNDAMENTALS_COLS = (
+    "period_end", "filed_date", "effective_eod_date", "source_type", "source_form",
+    "revenue_ttm", "shares", "total_debt", "cash", "ebitda_ttm", "eps_ttm",
+)
+
+
 def upsert_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str, rows: Sequence[Sequence]) -> int:
-    """INSERT OR REPLACE fundamentals_q. Each row =
-    (period_end, filed_date, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm)."""
+    """INSERT OR REPLACE fundamentals_q. Each row carries FUNDAMENTALS_COLS in order:
+    (period_end, filed_date, effective_eod_date, source_type, source_form,
+     revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm).
+    effective_eod_date/source_type/source_form are the formal-filing PIT provenance (PRD §10.5)
+    — in v1 effective_eod_date == filed_date and source_type == SOURCE_FORMAL_FILING."""
     if not rows:
         return 0
+    cols = ", ".join(("ticker", *FUNDAMENTALS_COLS))
+    qs = ", ".join(["?"] * (1 + len(FUNDAMENTALS_COLS)))
     payload = [(ticker, *r) for r in rows]
-    con.executemany(
-        "INSERT OR REPLACE INTO fundamentals_q VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        payload,
-    )
+    con.executemany(f"INSERT OR REPLACE INTO fundamentals_q ({cols}) VALUES ({qs})", payload)
     return len(payload)
 
 
 def read_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str):
     """Return a ticker's trailing-4Q fundamentals as a pandas DataFrame, oldest first."""
     return con.execute(
-        "SELECT period_end, filed_date, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm "
+        "SELECT period_end, filed_date, effective_eod_date, source_type, source_form, "
+        "revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm "
         "FROM fundamentals_q WHERE ticker = ? ORDER BY period_end",
         [ticker],
     ).df()
@@ -162,7 +180,8 @@ def clear_valuation(con: duckdb.DuckDBPyConnection) -> None:
 def read_valuation(con: duckdb.DuckDBPyConnection, ticker: str):
     """Return a ticker's daily valuation multiples as a pandas DataFrame, oldest first."""
     return con.execute(
-        "SELECT date, pe, ps, evs, ev_ebitda, peg, growth, margin, rule40, as_of_period_end, as_of_filed "
+        "SELECT date, pe, ps, evs, ev_ebitda, peg, growth, margin, rule40, "
+        "as_of_period_end, as_of_filed, as_of_effective_eod, valuation_basis "
         "FROM valuation_daily WHERE ticker = ? ORDER BY date",
         [ticker],
     ).df()

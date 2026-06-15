@@ -154,7 +154,15 @@ def _nearest(inst: dict[str, tuple[float, str]], on: str) -> float | None:
 
 
 def extract(cf: dict) -> list[tuple]:
-    """companyfacts -> rows (period_end, filed, revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm)."""
+    """companyfacts -> rows in db.FUNDAMENTALS_COLS order:
+    (period_end, filed, effective_eod_date, source_type, source_form,
+     revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm).
+
+    Formal-filing PIT (PRD §10.5): companyfacts exposes only formal SEC filings, so every
+    row is source_type='formal_filing'. v1 sets effective_eod_date = filed (the official
+    filing date) — companyfacts has no accepted-timestamp, so we cannot yet tell a
+    pre-close from a post-close filing; v2 would push post-close filings to the next
+    trading day. source_form stays 'unknown' (companyfacts doesn't carry the form reliably)."""
     gaap = cf.get("facts", {}).get("us-gaap", {})
     if not gaap:
         return []
@@ -176,7 +184,9 @@ def extract(cf: dict) -> list[tuple]:
         cur = _nearest(debt_cur_i, pe)
         total_debt = (lt + (cur or 0.0)) if lt is not None else None
         rows.append((
-            pe, filed, rev_v,
+            pe, filed,
+            filed, db.SOURCE_FORMAL_FILING, db.SOURCE_FORM_UNKNOWN,  # formal-filing PIT (v1: effective == filed)
+            rev_v,
             _nearest(shares_i, pe), total_debt, _nearest(cash_i, pe),
             ebitda, eps.get(pe, (None,))[0],
         ))
