@@ -346,19 +346,24 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
         ).fetchone()
 
         vrow = con.execute(
-            "SELECT pe, ps, evs, ev_ebitda, growth, rule40, as_of_period_end, as_of_filed, date "
+            "SELECT pe, ps, evs, ev_ebitda, growth, rule40, as_of_period_end, as_of_filed, "
+            "as_of_effective_eod, valuation_basis, date "
             "FROM valuation_daily WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT 1",
             [t, snap],
         ).fetchone()
         valuation = None
         if vrow is not None:
             n_val += 1
-            age = (vrow[8] - vrow[6]).days if vrow[6] is not None else None
+            # freshness measures the fiscal vintage (date − period_end), NOT the disclosure
+            # latency; disclosure_lag exposes filed − period_end separately (formal-filing PIT).
+            age = (vrow[10] - vrow[6]).days if vrow[6] is not None else None
+            lag = (vrow[7] - vrow[6]).days if (vrow[6] is not None and vrow[7] is not None) else None
             valuation = {
                 "pe": _num(vrow[0], 2), "ps": _num(vrow[1], 2), "evs": _num(vrow[2], 2),
                 "ev_ebitda": _num(vrow[3], 2), "growth": _num(vrow[4], 4), "rule40": _num(vrow[5], 4),
                 "as_of_period_end": _iso(vrow[6]), "as_of_filed": _iso(vrow[7]),
-                "as_of_age_days": age, "freshness": freshness(age),
+                "as_of_effective_eod": _iso(vrow[8]), "valuation_basis": vrow[9],
+                "as_of_age_days": age, "disclosure_lag_days": lag, "freshness": freshness(age),
             }
 
         # C9 self-check: reconstruct composite from exported components at snap k.

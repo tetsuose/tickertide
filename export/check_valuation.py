@@ -32,19 +32,27 @@ def run(board_path: Path, parquet: Path, stock_dir: Path) -> tuple[bool, list[st
     board = json.loads(board_path.read_text())
     con = duckdb.connect()
     cols = [c[0] for c in con.execute(f"DESCRIBE SELECT * FROM '{parquet.as_posix()}'").fetchall()]
-    for need in ("pe", "ps", "evs", "ev_ebitda", "peg", "growth", "margin", "rule40", "freshness", "themes"):
+    for need in ("pe", "ps", "evs", "ev_ebitda", "peg", "growth", "margin", "rule40", "freshness", "themes",
+                 "as_of_effective_eod", "valuation_basis", "disclosure_lag_days"):
         if need not in cols:
             problems.append(f"valuation.parquet missing column {need}")
 
+    # r = (ticker, pe, ps, freshness, as_of_effective_eod ISO, valuation_basis)
     vrows = con.execute(
-        f"SELECT ticker, pe, ps, freshness FROM '{parquet.as_posix()}'"
+        f"SELECT ticker, pe, ps, freshness, strftime(as_of_effective_eod, '%Y-%m-%d'), valuation_basis "
+        f"FROM '{parquet.as_posix()}'"
     ).fetchall()
     vby = {r[0]: r for r in vrows}
     bad_fresh = [r[0] for r in vrows if r[3] not in (None, "fresh", "stale", "overdue")]
     if bad_fresh:
         problems.append(f"freshness out of domain for {len(bad_fresh)} rows (e.g. {bad_fresh[:3]})")
+    # formal-filing PIT: every valued row carries the formal_filing_pit basis (no mixed口径).
+    bad_basis = [r[0] for r in vrows if r[5] not in (None, "formal_filing_pit")]
+    if bad_basis:
+        problems.append(f"valuation_basis off formal_filing_pit for {len(bad_basis)} rows (e.g. {bad_basis[:3]})")
 
-    # C9 valuation↔board: same ps/pe per shared ticker
+    # C9 valuation↔board: same ps/pe per shared ticker, plus same formal-filing PIT basis +
+    # as_of_effective_eod (dates must match EXACTLY — both read the same valuation_daily row).
     c9_val = 0
     for s in board.get("stocks", []):
         t = s["ticker"]
@@ -55,6 +63,12 @@ def run(board_path: Path, parquet: Path, stock_dir: Path) -> tuple[bool, list[st
                 problems.append(f"{t}: board ps={bps} vs valuation.parquet ps={round(float(vps),2)}")
             else:
                 c9_val += 1
+            if v:
+                if v.get("valuation_basis") != "formal_filing_pit":
+                    problems.append(f"{t}: board valuation_basis={v.get('valuation_basis')!r} != formal_filing_pit")
+                b_aoe, v_aoe = v.get("as_of_effective_eod"), vby[t][4]
+                if b_aoe and v_aoe and b_aoe != v_aoe:
+                    problems.append(f"{t}: as_of_effective_eod board={b_aoe} vs valuation.parquet={v_aoe}")
 
     # C9 stock↔valuation: sample bundles' latest P/S == screener P/S
     c9_stk = 0
@@ -74,6 +88,15 @@ def run(board_path: Path, parquet: Path, stock_dir: Path) -> tuple[bool, list[st
                 problems.append(f"{t}: stock bundle latest ps={last_ps} vs valuation ps={round(float(vps),2)}")
             else:
                 c9_stk += 1
+            # AC-5/AC-6: the Stock bundle's valuation traces to the SAME formal-filing PIT
+            # basis + effective date as the screener (one valuation_daily row, C9).
+            sval = b.get("valuation") or {}
+            if t in vby and sval:
+                if sval.get("valuation_basis") != "formal_filing_pit":
+                    problems.append(f"{t}: stock valuation_basis={sval.get('valuation_basis')!r} != formal_filing_pit")
+                s_aoe, v_aoe = sval.get("as_of_effective_eod"), vby[t][4]
+                if s_aoe and v_aoe and s_aoe != v_aoe:
+                    problems.append(f"{t}: stock as_of_effective_eod={s_aoe} vs valuation.parquet={v_aoe}")
     else:
         problems.append("stock/index.json missing — run `make export`")
 

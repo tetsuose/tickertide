@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-15T05:42:10.173479+00:00",
+  "updated_at": "2026-06-15T14:28:41.009116+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -178,8 +178,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M0+AC-M7 验收抽查：pipeline 跑完后 sanity-check DuckDB（PRD §14/§10.8）",
-        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / valuation 无 lookahead 与无负 P/E / ignition 已生成且 ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(C9 同源 derived_daily)",
-        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS（含 ignition 三项）；空/坏 DB 输出 CHECK_FAIL 并 exit 1"
+        "invariants": "只读 DB 不改状态；CI 友好（任一硬检查失败 exit 非0）；检查 universe present / daily_bars 无 NULL close / composite 5 分量∈[0,1] / fundamentals formal-filing only(AC-7)、valuation formal-filing PIT(effective_eod 无 lookahead AC-2、filed≤effective_eod、period_end≤filed、valuation_basis=formal_filing_pit、无负 P/E) / ignition 已生成且 ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0(C9 同源 derived_daily)",
+        "verification": "make check 对 M0 DB 输出 CHECK_OK 且每项 PASS（含 ignition 三项）；空/坏 DB 输出 CHECK_FAIL 并 exit 1；formal-filing PIT 各项(AC-7/AC-2/basis/排序)PASS"
       }
     },
     {
@@ -213,8 +213,8 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1) + clear_bucket_bars 按 bucket_type 清(M4.2 theme index 重建)",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、upsert/read_bucket_rrg 管周线 RS-Ratio 序列、clear_bucket_rrg 按 bucket_type 限域清(M4.3：sector/theme rrg 共表共存，重建只清自己那型；None=全清向后兼容))同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理",
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1) + clear_bucket_bars 按 bucket_type 清(M4.2 theme index 重建)；formal-filing PIT 常量(SOURCE_FORMAL_FILING/SOURCE_FORM_UNKNOWN)+FUNDAMENTALS_COLS 列契约",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、upsert/read_bucket_rrg 管周线 RS-Ratio 序列、clear_bucket_rrg 按 bucket_type 限域清(M4.3：sector/theme rrg 共表共存，重建只清自己那型；None=全清向后兼容))同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理；upsert_fundamentals 具名列写入(decouple 物理列序 CREATE vs ALTER-append)，含 effective_eod_date/source_type/source_form 三 formal-filing PIT provenance(v1 effective==filed、source_type=formal_filing)",
         "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；clear_bucket_bars('theme')/clear_bucket_rrg('theme') 只清 theme 行、sector 行保留；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确"
       }
     },
@@ -226,7 +226,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "合成 DuckDB fixture：确定性造 universe/daily_bars/spx_daily/fundamentals_q + bucket_bars(11 条合成 sector ETF 序列,离线验证 M3 rotation) + theme_membership(多 as_of point-in-time membership,离线验证 M4),供无网络环境(CI/sandbox,真实 ingest 依赖 api.nasdaq.com + Yahoo 常不可达)离线验证 compute/export/web —— 经 compute/db.py 真实 upsert 落库后喂真实引擎,验证生产读路径而非造数",
-        "invariants": "写五张字节稳定源表(universe/daily_bars/spx_daily/fundamentals_q + bucket_bars) + theme_membership、绝不写 derived_daily/valuation_daily(那是引擎的活,须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；合成 11 sector ETF 经 db.upsert_bucket_bars 落 bucket_bars(bucket=GICS 名)、绝不进 universe 横截面、且造数放在所有现有 rng 消费之后(尾部 draw)；theme_membership 由 THEME_PLAN 确定性生成(无 rng draw)、置于 bucket_bars 之后 → 上述五表 daily_bars/spx_daily/fundamentals_q/bucket_bars/universe 保字节不变(M1/M2/M3 提交版 fixture 依赖此);theme 造数覆盖 AC-M4 全部 PIT 机制:≥4 theme、2 个 as_of、多对多(TT01∈AI+SEMI)、exposure restatement、late-join、drop-via-exposure=0,exposure∈[0,1] 连续、approved_by 必填(C6);内建边缘票 eps<0/ebitda<0/stale/overdue/无基本面,默认 30 票×320 日；属产品代码用 venv 依赖(numpy/duckdb,非 engine stdlib-only 范畴)；dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)只含合成数据",
+        "invariants": "写五张字节稳定源表(universe/daily_bars/spx_daily/fundamentals_q + bucket_bars) + theme_membership、绝不写 derived_daily/valuation_daily(那是引擎的活,须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；合成 11 sector ETF 经 db.upsert_bucket_bars 落 bucket_bars(bucket=GICS 名)、绝不进 universe 横截面、且造数放在所有现有 rng 消费之后(尾部 draw)；theme_membership 由 THEME_PLAN 确定性生成(无 rng draw)、置于 bucket_bars 之后 → universe/daily_bars/spx_daily/bucket_bars 保字节不变(rng 流未变，M1/M2/M3 依赖此)，fundamentals_q 增 3 列 formal-filing PIT provenance(effective_eod_date/source_type/source_form，不抽 rng，内容按设计变、determinism 仍成立);theme 造数覆盖 AC-M4 全部 PIT 机制:≥4 theme、2 个 as_of、多对多(TT01∈AI+SEMI)、exposure restatement、late-join、drop-via-exposure=0,exposure∈[0,1] 连续、approved_by 必填(C6);内建边缘票 eps<0/ebitda<0/stale/overdue/无基本面,默认 30 票×320 日；属产品代码用 venv 依赖(numpy/duckdb,非 engine stdlib-only 范畴)；dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)只含合成数据",
         "verification": "make fixture 产出五源表非空(bucket_bars=11 sector×days) + theme_membership(默认 13 行,4 theme,2 as_of)；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py composite_recon_max_drift≈0(C9)；同 seed 两次重建五表 sha256 一致、且扩 theme_membership 前后五表(universe/daily_bars/spx/fundamentals/bucket_bars)sha256 不变(回归);PIT 断言:db.theme_membership_asof 早快照=改写前 exposure、晚快照见 restatement/drop/late-join、未来 as_of 不污染早快照(C3)、exposure∈[0,1]、approved_by 非空"
       }
     },
@@ -241,6 +241,18 @@
         "invariants": "pandas 算 per-stock 时序、分量皆 self-relative（横截面 percentile-rank 在 run.py 做）；与 signals.py 共用同一份 bars 与同一 benchmark 对齐口径（C9，spx.close=adj_close basis、ffill 到本票交易日）；用 adj_close 作价；early⟷reliable 旋钮不触 ignition（PRD §10.8/P7），精度靠 persistence 非权重；窗口短于 composite（10/50/60 vs 63/126/252）测加速度/拐点非水平",
         "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
       }
+    },
+    {
+      "path": "compute/pit_check.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "formal-filing PIT 边界微测(AC-1/AC-3，PRD §10.5)：构造正典两季样本，证 P/S 不回填到 period_end",
+        "invariants": "自给(无网络/无 fixture)：经 compute.db.upsert_*(真实写路径)造两季 fundamentals_q + flat-price daily_bars 落临时 DuckDB、跑真实 compute.valuation；断言 period_end 与 effective_eod_date 之间仍用上一季 revenue(P/S=mktcap/revenue_ttm=100)、effective 当日起用本季(P/S=50)、valuation_basis=formal_filing_pit；确定性(锚定固定日期、非 rng)故不依赖合成 fixture 形状、专测 ASOF 键=effective_eod_date 而非 period_end；PASS/FAIL、任一失败非零退出(CI 友好)；属 dev/CI 工具(duckdb venv 依赖，非 engine stdlib-only)、非 nightly pipeline 数据成员但经 make check 内联跑",
+        "verification": "make pit-check(或 make check/nightly 内联)输出 PIT_OK：2026-04-23 P/S=100(上季 period_end 2025-12-31 effective 2026-02-15)、2026-04-24 起 P/S=50(本季 period_end 2026-03-31 effective 2026-04-24)；若 ASOF 退回 period_end 键则 2026-04-23 误判 P/S=50 → PIT_FAIL"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -298,8 +310,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M0.4 估值：daily_bars ASOF JOIN fundamentals_q → valuation_daily（日频倍数 + common-vintage）",
-        "invariants": "ASOF 键用 filed_date（point-in-time，非 period_end，anti-lookahead）；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除，升序故 0=最便宜(Ocean y 底=便宜)；common_vintage(con,metric,on_date,fresh_days) 为该百分位的单一定义、按交易日参数化，M2 Ocean(周度)与 M5 Valuation(横截面)复用同一函数、口径不分叉(C9)，latest_common_vintage 为其最新日 int 取整薄包装",
-        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_filed≤date 无 lookahead；common-vintage fresh/stale 分离；common_vintage 任意 on_date 只对 fresh cohort 排名、metric 经白名单校验、百分位随 ps 升序(底=便宜)"
+        "invariants": "ASOF 键用 effective_eod_date(formal-filing PIT，v1==filed_date，绝非 period_end，anti-lookahead；PRD §10.5)；输出 as_of_effective_eod(==as_of_filed,v1)+valuation_basis='formal_filing_pit'；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除，升序故 0=最便宜(Ocean y 底=便宜)；common_vintage(con,metric,on_date,fresh_days) 为该百分位的单一定义、按交易日参数化，M2 Ocean(周度)与 M5 Valuation(横截面)复用同一函数、口径不分叉(C9)，latest_common_vintage 为其最新日 int 取整薄包装",
+        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_effective_eod≤date 且 as_of_filed≤as_of_effective_eod 无 lookahead、valuation_basis=formal_filing_pit；common-vintage fresh/stale 分离；common_vintage 任意 on_date 只对 fresh cohort 排名、metric 经白名单校验、百分位随 ps 升序(底=便宜)"
       }
     },
     {
@@ -526,8 +538,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M1.1/M7.2/v2 导出：DuckDB 最新快照 → ① bulk web/public/data/board.json（Discovery evidence-first 卡流数据 per-stock 一条，**不含 chart**）+ theme chips（point-in-time，M4.4）+ ignition 发现引擎块（持续点火排序 + 点火证据，M7.2）；② per-stock web/public/data/board/<T>.json（仅该票 90d mini-chart，卡片渲染懒加载，schema v2 payload 拆分）",
-        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+composite 同源一份 export 可互相追溯；**schema v2 payload 拆分**：90d mini-chart 不入 bulk、拆到 per-stock board/<T>.json{schema_version,ticker,chart}、与 bulk 同一遍构建同源 daily_bars(C9，拆分只改 chart 存放位置不改其值)；_self_check 守护每 bulk 票有 chart 文件且各列与 dates[] 索引对齐、无孤儿；_write_chart_detail 写 board/<T>.json 前先清 board/*.json(universe 收缩不留孤儿，镜像 ocean._write_detail)；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue)、E≤0→pe null 退 P/S、point-in-time；composite_prev 提供 d/d；theme chips 经 db.theme_membership_asof 取 as-of snapshot 的 point-in-time membership(per theme 最新 as_of≤snap 且 exposure>0、多对多、按 exposure 降序)、绝非旧 naive 全历史扫描(多 as_of 票每 theme 仅一条不重复)、exposure 存 [0,1] 份额卡渲染为 %；ignition 块为第二台引擎(发现，PRD §10.8)逐票携带：ignition∈[0,100]/ign_pct∈[0,100]/ign_persist_days/5 个原始分量 ig_*(accel/expand/vsurge/breakout/rsturn) 全部 verbatim 自 derived_daily 绝不在导出端重算(C9，与 compute/run.py 同源)，candidate=ign_pct≥90 AND persist≥ignition_persist_min(=5，持续点火过滤 §10.8.2，前端 M7.3 据此排序而非 composite)，early⟷reliable 旋钮不触 ignition(P7)；点火证据(breakout_day/days_since_breakout/step_rate_ratio/reclaimed_ma50/ma50)由 ignition 同窗口 bars(BREAKOUT_WIN=60、ACCEL 10/50) 派生、vol_mult× 为 ig_vsurge verbatim；ignition C9 自检以 shipped vol_mult 追 stored ig_vsurge，漂移>tol 即硬失败；输出为派生物、gitignore、不含任何 key",
-        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0 且 ignition_recon_max_drift≈0(C9)；bulk 每条含 composite+5分量+6字段+valuation+composite_prev+ignition 块(score/ign_pct/persist/5 分量/candidate/点火证据)**且无 chart**；board/<T>.json 每票含 schema_version+ticker+90d chart(dates/OHLCV/adj_close/MA50/150/200/52wh)、文件数==bulk 票数；打印 bulk=XKB charts=N×→YKB；抽查 candidate 票 ign_pct≥90 且 persist≥5 可排序在顶、点火证据 vol_mult==分量 vsurge、ignition∈[0,100]、ign_persist_days≥0、无 NaN token；E≤0 票 pe=null 且 ps 非空、freshness 分档正确、rank 连续且 composite 降序；theme chips point-in-time：多 as_of 票每 theme 一条非重复、改写后取最新 exposure、drop(exposure=0)不出 chip、多对多(TT01∈AI+SEMI)"
+        "invariants": "每票携带引擎 composite + 5 个原始分量 c_*（前端按旋钮 k 重配权、绝不在导出端重算引擎 — C9）；C9 自检以 signals.weights(k) 重构 100·Σwᵢ·cᵢ 必须复现 derived_daily.composite，漂移>tol 即硬失败；evidence 6 字段(ret_1m/3m/6m·from_high·weeks_since_breakout·vol_mult)+composite 同源一份 export 可互相追溯；**schema v2 payload 拆分**：90d mini-chart 不入 bulk、拆到 per-stock board/<T>.json{schema_version,ticker,chart}、与 bulk 同一遍构建同源 daily_bars(C9，拆分只改 chart 存放位置不改其值)；_self_check 守护每 bulk 票有 chart 文件且各列与 dates[] 索引对齐、无孤儿；_write_chart_detail 写 board/<T>.json 前先清 board/*.json(universe 收缩不留孤儿，镜像 ocean._write_detail)；ret_1m/vol_mult/weeks_since_breakout 由 bars 派生(非引擎信号；weeks_since_breakout 为透明 252d-high proxy)；valuation 暴露 as_of 新鲜度分档(fresh≤95d/stale≤160d/overdue，按 date−period_end 财季 vintage 非披露延迟)、E≤0→pe null 退 P/S、formal-filing PIT(§10.5)：as_of_effective_eod(==as_of_filed,v1)+valuation_basis='formal_filing_pit'+disclosure_lag_days(filed−period_end)；composite_prev 提供 d/d；theme chips 经 db.theme_membership_asof 取 as-of snapshot 的 point-in-time membership(per theme 最新 as_of≤snap 且 exposure>0、多对多、按 exposure 降序)、绝非旧 naive 全历史扫描(多 as_of 票每 theme 仅一条不重复)、exposure 存 [0,1] 份额卡渲染为 %；ignition 块为第二台引擎(发现，PRD §10.8)逐票携带：ignition∈[0,100]/ign_pct∈[0,100]/ign_persist_days/5 个原始分量 ig_*(accel/expand/vsurge/breakout/rsturn) 全部 verbatim 自 derived_daily 绝不在导出端重算(C9，与 compute/run.py 同源)，candidate=ign_pct≥90 AND persist≥ignition_persist_min(=5，持续点火过滤 §10.8.2，前端 M7.3 据此排序而非 composite)，early⟷reliable 旋钮不触 ignition(P7)；点火证据(breakout_day/days_since_breakout/step_rate_ratio/reclaimed_ma50/ma50)由 ignition 同窗口 bars(BREAKOUT_WIN=60、ACCEL 10/50) 派生、vol_mult× 为 ig_vsurge verbatim；ignition C9 自检以 shipped vol_mult 追 stored ig_vsurge，漂移>tol 即硬失败；输出为派生物、gitignore、不含任何 key",
+        "verification": "compute+valuation 后 `python export/board.py` 成功；board.json 顶层 composite_recon_max_drift≈0 且 ignition_recon_max_drift≈0(C9)；bulk 每条含 composite+5分量+6字段+valuation+composite_prev+ignition 块(score/ign_pct/persist/5 分量/candidate/点火证据)**且无 chart**；board/<T>.json 每票含 schema_version+ticker+90d chart(dates/OHLCV/adj_close/MA50/150/200/52wh)、文件数==bulk 票数；打印 bulk=XKB charts=N×→YKB；抽查 candidate 票 ign_pct≥90 且 persist≥5 可排序在顶、点火证据 vol_mult==分量 vsurge、ignition∈[0,100]、ign_persist_days≥0、无 NaN token；E≤0 票 pe=null 且 ps 非空、freshness 分档正确、rank 连续且 composite 降序；theme chips point-in-time：多 as_of 票每 theme 一条非重复、改写后取最新 exposure、drop(exposure=0)不出 chip、多对多(TT01∈AI+SEMI)；valuation 块含 as_of_effective_eod/valuation_basis/disclosure_lag_days"
       }
     },
     {
@@ -550,8 +562,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M8 C9 跨 surface 校验：ocean.json(v3 columnar bulk) 点位可追溯到 board/Discovery 数字（AC-M8「海平面以上点 = Discovery candidate」），并证 v3 payload 拆分(bulk 三绘制字段 + per-stock 懒加载 detail 九字段)未破 C9",
-        "invariants": "读同一 DB 导出的 board.json + ocean.json + ocean/<T>.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean bulk ign_pct[-1] == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean bulk cand[-1] == board.ignition.candidate(同持续点火 gate)；ps=ocean bulk ps[-1] == board.valuation.ps(同 valuation_daily.ps)；v3 拆分一致：detail.n==len(ocean.dates)(窗口对齐)、bulk 预算的 cand == (ign_pct≥90 AND detail.ign_persist_days[-1]≥5)(gate 不因拆分失同步)、detail.evs[-1] == board.valuation.evs(detail 估值追溯同一 board 数)；容差仅取整(ign 0.1/ps 0.01/evs 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
-        "verification": "make ocean-c9（先 fixture-pipeline + make export 出 bulk + ocean/ detail）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked/detail_checked/gate_checked/evs_checked 计数一致；构造不符(含 gate 失同步)可触发 GATE_FAIL"
+        "invariants": "读同一 DB 导出的 board.json + ocean.json + ocean/<T>.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean bulk ign_pct[-1] == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean bulk cand[-1] == board.ignition.candidate(同持续点火 gate)；ps=ocean bulk ps[-1] == board.valuation.ps(同 valuation_daily.ps)；v3 拆分一致：detail.n==len(ocean.dates)(窗口对齐)、bulk 预算的 cand == (ign_pct≥90 AND detail.ign_persist_days[-1]≥5)(gate 不因拆分失同步)、detail.evs[-1] == board.valuation.evs 且 detail.as_of_effective_eod[-1] == board.valuation.as_of_effective_eod(detail 估值+formal-filing PIT 可得日追溯同一 board valuation_daily 行，§10.5)、detail.valuation_basis∈{formal_filing_pit,NULL}；容差仅取整(ign 0.1/ps 0.01/evs 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
+        "verification": "make ocean-c9（先 fixture-pipeline + make export 出 bulk + ocean/ detail）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked/detail_checked/gate_checked/evs_checked/aoe_checked 计数一致；构造不符(含 gate 失同步)可触发 GATE_FAIL"
       }
     },
     {
@@ -574,8 +586,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.5 AC-M5 + C9 验收：valuation.parquet/stock bundle 追溯到 board.json(同一引擎)",
-        "invariants": "只读、CI 友好(任一问题 exit 非0)；duckdb 读 parquet 验列齐(pe/ps/.../peg/margin/freshness/themes)+freshness∈{fresh,stale,overdue,NULL}；C9 valuation↔board 同票 ps/pe 一致(同 valuation_daily，tol 0.02)；C9 stock↔valuation 抽 8 票 bundle ps_series 末值==screener ps；前端行为(duckdb-wasm 排序/三档色/pctile/四格)由 web 测试+浏览器 smoke 覆盖、本 check 只验数据侧；valuation.parquet 缺失 SKIP exit 0",
-        "verification": "make valuation-c9 对 fixture export 输出 GATE_PASS、c9_valuation_board=全票、c9_stock_valuation 抽样；gate.yml offline 与 nightly 串入"
+        "invariants": "只读、CI 友好(任一问题 exit 非0)；duckdb 读 parquet 验列齐(pe/ps/.../peg/margin/freshness/themes + as_of_effective_eod/valuation_basis/disclosure_lag_days)+freshness∈{fresh,stale,overdue,NULL}+valuation_basis∈{formal_filing_pit,NULL}；C9 valuation↔board 同票 ps/pe 一致(同 valuation_daily，tol 0.02)+同 valuation_basis+as_of_effective_eod 日期精确一致(无容差)；C9 stock↔valuation 抽 8 票 bundle ps_series 末值==screener ps + bundle valuation.as_of_effective_eod/valuation_basis==screener(formal-filing PIT 追溯 AC-5/6)；前端行为(duckdb-wasm 排序/三档色/pctile/四格)由 web 测试+浏览器 smoke 覆盖、本 check 只验数据侧；valuation.parquet 缺失 SKIP exit 0",
+        "verification": "make valuation-c9 对 fixture export 输出 GATE_PASS、c9_valuation_board=全票、c9_stock_valuation 抽样；gate.yml offline 与 nightly 串入；formal-filing PIT：valuation_basis/as_of_effective_eod 列齐且 C9 日期精确一致"
       }
     },
     {
@@ -597,9 +609,9 @@
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M8 导出(schema v3，payload 拆分扛 M6 扩量)：DuckDB 日度快照 → ① web/public/data/ocean.json bulk(每票仅三个绘制字段 ps/ign_pct/cand 的 columnar 数组，全员前置下载) + ② web/public/data/ocean/<TICKER>.json per-stock 懒加载 detail(九个仅 tooltip 字段)。Ocean = Ignition × Valuation 海平面图(y=ign_pct/x=原始 P/S(log))，供日期滑杆 + Play 相邻真实快照插值动画；bulk+detail 同一遍构建不会失同步(C9)",
-        "invariants": "bulk schema_version=3；顶层 axis{x_metric:ps,x_scale:log,y_metric:ign_pct,sea_level:90} + dates[](老→新) + x_domain + count + stocks[]；每票 columnar 绘制字段 ps[]/ign_pct[]/cand[] 与 dates[] 索引对齐(ps 或 ign_pct 为 null=该日无可渲染位置，播放淡入/淡出不伪造)、cand[i]∈{0,1}(1=持续点火 candidate，null 日为 0)；detail ocean/<T>.json{schema_version,ticker,n,九个 columnar 字段}，与 bulk 同 dates[] 索引对齐(n==len(dates))、null 恰在 bulk 无位置的日(跨文件索引对齐=拆分契约)。字段全部 C9 同源(前端不重算引擎)：ign_pct/cand(及 detail ignition/ign_persist_days)=derived_daily 同列、cand=ign_pct≥90 AND persist≥5(=Discovery 持续点火 gate=海平面以上)、ps(及 detail evs/pe/ev_ebitda/freshness)=valuation_daily、freshness=§10.5 as-of 档(date−as_of_period_end)、detail ret_10d/ret_1m=daily_bars adj_close/LAG-1(同 board 证据派生)、detail vol_mult=derived_daily.ig_vsurge(5/60 放量，存列读取)；入选票=最新日同时有有效 ign_pct 且 ps>0 且在 universe，历史日缺任一坐标则该日全列 null；x_domain=窗口内所有有效 P/S 的[min,max](log 轴自动域、无写死估值阈值 §16)；mktcap 原始 USD(同 board.json)；写 detail 前清空 ocean/ 旧 *.json(universe 收缩不留孤儿)；两文件均派生物、gitignore、不含任何 key/secret",
-        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 ps/ign_pct/cand 列 len==len(dates) 且最新坐标非空；每有位置日 ign_pct∈[0,100]、ps>0、cand∈{0,1}、cand=1⇒ign_pct≥90；x_domain 为正序区间；每票有 detail、detail n 及九列 len==len(dates)、detail 恰在无位置日为 null)；dates 老→新且 dates[-1]==max(derived_daily.date)；`make ocean-c9` 证 bulk[-1] ign_pct/candidate/ps 与 board 同源 + bulk↔detail 拆分一致(gate==ign_pct&persist、evs 追溯)；≥500 票 fixture 下 count≥500、bulk brotli≈100KB(旧整合 v2 596KB→−83%)、export<1s"
+        "purpose": "M8 导出(schema v3，payload 拆分扛 M6 扩量)：DuckDB 日度快照 → ① web/public/data/ocean.json bulk(每票仅三个绘制字段 ps/ign_pct/cand 的 columnar 数组，全员前置下载) + ② web/public/data/ocean/<TICKER>.json per-stock 懒加载 detail(仅 tooltip 字段：9 指标列 + formal-filing PIT 日期列 + valuation_basis 标量)。Ocean = Ignition × Valuation 海平面图(y=ign_pct/x=原始 P/S(log))，供日期滑杆 + Play 相邻真实快照插值动画；bulk+detail 同一遍构建不会失同步(C9)",
+        "invariants": "bulk schema_version=3；顶层 axis{x_metric:ps,x_scale:log,y_metric:ign_pct,sea_level:90} + dates[](老→新) + x_domain + count + stocks[]；每票 columnar 绘制字段 ps[]/ign_pct[]/cand[] 与 dates[] 索引对齐(ps 或 ign_pct 为 null=该日无可渲染位置，播放淡入/淡出不伪造)、cand[i]∈{0,1}(1=持续点火 candidate，null 日为 0)；detail ocean/<T>.json{schema_version,ticker,n,valuation_basis 标量,columnar tooltip 字段(9 指标 + as_of_period_end/as_of_effective_eod 两 formal-filing PIT 日期列，§10.5)}，与 bulk 同 dates[] 索引对齐(n==len(dates))、null 恰在 bulk 无位置的日(跨文件索引对齐=拆分契约)。字段全部 C9 同源(前端不重算引擎)：ign_pct/cand(及 detail ignition/ign_persist_days)=derived_daily 同列、cand=ign_pct≥90 AND persist≥5(=Discovery 持续点火 gate=海平面以上)、ps(及 detail evs/pe/ev_ebitda/freshness/as_of_period_end/as_of_effective_eod)=valuation_daily、freshness=§10.5 as-of 档(date−as_of_period_end)、PIT 日期列逐日诚实(滑杆回溯不 lookahead，run-heavy 压缩≈105B/票)、detail ret_10d/ret_1m=daily_bars adj_close/LAG-1(同 board 证据派生)、detail vol_mult=derived_daily.ig_vsurge(5/60 放量，存列读取)；入选票=最新日同时有有效 ign_pct 且 ps>0 且在 universe，历史日缺任一坐标则该日全列 null；x_domain=窗口内所有有效 P/S 的[min,max](log 轴自动域、无写死估值阈值 §16)；mktcap 原始 USD(同 board.json)；写 detail 前清空 ocean/ 旧 *.json(universe 收缩不留孤儿)；两文件均派生物、gitignore、不含任何 key/secret",
+        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 ps/ign_pct/cand 列 len==len(dates) 且最新坐标非空；每有位置日 ign_pct∈[0,100]、ps>0、cand∈{0,1}、cand=1⇒ign_pct≥90；x_domain 为正序区间；每票有 detail、detail n 及各 columnar 列(9 指标+2 PIT 日期)len==len(dates)、detail 恰在无位置日为 null)；dates 老→新且 dates[-1]==max(derived_daily.date)；`make ocean-c9` 证 bulk[-1] ign_pct/candidate/ps 与 board 同源 + bulk↔detail 拆分一致(gate==ign_pct&persist、evs 追溯)；≥500 票 fixture 下 count≥500、bulk brotli≈100KB(旧整合 v2 596KB→−83%)、export<1s"
       }
     },
     {
@@ -634,8 +646,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.1 估值横截面导出：全 universe 最新 valuation 快照 → web/public/data/valuation.parquet（+ .meta.json），供 M5 Valuation screener 用 duckdb-wasm 浏览器查询（wide explore）",
-        "invariants": "全 universe（derived_daily 当日票）每票一行最新 as-of valuation；含 peg/margin（valuation_daily 自 M0 已算、board.json 未导出的两列）+ themes 列（point-in-time membership as-of snap、exposure>0、逗号连接；theme_membership 不存在则空——供 Valuation theme scope 自给）；与 board.json 读同一 valuation_daily（C9 同票一致）；snap=max(derived_daily.date) 取值后字面嵌入 SQL（避免 DuckDB correlated 列 + outer join 限制；snap 是 DB 派生 DATE 非用户输入）；freshness 三档 95/160 与 board.py 一致、period_end→snap 同尺；duckdb 原生 COPY 写 parquet 不依赖 pyarrow；输出 gitignored（夜间派生）、.meta.json sidecar 带 as_of+count 供 manifest(D.4)/前端 header",
-        "verification": "make export 产 valuation.parquet（全 universe 行、含 peg/margin 列、freshness∈{fresh,stale,overdue,NULL}）+ valuation.meta.json；duckdb 读回列齐、按 ps 升序便宜在上；同票与 board.json valuation 一致（C9）"
+        "invariants": "全 universe（derived_daily 当日票）每票一行最新 as-of valuation；含 peg/margin（valuation_daily 自 M0 已算、board.json 未导出的两列）+ themes 列（point-in-time membership as-of snap、exposure>0、逗号连接；theme_membership 不存在则空——供 Valuation theme scope 自给）；与 board.json 读同一 valuation_daily（C9 同票一致）；snap=max(derived_daily.date) 取值后字面嵌入 SQL（避免 DuckDB correlated 列 + outer join 限制；snap 是 DB 派生 DATE 非用户输入）；freshness 三档 95/160 与 board.py 一致、period_end→snap 同尺；formal-filing PIT(§10.5)：增 as_of_effective_eod(==as_of_filed,v1)/valuation_basis/disclosure_lag_days(period_end→filed) 列；duckdb 原生 COPY 写 parquet 不依赖 pyarrow；输出 gitignored（夜间派生）、.meta.json sidecar 带 as_of+count 供 manifest(D.4)/前端 header",
+        "verification": "make export 产 valuation.parquet（全 universe 行、含 peg/margin 列、freshness∈{fresh,stale,overdue,NULL}）+ valuation.meta.json；duckdb 读回列齐、按 ps 升序便宜在上；同票与 board.json valuation 一致（C9）；含 as_of_effective_eod/valuation_basis/disclosure_lag_days 列、as_of_effective_eod 经 duckdb.ts strftime→ISO"
       }
     },
     {
@@ -669,9 +681,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，point-in-time",
-        "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）",
-        "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季"
+        "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，formal-filing point-in-time(PRD §10.5)",
+        "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）；formal-filing PIT：仅正式 SEC filing(source_type='formal_filing')，effective_eod_date=filed(v1——companyfacts 无 accepted-timestamp，不能区分盘前/盘后)、source_form='unknown'(companyfacts 不稳定带 form)",
+        "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季；每行带 effective_eod_date/source_type/source_form(db.FUNDAMENTALS_COLS 顺序)"
       }
     },
     {
@@ -718,7 +730,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) + theme_membership(多对多 ticker↔theme 连续 exposure,point-in-time) 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q 以 filed_date 为 as-of；valuation_daily 暴露 as_of_period_end 供 common-vintage；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q formal-filing PIT(PRD §10.5)：filed_date=正式披露日、effective_eod_date=ASOF 可得键(v1==filed_date)、source_type='formal_filing'(v1 唯一值)、source_form('unknown')，period_end 仅业务归属期绝不作可得对齐；valuation_daily 暴露 as_of_period_end 供 common-vintage(freshness=date−period_end)、as_of_effective_eod=实际 ASOF 键(v1==as_of_filed)、valuation_basis='formal_filing_pit' 标口径；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)",
         "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错；derived_daily 含 ig_*/ignition/ign_pct/ign_persist_days 列"
       }
     },
@@ -1090,11 +1102,12 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.4 Stock 四格时间轴对齐 stack（PRD §9.6）：PRICE/VOLUME/REVENUE/P-S 四格共用一条 x 轴 + 季度网格贯穿 + 常驻 MM/DD 日期轴 + 贯穿四格的 hover 时间游标的纯 SVG",
-        "invariants": "props-only 纯 SVG、SSR 同形；主 x 轴=price.dates(~2y 日频)，所有格共用 X(i)；季度网格=每 revenue period_end 映射到最近交易日 index 的竖线贯穿四格；PRICE=K线+MA50/150/200+52wh 虚线、VOLUME=量柱(涨绿跌红)、REVENUE=季度 TTM bars(YoY 增绿降红、无同比灰)、P/S=每日线；各格独立 y range；price/ps date→index 直查、revenue period_end→最近≤index；底部常驻日期刻度(MM/DD，~6 点)；hover 时间游标=一条竖线贯穿四格 + 各格读该日各自序列(PRICE close/VOL 量/REVENUE 该日≤period_end 的最近季 TTM/P-S 当日值)+读数，为 hover-only overlay(hoverIndex 静息 null)故 SSR 不渲染游标；空 price 安全(返回空 svg)",
+        "invariants": "props-only 纯 SVG、SSR 同形；主 x 轴=price.dates(~2y 日频)，所有格共用 X(i)；季度网格=每 revenue period_end 映射到最近交易日 index 的竖线贯穿四格；PRICE=K线+MA50/150/200+52wh 虚线、VOLUME=量柱(涨绿跌红)、REVENUE=季度 TTM bars(YoY 增绿降红、无同比灰)、P/S=每日线；各格独立 y range；price/ps date→index 直查、revenue period_end→最近≤index；底部常驻日期刻度(MM/DD，~6 点)；hover 时间游标=一条竖线贯穿四格 + 各格读该日各自序列(PRICE close/VOL 量/REVENUE 该日≤period_end 的最近季 TTM/P-S 当日值)+读数，为 hover-only overlay(hoverIndex 静息 null)故 SSR 不渲染游标；空 price 安全(返回空 svg)；formal-filing PIT 标记(§10.5)：每季在 effective_eod_date(缺退 period_end)处一条 dim dashed 竖线 + baseline 连接线(bar 在 period_end、数据在 effective 才入 P/S，最新标 filed)，effective 与 period_end 同 index 或 pre-PIT 无 effective 则不画；hover REVENUE 取 effective_eod_date≤游标日的最新季(非 period_end，反 lookahead 且与 P/S 阶进一致)，附该季 period_end→effective 读数",
         "verification": "StockStack.test SSR：四格标签 PRICE/VOL/REVENUE/P-S、季度网格、PS 蓝线、candles/bars rect、空 price 不崩、静息态无游标；浏览器 smoke 四格对齐+季度竖线贯穿+游标各格读数"
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/__fixtures__/board.chart.sample.json",
       "kind": "config",
       "module": "web",
@@ -1103,8 +1116,7 @@
         "purpose": "EvidenceCard mini-chart 渲染测试样本(BoardChartDetail，schema v2)：从 board.sample.json 抽出的单票(stocks[0]) 90d chart，供 Discovery.test SSR 注入渲染 MiniChart —— bulk fixture 已无 chart(payload 拆分)",
         "invariants": "{schema_version:2,ticker,chart:ChartSeries(dates/open/high/low/close/adj_close/volume/ma50/ma150/ma200/high_52w)}；与 board.sample.json 同源同票；含 MA50 + high_52w 供测试断言 svg+MA 线+52w 虚线；与 export/board.py 的 board/<T>.json detail 同形；非运行时数据(运行时走 board/<T>.json、gitignore)",
         "verification": "Discovery.test.tsx 注入其 chart 到 <EvidenceCard chart={...}> 断言 mini-chart svg+var(--ma50)+stroke-dasharray 渲染；schema_version==2"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1162,7 +1174,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.4 Stock SSR 测试 fixture：从 stock_bundle.py 导出的一个 bundle(TT07)，注入 Stock/StockStack 跳过 fetch",
-        "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染",
+        "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染；valuation + revenue_q 带 formal-filing PIT 字段(as_of_effective_eod/valuation_basis/disclosure_lag_days；revenue_q filed_date/effective_eod_date)供 §10.5 渲染断言",
         "verification": "Stock.test/StockStack.test 注入渲染；header/卡/分量/四格齐"
       }
     },
@@ -1174,7 +1186,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.2 Valuation SSR 测试 fixture：从 valuation.parquet 转出的 rows，注入 Valuation 跳过 duckdb-wasm",
-        "invariants": "逐字段镜像 valuation.parquet（含 peg/margin/themes/freshness/as_of_*）；覆盖 fresh/stale/overdue + 多 theme 票（TT01='AI,SEMI'）；date 列 ISO 字符串（与 duckdb view strftime 输出一致，保证注入路径与浏览器路径同形）",
+        "invariants": "逐字段镜像 valuation.parquet（含 peg/margin/themes/freshness/as_of_*）；覆盖 fresh/stale/overdue + 多 theme 票（TT01='AI,SEMI'）；date 列 ISO 字符串（与 duckdb view strftime 输出一致，保证注入路径与浏览器路径同形）；含 formal-filing PIT 列 as_of_effective_eod/valuation_basis/disclosure_lag_days",
         "verification": "Valuation.test 注入 data.rows SSR 渲染；列/freshness/themes 齐、可复跑"
       }
     },
@@ -1246,7 +1258,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.2 duckdb-wasm 加载层：浏览器读 valuation.parquet + SQL 做 metric 排序（PRD §9.5 在浏览器查 Parquet）",
-        "invariants": "wasm+worker 从 URL 加载、绝不入 dist(wasm 35-41MB 超 Pages 25MiB 限制)：生产 VITE_DUCKDB_R2_BASE 指 Cloudflare R2(用户自有存储非第三方 CDN，脊柱:parquet 仍自托管、仅静态 wasm lib 外移)、dev 无 env 时 fallback jsDelivr;跨域 worker 用 same-origin blob importScripts 包一层;AsyncDuckDB 实例 + 注册 parquet 单例复用、selectBundle 自动选 mvp/eh；buildValuationSql 纯函数（cheap-asc 升序/quality-desc 降序 + NULLS LAST + ticker tiebreak）导出供测；CREATE VIEW 用 strftime 把 DATE→ISO 字符串（避 Arrow→JSON 的 epoch-millis）；duckdb 只做读 parquet + metric 排序，scope filter/common-vintage pctile/三档色留 Valuation.tsx（theme scope 非 SQL 列、pctile 是 cohort 统计）",
+        "invariants": "wasm+worker 从 URL 加载、绝不入 dist(wasm 35-41MB 超 Pages 25MiB 限制)：生产 VITE_DUCKDB_R2_BASE 指 Cloudflare R2(用户自有存储非第三方 CDN，脊柱:parquet 仍自托管、仅静态 wasm lib 外移)、dev 无 env 时 fallback jsDelivr;跨域 worker 用 same-origin blob importScripts 包一层;AsyncDuckDB 实例 + 注册 parquet 单例复用、selectBundle 自动选 mvp/eh；buildValuationSql 纯函数（cheap-asc 升序/quality-desc 降序 + NULLS LAST + ticker tiebreak）导出供测；CREATE VIEW 用 strftime 把 DATE 列(as_of_period_end/as_of_filed/as_of_effective_eod)→ISO 字符串（避 Arrow→JSON 的 epoch-millis）；duckdb 只做读 parquet + metric 排序，scope filter/common-vintage pctile/三档色留 Valuation.tsx（theme scope 非 SQL 列、pctile 是 cohort 统计）",
         "verification": "buildValuationSql 单测（ORDER BY metric ASC/DESC + NULLS LAST, ticker）；浏览器 smoke：Valuation tab duckdb-wasm 查 parquet 渲染全 universe 行 + PEG/Mgn% + 三档色 + ISO 日期（非毫秒）"
       }
     },
@@ -1342,7 +1354,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1/M7.2) + ocean.json bulk + ocean/<T>.json detail(M8 v3) + rotation.json(M3.3) + stock bundle(M5.3/M7.4) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；Stock(card).chart 可选(schema v2 payload 拆分：bulk 不发 chart、卡片懒加载 board/<T>.json；保留 chart? 仅作旧 v1 数据 artifact 过渡兜底)，90d mini-chart=BoardChartDetail{schema_version,ticker,chart:ChartSeries}=board/<T>.json；ChartSeries 为共享形(Discovery 90d mini + StockBundle 2y price)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
+        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；Stock(card).chart 可选(schema v2 payload 拆分：bulk 不发 chart、卡片懒加载 board/<T>.json；保留 chart? 仅作旧 v1 数据 artifact 过渡兜底)，90d mini-chart=BoardChartDetail{schema_version,ticker,chart:ChartSeries}=board/<T>.json；ChartSeries 为共享形(Discovery 90d mini + StockBundle 2y price)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)；formal-filing PIT(§10.5，可选字段、pre-PIT 缺省)：Valuation/ValuationRow/StockBundle.valuation 带 as_of_effective_eod(==as_of_filed,v1)/valuation_basis/disclosure_lag_days，RevenueQuarter 带 filed_date/effective_eod_date/disclosure_lag_days，OceanDetail 带 as_of_period_end/as_of_effective_eod columnar + valuation_basis 标量",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData、Stock 按 StockBundle(含 ignition)消费无类型错"
       }
     },
@@ -1378,7 +1390,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M8 提交版回归 gate（vitest）：Ocean 纯绘制库 + v3 columnar(drawPtAt)/lazy detail(Tip 骨架) + drawOcean mock-ctx(≥500 点/scrubber/hover/pin/lasso/scope 淡化) + SSR scaffold",
-        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)",
+        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)；Tip formal-filing PIT(§10.5)：formal filed 日 + basis tag",
         "verification": "npm test / make web-test 全绿（本文件 31 用例）"
       }
     },
@@ -1390,7 +1402,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Ocean surface（PRD §9.2，M8 v3）：Ignition × Valuation 海平面 canvas + 配色切换 + √市值尺寸 + 日期滑杆 + Play/Pause/prev/next 受控插值动画(rAF) + hover tip(三绘制字段即时 + 九证据字段 per-stock 懒加载) + click pin + lasso 框选 set 全局 scope(首个 scope writer C10) + 右键 dot 经 onOpen 在 Stock surface 打开该票",
-        "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；onDown 仅左键(button 0，右键交 onContextMenu)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；onContextMenu 右键命中 dot(nearestPoint)→preventDefault+onOpen(命中才阻止原生菜单、空白处放行原生菜单)在 Stock 打开该票；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级",
+        "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；onDown 仅左键(button 0，右键交 onContextMenu)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；onContextMenu 右键命中 dot(nearestPoint)→preventDefault+onOpen(命中才阻止原生菜单、空白处放行原生菜单)在 Stock 打开该票；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级；tip 增 formal-filing PIT(§10.5)：per-day formal filed(detail.as_of_effective_eod[di]，滑杆回溯仍诚实)+basis tag",
         "verification": "SSR 含 canvas+两配色切换+ign_pct/P-S 轴标+日期 range(max=dates-1)+Play 按钮+latest EOD 标；Tip SSR：detail 在显 ignition+估值倍数+freshness、detail=null 显 … 骨架(三绘制字段仍显)、均不含 RS/Val pct；命中/绘制/插值/drawPtAt 正确性见 ocean-draw 头测；npm build(tsc) 通过；浏览器交互+性能(hover 首取 detail)"
       }
     },
@@ -1426,7 +1438,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Stock 视图 + StockStack AC（PRD §9.6，M5.4）+ 点火诊断(M7.4 PRD §10.8)的 SSR 回归门",
-        "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)",
+        "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)；formal-filing PIT(§10.5)：StockStack effective filed 标记(filed 标签+dashed 竖线)、Stock 口径注(formal-filing PIT/入估值序列/effective 日)",
         "verification": "npm test 全过；与 Stock.tsx + StockStack 合同一致"
       }
     },
@@ -1438,7 +1450,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Stock detail 视图（PRD §9.6，M5.4 + M7.4 点火诊断 + M8）：per-name bundle 懒加载 + 四格时间轴对齐 stack + ignition 诊断小节(头条)；composite 退出用户可见层(无大分数/无 5 分量 stack)",
-        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后",
+        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后；formal-filing PIT 口径注(§10.5)：估值卡下显 formal-filing PIT + 财季 period_end/正式披露 filed/入估值序列 effective_eod/披露滞后，footer 同口径说明(REVENUE 在 period_end、P/S 在 effective 阶进、不用预披露/8-K/估计)",
         "verification": "Stock.test SSR(注入 bundle)断言头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 卡/无 composite 5 分量(stk-crow=0)/四格 stack + 点火诊断(5 ignition 分量/点火证据/persistence timeline/🔥candidate/○未点火/step clamp/无 k=/无 range 滑块/无 ignition 隐藏)；浏览器 smoke 懒加载 + 四格渲染"
       }
     },
@@ -1450,7 +1462,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Valuation 视图 AC（PRD §9.5，M5.2）的 SSR 回归门 + buildValuationSql 单测",
-        "invariants": "用 valuation.sample.json（从 parquet 转）+ renderToStaticMarkup 无 duckdb-wasm；断言全 universe 行 / PS 升序便宜在上(nulls last) / PEG+Mgn% 列 / 三档色+vint / sector+theme(themes 列)scope 过滤；buildValuationSql 测 ORDER BY metric ASC/DESC + NULLS LAST",
+        "invariants": "用 valuation.sample.json（从 parquet 转）+ renderToStaticMarkup 无 duckdb-wasm；断言全 universe 行 / PS 升序便宜在上(nulls last) / PEG+Mgn% 列 / 三档色+vint / sector+theme(themes 列)scope 过滤；buildValuationSql 测 ORDER BY metric ASC/DESC + NULLS LAST；As-of title formal-filing PIT(formal filed/effective/basis)",
         "verification": "npm test 全过；与 Valuation.tsx + lib/duckdb 合同一致"
       }
     },
@@ -1462,7 +1474,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Valuation screener 视图（PRD §9.5，M5.2 正式版）：duckdb-wasm 浏览器查 valuation.parquet 渲染全 universe 横截面表",
-        "invariants": "数据从 duckdb-wasm 查 valuation.parquet（lib/duckdb.queryValuation，metric 变重查）或 initial 注入（SSR/测试，JS sortRows 同序）；列含 PEG/Mgn%（board.json 预览缺的两列）；as-of 三档上色取 freshness（fresh 绿/stale 黄/overdue 红变暗 C7/§10.5）；pctile 仅 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint；scope 下拉=全局 writer，先 filter（sector/theme[themes 列 split]/pinned）再排序再 pctile；读同一 valuation_daily（与 board/Ocean C9 同源）",
+        "invariants": "数据从 duckdb-wasm 查 valuation.parquet（lib/duckdb.queryValuation，metric 变重查）或 initial 注入（SSR/测试，JS sortRows 同序）；列含 PEG/Mgn%（board.json 预览缺的两列）；as-of 三档上色取 freshness（fresh 绿/stale 黄/overdue 红变暗 C7/§10.5）；pctile 仅 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint；scope 下拉=全局 writer，先 filter（sector/theme[themes 列 split]/pinned）再排序再 pctile；读同一 valuation_daily（与 board/Ocean C9 同源）；As-of 单元格 title 暴露 formal-filing PIT(§10.5)：financial period/formal filed/effective/disclosure lag/basis；footer 标口径",
         "verification": "Valuation.test SSR（注入 rows）断言全 universe 行 / PS 升序便宜在上 / PEG+Mgn% 列 / 三档色+vint / sector+theme scope 过滤；浏览器 smoke duckdb-wasm 实查"
       }
     },
@@ -1516,5 +1528,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "00cdf793f5822a00b693ad3cc5ccb7659a4d8a41caad726859da49affdd50fd0"
+  "last_structure_digest": "4de3daea221755f6ef461006a523b9b28a92dd7a9108de58da1491d99915d8d8"
 }

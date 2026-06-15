@@ -259,8 +259,20 @@ export default function Stock({
         ))}
       </div>
 
+      {/* formal-filing PIT (PRD §10.5): which fiscal quarter these multiples use, and when it
+          formally entered the daily valuation series (v1: effective == filed). period_end is the
+          business period, NOT a market-known date. */}
+      {v && (
+        <div className="stk-valbasis" style={{ fontSize: '10px', color: 'var(--dim)', fontFamily: 'var(--mono)', marginTop: '2px' }}>
+          估值口径 <b style={{ color: 'var(--dim2)' }}>formal-filing PIT</b> · 财季 {v.as_of_period_end ?? '—'}
+          {v.as_of_filed && <> · 正式披露 {v.as_of_filed}</>}
+          {v.as_of_effective_eod && <> · 入估值序列 {v.as_of_effective_eod}</>}
+          {v.disclosure_lag_days != null && <> · 披露滞后 {v.disclosure_lag_days}d</>}
+        </div>
+      )}
+
       <div className="foot">
-        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。头部 + 点火诊断（ignition，§10.8）= 发现核心引擎（短窗口，无可调参）：刚起步在加速 → 翻财报终筛。composite 不再作为用户可见概念（M8）。来自 per-name bundle（懒加载，与 board/Discovery/Ocean/Valuation 同源 C9）。最新 filing AI 摘要留后续。as_of {bundle.as_of_date}。
+        Stock = evidence card 的展开态（PRD §9.6）· 核心是 price↔fundamentals 时间轴对齐 stack（四格共用 x 轴、季度网格贯穿）：价↑营收平 → P/S 扩 = 变贵无基本面；价↑营收↑ = 赚到这波。头部 + 点火诊断（ignition，§10.8）= 发现核心引擎（短窗口，无可调参）：刚起步在加速 → 翻财报终筛。composite 不再作为用户可见概念（M8）。来自 per-name bundle（懒加载，与 board/Discovery/Ocean/Valuation 同源 C9）。估值口径 = <b>formal-filing PIT</b>：倍数分母只用正式 SEC filing 的 trailing-4Q；REVENUE bar 在 period_end（业务期），P/S 在 effective_eod_date 才阶进（v1 == filed），不用预披露/8-K/分析师预测。最新 filing AI 摘要留后续。as_of {bundle.as_of_date}。
       </div>
     </div>
   )

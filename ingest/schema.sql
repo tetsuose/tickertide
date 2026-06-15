@@ -110,10 +110,20 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   PRIMARY KEY (ticker, date)
 );
 
--- fundamentals_q: trailing-4Q financials per reporting period (M0.2). Spec: PRD §12.
--- point-in-time: filed_date is the as-of (anti-lookahead). revenue/eps/ebitda are
--- trailing-4Q (4 single quarters; Q4 derived from annual − sum(Q1..Q3) when needed;
--- annual-only filers fall back to yearly points). Balance-sheet items are instant.
+-- fundamentals_q: trailing-4Q financials per reporting period (M0.2). Spec: PRD §12, §10.5.
+-- FORMAL-FILING POINT-IN-TIME (PRD §10.5): the denominator is trailing-4Q from official
+-- SEC filings ONLY (no preliminary release / 8-K earnings / press release / estimate).
+-- Three date/provenance fields disambiguate "when":
+--   period_end          — fiscal period the data BELONGS to (business period; NEVER an
+--                         availability date — must not be used to align valuation).
+--   filed_date          — the official SEC filing date (earliest filing per period = the
+--                         original report, anti-restatement / anti-lookahead).
+--   effective_eod_date  — the EOD snapshot from which this filing may enter valuation_daily
+--                         (the ASOF availability key). v1: effective_eod_date = filed_date;
+--                         v2 (future, EDGAR accepted-timestamp) may push it to next_trading_day
+--                         when accepted after the close.
+-- revenue/eps/ebitda are trailing-4Q (4 single quarters; Q4 derived from annual − sum(Q1..Q3)
+-- when needed; annual-only filers fall back to yearly points). Balance-sheet items are instant.
 CREATE TABLE IF NOT EXISTS fundamentals_q (
   ticker       VARCHAR,
   period_end   DATE,
@@ -124,8 +134,16 @@ CREATE TABLE IF NOT EXISTS fundamentals_q (
   cash         DOUBLE,
   ebitda_ttm   DOUBLE,
   eps_ttm      DOUBLE,
+  effective_eod_date  DATE,     -- ASOF availability key for valuation_daily (v1 == filed_date)
+  source_type         VARCHAR,  -- provenance; 'formal_filing' is the ONLY value in v1
+  source_form         VARCHAR,  -- '10-Q'|'10-K'|'20-F'|'40-F'|'unknown' (v1: 'unknown')
   PRIMARY KEY (ticker, period_end)
 );
+-- Idempotent migration for DBs created before these columns existed (CREATE IF NOT EXISTS
+-- above is a no-op on an existing table, so back-fill the columns here).
+ALTER TABLE fundamentals_q ADD COLUMN IF NOT EXISTS effective_eod_date DATE;
+ALTER TABLE fundamentals_q ADD COLUMN IF NOT EXISTS source_type VARCHAR;
+ALTER TABLE fundamentals_q ADD COLUMN IF NOT EXISTS source_form VARCHAR;
 
 -- segment_revenue: theme revenue anchoring (PRD §8.3, §12). Table created in M0.2
 -- but NOT populated here — companyfacts does not expose XBRL segment dimensions;
@@ -169,9 +187,16 @@ CREATE TABLE IF NOT EXISTS theme_membership (
 );
 
 -- valuation_daily: daily multiples = price/EV ÷ trailing-4Q financials (M0.4).
--- ASOF-aligned on filed_date (point-in-time, anti-lookahead); numerator is daily,
--- denominator steps at each filing. E<=0 -> n.m. (pe NULL, fall back to ps).
--- as_of_period_end exposes vintage freshness for common-vintage ranking (PRD §9.5, §10.5).
+-- FORMAL-FILING PIT (PRD §10.5): ASOF-aligned on as_of_effective_eod (v1 == as_of_filed),
+-- NOT on period_end — a quarter ending Mar 31 but filed in Apr enters P/S in Apr, not Mar.
+-- Numerator is daily; the denominator steps at each filing's effective date. E<=0 -> n.m.
+-- (pe NULL, fall back to ps). The three as_of_* dates mirror fundamentals_q:
+--   as_of_period_end     — fiscal period of the denominator; drives common-vintage freshness
+--                          (age = date − period_end), NEVER the availability date.
+--   as_of_filed          — official filing date of that denominator.
+--   as_of_effective_eod  — the date that denominator entered this series (the ASOF key used).
+-- valuation_basis tags the口径 ('formal_filing_pit') so a future market_reaction_pit can't be
+-- silently confused with it. as_of_period_end feeds common-vintage ranking (PRD §9.5, §10.5).
 CREATE TABLE IF NOT EXISTS valuation_daily (
   ticker            VARCHAR,
   date              DATE,
@@ -185,5 +210,10 @@ CREATE TABLE IF NOT EXISTS valuation_daily (
   rule40            DOUBLE,
   as_of_period_end  DATE,
   as_of_filed       DATE,
+  as_of_effective_eod  DATE,     -- ASOF availability key actually joined on (v1 == as_of_filed)
+  valuation_basis      VARCHAR,  -- 'formal_filing_pit' (the only口径 in v1)
   PRIMARY KEY (ticker, date)
 );
+-- Idempotent migration for pre-existing DBs (see fundamentals_q note above).
+ALTER TABLE valuation_daily ADD COLUMN IF NOT EXISTS as_of_effective_eod DATE;
+ALTER TABLE valuation_daily ADD COLUMN IF NOT EXISTS valuation_basis VARCHAR;

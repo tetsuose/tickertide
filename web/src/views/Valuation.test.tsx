@@ -52,6 +52,16 @@ describe('Valuation screener (M5.2, duckdb-wasm / injected)', () => {
     expect(/valn-pct">\d+</.test(html)).toBe(true)
   })
 
+  it('As-of cell carries the formal-filing PIT tooltip (filed/effective/basis, §10.5)', () => {
+    const html = renderToStaticMarkup(<Valuation initial={rows} />)
+    // native title on the as-of cell exposes the PIT context; React escapes the newlines.
+    expect(html).toContain('Formal filed:')
+    expect(html).toContain('Effective in EOD valuation:')
+    expect(html).toContain('formal-filing PIT')
+    // footer states the basis too
+    expect(html).toContain('formal-filing PIT')
+  })
+
   it('respects scope=sector: filters BEFORE ranking', () => {
     const sector = rows.find((r) => r.sector)!.sector as string
     const expected = rows.filter((r) => r.sector === sector).length

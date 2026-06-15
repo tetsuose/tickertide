@@ -74,6 +74,11 @@ export interface Valuation {
   rule40: number | null
   as_of_period_end: string | null
   as_of_filed: string | null
+  /** Formal-filing PIT (PRD §10.5): the EOD this filing entered valuation (v1 == as_of_filed),
+   *  the口径 tag, and filing latency (filed − period_end). Optional: pre-PIT data omits them. */
+  as_of_effective_eod?: string | null
+  valuation_basis?: string | null
+  disclosure_lag_days?: number | null
   as_of_age_days: number | null
   freshness: Freshness | null
 }
@@ -197,6 +202,10 @@ export interface OceanDetail {
   schema_version: number
   ticker: string
   n: number
+  /** Formal-filing PIT (PRD §10.5):口径 tag (scalar) + the per-day fiscal/availability dates,
+   *  index-aligned to OceanData.dates so the tooltip stays honest while the slider scrubs.
+   *  Optional: pre-PIT detail omits them. */
+  valuation_basis?: string
   ignition: (number | null)[]
   ign_persist_days: (number | null)[]
   evs: (number | null)[]
@@ -206,6 +215,8 @@ export interface OceanDetail {
   ret_1m: (number | null)[]
   vol_mult: (number | null)[]
   freshness: (Freshness | null)[]
+  as_of_period_end?: (string | null)[]
+  as_of_effective_eod?: (string | null)[]
 }
 
 /** Fixed axis descriptor — the export decides the axes; the client never re-derives them. */
@@ -309,6 +320,10 @@ export interface ValuationRow {
   rule40: number | null
   as_of_period_end: string | null
   as_of_filed: string | null
+  /** Formal-filing PIT (PRD §10.5); optional for pre-PIT parquet. */
+  as_of_effective_eod?: string | null
+  valuation_basis?: string | null
+  disclosure_lag_days?: number | null
   as_of_age_days: number | null
   freshness: Freshness | null
   themes: string
@@ -331,6 +346,12 @@ export interface RevenueQuarter {
   period_end: string | null
   revenue_ttm: number | null
   yoy: number | null
+  /** Formal-filing PIT (PRD §10.5): the bar sits at period_end (business period), but its
+   *  data only enters P/S from effective_eod_date (v1 == filed_date). disclosure_lag_days =
+   *  filed − period_end. Optional: pre-PIT bundles omit them (bar then assumed known at period_end). */
+  filed_date?: string | null
+  effective_eod_date?: string | null
+  disclosure_lag_days?: number | null
 }
 
 export interface PsPoint {
@@ -366,6 +387,10 @@ export interface StockBundle {
     rule40: number | null
     as_of_period_end: string | null
     as_of_filed: string | null
+    /** Formal-filing PIT (PRD §10.5); optional for pre-PIT bundles. */
+    as_of_effective_eod?: string | null
+    valuation_basis?: string | null
+    disclosure_lag_days?: number | null
   } | null
   price: ChartSeries
   revenue_q: RevenueQuarter[]

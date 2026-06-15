@@ -17,7 +17,9 @@ So this check ALSO proves the split stayed consistent (C9 across the two files):
   - detail aligns to the bulk window (detail.n == len(ocean.dates));
   - the bulk `cand` flag equals (ign_pct>=90 AND detail.ign_persist_days>=5) at the latest day
     — i.e. the gate the bulk precomputes matches the persistence the detail carries;
-  - detail evs[-1] == board.valuation.evs (the detail's valuation traces to the SAME board number).
+  - detail evs[-1] == board.valuation.evs, and detail as_of_effective_eod[-1] ==
+    board.valuation.as_of_effective_eod (the detail's valuation + formal-filing PIT availability
+    date trace to the SAME board valuation_daily row; §10.5).
 
 Run on the SAME DB's two exports (see `make ocean-c9`). Exits non-zero on any mismatch so it
 can gate. Names/counts only — no secrets.
@@ -62,7 +64,7 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
     shared = [s for s in ocean.get("stocks", []) if s["ticker"] in b_by]
 
     ign_checked = ps_checked = cand_checked = 0
-    gate_checked = evs_checked = detail_checked = 0
+    gate_checked = evs_checked = detail_checked = aoe_checked = 0
     for o in shared:
         t = o["ticker"]
         b = b_by[t]
@@ -113,6 +115,16 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
                 evs_checked += 1
                 if abs(d_evs - b_evs) > EVS_TOL:
                     problems.append(f"{t}: evs detail={d_evs} vs board={b_evs}")
+            # formal-filing PIT: the detail's latest as_of_effective_eod + basis trace to the
+            # SAME board valuation (date must match exactly — one valuation_daily row, C9).
+            d_aoe = (det.get("as_of_effective_eod") or [None])[-1]
+            b_aoe = (b.get("valuation") or {}).get("as_of_effective_eod")
+            if d_aoe is not None and b_aoe is not None:
+                aoe_checked += 1
+                if d_aoe != b_aoe:
+                    problems.append(f"{t}: as_of_effective_eod detail={d_aoe} vs board={b_aoe}")
+            if det.get("valuation_basis") not in (None, "formal_filing_pit"):
+                problems.append(f"{t}: ocean detail valuation_basis={det.get('valuation_basis')!r} != formal_filing_pit")
 
     stats = {
         "board_stocks": len(b_by),
@@ -124,6 +136,7 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
         "detail_checked": detail_checked,
         "gate_checked": gate_checked,
         "evs_checked": evs_checked,
+        "aoe_checked": aoe_checked,
     }
     return (not problems), problems, stats
 
@@ -160,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
           f"shared={stats['shared']}  ign_checked={stats['ign_checked']}  "
           f"cand_checked={stats['cand_checked']}  ps_checked={stats['ps_checked']}  "
           f"detail_checked={stats['detail_checked']}  gate_checked={stats['gate_checked']}  "
-          f"evs_checked={stats['evs_checked']}")
+          f"evs_checked={stats['evs_checked']}  aoe_checked={stats['aoe_checked']}")
     if ok:
         print("[ocean-c9] GATE_PASS C9 ocean↔board consistent (ign_pct=ign_pct, candidate=持续点火 gate, "
               "ps=valuation_daily.ps) + v3 bulk↔detail split aligned (gate==ign_pct&persist, evs traces)")
