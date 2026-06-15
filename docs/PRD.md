@@ -237,11 +237,12 @@ Client (canvas + duckdb-wasm): renders Ocean (thousands of points) + boards; scr
 - **size** = market cap（半径随 sqrt(mktcap)，clamp 1.6–11px）。
 - **时间轴（日期滑杆 + 播放）**：图下方日期 slider 在不同 EOD 之间切换，**默认打开 latest EOD**。Play/Pause + prev/next；**Play 自动播放**时每支股票的点在**相邻真实 EOD 快照之间用视觉插值平滑移动**（rAF，每两日 ~900–1200ms，到最新日自动停）。**插值仅用于视觉动画，不伪造中间交易日数据**：tooltip 与状态恒取真实 snapshot。拖动 slider 暂停播放并切到对应日期（phase 归零）。
 - **交互**：
-  - hover → nearest-neighbor 显示 tip（ticker / sector / ign_pct / 持续点火天数 + candidate / P/S / EV/S / P/E / EV/EBITDA / 10d·1m return / volume surge / valuation freshness / mktcap / themes）。hover 命中用**当前绘制后的插值位置**。
+  - hover → nearest-neighbor 显示 tip（ticker / sector / ign_pct / 持续点火天数 + candidate / P/S / EV/S / P/E / EV/EBITDA / 10d·1m return / volume surge / valuation freshness / mktcap / themes）。hover 命中用**当前绘制后的插值位置**。其中 ign_pct / 持续点火 candidate / P/S 三个绘制字段来自 bulk 即时可见，其余 9 个证据字段按票**懒加载**（见下「payload」，首次 hover 显骨架 `…`）。
   - click → toggle **pin**（pinned 点高亮 + 标签，仅 ≤ cap 时标 ticker，C2）。
   - 框选（lasso）→ **set 全局 scope**（Ocean 是 scope 的第一个写入口，C10）。
 - **respect scope**（C10）：非 scope 点 filter 掉或大幅变淡（in-scope ~0.5–0.92 按是否点亮，out ~0.06）。
 - **已砍**：旧 RS×Val 轴、(50,50) 十字线、quadrant 配色、周度 WEEK scrubber、pinned 多周 trail/箭头（时间维度由播放动画承担）；更早砍掉的 RRG-axes（`rsr`/`rsm` 字段早已删除）。
+- **payload（schema v3，体积裁剪 / 为 M6 扩量铺路）**：每帧绘制只需 3 个字段（`ps` / `ign_pct` / `candidate`），其余 9 个仅 tooltip 字段实测占压缩体积 ~79%。故 `ocean.json` 拆两层：**bulk**（`ocean.json`，每票仅三绘制字段的 columnar 数组、与 `dates[]` 同索引、全员前置下载）+ **per-stock detail**（`ocean/<TICKER>.json`，9 个 tooltip 字段 columnar、hover 时按票懒加载——只下你真去看的票）。实测 top-500 bulk brotli ≈ **100KB**（旧 v2 整合 596KB → −83%）。**勘误**：旧文写的「ocean gzip ~1.5MB」是 **board.json** 的数；ocean v2 实测 gzip 866KB / brotli 596KB。M6 全量后 bulk 仍只随票数 ×3 字段增长、detail 永远按需，故可扛数千只。两文件 columnar 且按 `dates[]` 同索引对齐、全字段 C9 同源（`derived_daily` / `valuation_daily` / `daily_bars` / `universe`）；`make ocean-c9` 额外校验 bulk↔detail 一致（bulk `cand` == ign_pct≥90 AND detail.persist≥5、detail.evs 追溯 board）。**M8 行为不变**：海平面图 / 轴 / candidate gate / 插值动画完全一致，仅首次 hover 某票多一次取数（tooltip 先显 3 个已知字段 + 骨架）。
 
 ### 9.3 Discovery（evidence-first 卡流，bounded decide）
 
@@ -444,7 +445,7 @@ spx_daily(date, close);
 | **M5** | Valuation screener + Stock detail：duckdb-wasm 浏览器查询；per-name 面板 | export, web | AC-M5 |
 | **M6** | 扩量：universe 由 ~500 扩到数千（Stooq bulk 已支撑） | ingest, compute | AC-M6 |
 | **M7 ✅** | **ignition 发现引擎 + Discovery 持续点火榜**（§10.8，✅ 已实现 M7.1–M7.5）：`compute/ignition.py`（5 分量 + 横截面 + persistence）→ export 持续点火榜 → Discovery 改造（ignition 排序 + 点火诊断卡）→ Stock 衔接基本面。**双引擎脊柱兑现；AC-M7 五条 `make ac-m7` 一键复验。** | compute, export, web | AC-M7 |
-| **M8 ✅** | **Ocean 重构 = Ignition × Valuation 海平面图**（§9.2）：`export/ocean.py` v2（60 日 daily、海平面 ign_pct 90、log P/S 横轴）→ `ocean-draw.ts` 重写（log 轴 + 海平面 + candidate glow + 插值）→ `Ocean.tsx`（日期滑杆 + 受控 Play 插值动画）→ **composite 退出全部用户可见层**（Discovery/Stock/Rotation/App）；Rotation league 改 # igniting / # candidates 聚合。 | export, compute, web | AC-M8 |
+| **M8 ✅** | **Ocean 重构 = Ignition × Valuation 海平面图**（§9.2）：`export/ocean.py` v3（60 日 daily、海平面 ign_pct 90、log P/S 横轴；schema v3 = payload 拆分 bulk 三绘制字段 columnar + per-stock 懒加载 detail，bulk brotli −83%）→ `ocean-draw.ts` 重写（log 轴 + 海平面 + candidate glow + 插值 + drawPtAt 列重建）→ `Ocean.tsx`（日期滑杆 + 受控 Play 插值动画 + hover 懒取 detail）→ **composite 退出全部用户可见层**（Discovery/Stock/Rotation/App）；Rotation league 改 # igniting / # candidates 聚合。 | export, compute, web | AC-M8 |
 
 **起手**：把 BUILD-PLAN 全文 + 本 PRD 当 kickoff，从 **M0**（~500 只跑通端到端）起，先证明数据拉得动、composite 直观，再扩量。
 

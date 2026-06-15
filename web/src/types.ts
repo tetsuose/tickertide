@@ -139,29 +139,25 @@ export type Scope =
   | { kind: 'theme'; key: string }
   | { kind: 'pinned'; key: null }
 
-// --- Ocean (M8 export/ocean.py -> public/data/ocean.json, schema v2) ---
+// --- Ocean (M8 export/ocean.py -> public/data/ocean.json, schema v3) ---
 // Ignition × Valuation daily SEA-LEVEL map (PRD §9.2): y = ign_pct (0-100, sea level
 // fixed at 90 — above = lit/igniting), x = raw trailing P/S TTM on a LOG axis (NOT a
-// valuation percentile, NOT a composite score). A stock's pts[] is aligned to dates[]
-// (oldest→newest); a null pt = no renderable position that day (missing ign_pct or ps —
-// the play tween fades it in/out, never fabricated). Composite is gone from this surface.
+// valuation percentile, NOT a composite score). Composite is gone from this surface.
+//
+// v3 PAYLOAD SPLIT (scales to M6): the bulk ocean.json carries only the THREE fields every
+// animation frame needs, in a COLUMNAR layout — per stock, parallel arrays ps/ign_pct/cand
+// aligned to dates[] (oldest→newest). A null in ps/ign_pct at index i = no renderable
+// position that day (the play tween fades it in/out; never fabricated). The nine tooltip-only
+// fields live in per-stock ocean/<TICKER>.json (OceanDetail), fetched lazily on hover.
 
-/** One trading day's snapshot for a stock. ign_pct ∈ [0,100] (y), ps > 0 (x, log). The
- *  candidate gate (ign_pct>=90 AND ign_persist_days>=5) is Discovery's 持续点火 (C9). All
- *  tooltip/state fields are the REAL snapshot — the play tween lerps x/y only, never these. */
-export interface OceanPt {
-  ign_pct: number
-  ignition: number | null
-  ign_persist_days: number | null
-  candidate: boolean
+/** A single day's DRAW snapshot reconstructed from the columnar bulk (see ocean-draw.drawPtAt).
+ *  ign_pct ∈ [0,100] (y), ps > 0 (x, log). candidate = Discovery's 持续点火 gate (precomputed
+ *  in the export since ign_persist_days lives only in the lazy OceanDetail). The play tween
+ *  lerps x/y between adjacent real snapshots — it never synthesizes candidate. */
+export interface OceanDrawPt {
   ps: number
-  evs: number | null
-  pe: number | null
-  ev_ebitda: number | null
-  ret_10d: number | null
-  ret_1m: number | null
-  vol_mult: number | null
-  freshness: Freshness | null
+  ign_pct: number
+  candidate: boolean
 }
 
 export interface OceanStock {
@@ -169,7 +165,30 @@ export interface OceanStock {
   sector: string | null
   mktcap: number | null
   themes: ThemeTag[]
-  pts: (OceanPt | null)[]
+  // columnar draw fields, each aligned to OceanData.dates (oldest→newest). null at index i =
+  // no renderable position that day. cand[i] ∈ {0,1} (1 = 持续点火 candidate); 0 on a null day.
+  ps: (number | null)[]
+  ign_pct: (number | null)[]
+  cand: (0 | 1)[]
+}
+
+/** Lazy per-stock hover detail (export/ocean.py -> public/data/ocean/<TICKER>.json, schema v3).
+ *  The nine tooltip-only fields, columnar + index-aligned to OceanData.dates (so detail.evs[i]
+ *  is the value at dates[i]); null exactly where the bulk has no position that day. Fetched on
+ *  hover so the bulk stays tiny (payload reduction). `n` must equal dates.length (alignment guard). */
+export interface OceanDetail {
+  schema_version: number
+  ticker: string
+  n: number
+  ignition: (number | null)[]
+  ign_persist_days: (number | null)[]
+  evs: (number | null)[]
+  pe: (number | null)[]
+  ev_ebitda: (number | null)[]
+  ret_10d: (number | null)[]
+  ret_1m: (number | null)[]
+  vol_mult: (number | null)[]
+  freshness: (Freshness | null)[]
 }
 
 /** Fixed axis descriptor — the export decides the axes; the client never re-derives them. */

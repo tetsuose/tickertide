@@ -78,7 +78,7 @@ compute/ignition.py (5 分量 per-stock)
   → compute/run.py (横截面 percentile + ignition + ign_pct + persistence islands)
   → derived_daily 扩列: ig_accel,ig_expand,ig_vsurge,ig_breakout,ig_rsturn, ignition, ign_pct, ign_persist_days
   → export/board.py (ignition 块 + candidate + 点火证据) → board.json
-  → export/ocean.py (ign_pct × raw P/S 日频快照, schema v2) → ocean.json   ← M8
+  → export/ocean.py (ign_pct × raw P/S 日频快照, schema v3: bulk 三绘制字段 columnar + per-stock 懒加载 detail) → ocean.json + ocean/<T>.json   ← M8
   → web Discovery (持续点火排序) / Stock (点火诊断小节) / Ocean (海平面图 + Play 动画)
 ```
 **C9 同源守卫**:`export/check_ignition.py`(`make ignition-c9`)+ `compute/check_ac_m7.py`(`make ac-m7`,AC-M7 五条门禁)。ignition 永不在 export / 前端重算,一律读 `derived_daily` 导出值。
@@ -103,7 +103,7 @@ compute/ignition.py (5 分量 per-stock)
 ## 4. 文件地图(改算法看这些)
 
 - **compute**:`ignition.py`(5 分量)·`run.py`(横截面+persist 接线)·`signals.py`(composite 数学)·`check.py`(AC 抽查)·`check_ac_m7.py`(AC-M7 门禁)
-- **export**:`board.py`(Discovery 数据+ignition 块)·`stock_bundle.py`(Stock per-name+ignition)·`ocean.py`(M8 Ocean 海平面图 schema v2,ign_pct × log P/S 日频)·`check_ignition.py`(C9)·`check_ocean.py`(M8 Ocean↔board C9)
+- **export**:`board.py`(Discovery 数据+ignition 块)·`stock_bundle.py`(Stock per-name+ignition)·`ocean.py`(M8 Ocean 海平面图 schema v3,ign_pct × log P/S 日频;bulk 三绘制字段 columnar + per-stock 懒加载 detail)·`check_ignition.py`(C9)·`check_ocean.py`(M8 Ocean↔board C9)
 - **web**:`src/views/Discovery.tsx`(持续点火排序)·`src/views/Stock.tsx`(点火诊断)·`src/views/Ocean.tsx`(M8 海平面图 + 日期滑杆/Play 动画)·`src/lib/ocean-draw.ts`(M8 Ocean 纯绘制+插值)·`src/components/EvidenceCard.tsx`(点火证据卡)·`src/lib/composite.ts`(固定权重,**M8 起仅计算层保留、UI 不暴露**)·`src/App.tsx`(顶栏,已无旋钮、已无 composite 说明)
 - **analysis**(实证,非管线):`verify_ignition.py`(timing)·`precision_ignition.py`(precision)
 - **schema**:`ingest/schema.sql`(derived_daily 扩列)
@@ -135,7 +135,7 @@ compute/ignition.py (5 分量 per-stock)
 
 ## 7. 未决 / 下一步候选(PRD §17)
 
-- **M8 Ocean 接手说明**:新 Ocean = **Ignition × Valuation 海平面图**——y=`ign_pct`、固定海平面线 `ign_pct=90`(=Discovery 点亮阈值)、x=**原始 trailing P/S TTM 的 log 刻度**(非百分位、无隐含阈值参数);海平面之上的点 = 持续点火 candidate(`ign_pct≥90 AND ign_persist_days≥5`,与 Discovery 同一道 gate,C9)。日期滑杆 scrub EOD 快照(默认开最新),Play 用 rAF 在相邻**真实** EOD 快照间 tween(900–1200ms/段);**插值仅视觉,tooltip/状态永读真实快照、绝不读伪造中间值**。砍掉旧象限色/(50,50) 十字线/周 scrubber/pin 多周尾迹。数据契约见 `export/ocean.py`(`ocean.json` schema v2)+ ROADMAP「M8」段。
+- **M8 Ocean 接手说明**:新 Ocean = **Ignition × Valuation 海平面图**——y=`ign_pct`、固定海平面线 `ign_pct=90`(=Discovery 点亮阈值)、x=**原始 trailing P/S TTM 的 log 刻度**(非百分位、无隐含阈值参数);海平面之上的点 = 持续点火 candidate(`ign_pct≥90 AND ign_persist_days≥5`,与 Discovery 同一道 gate,C9)。日期滑杆 scrub EOD 快照(默认开最新),Play 用 rAF 在相邻**真实** EOD 快照间 tween(900–1200ms/段);**插值仅视觉,tooltip/状态永读真实快照、绝不读伪造中间值**。砍掉旧象限色/(50,50) 十字线/周 scrubber/pin 多周尾迹。数据契约见 `export/ocean.py`(`ocean.json` schema v3:bulk 三绘制字段 + per-stock 懒加载 detail，payload −83%)+ ROADMAP「M8」段。
 - **M8 payload 后续(未做)**:生产 `ocean.json` 较大(60 天 × ~500–6766 票 × 12 字段 pt;top-500 约 ~6MB,gzip ~1.5MB)→ 分片 / 裁剪是后续优化。
 - **persist 天数**:默认 5,用 `analysis/precision_ignition.py` 复核 5/7/10 定 final。
 - **全 universe**:nightly 默认 top-500 by mktcap(偏大中盘);ignition habitat 在中小盘,扩到全 ~6766 只 candidate 会更多(M6 扩量)。

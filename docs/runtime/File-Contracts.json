@@ -543,15 +543,15 @@
       }
     },
     {
-      "notes": "跨两份 export(board.json+ocean.json，须同一 DB)校验；本任务以 520 票 fixture 验证 shared=517 全过",
+      "notes": "跨两份 export(board.json+ocean.json，须同一 DB)校验 + v3 per-stock detail(ocean/<T>.json)拆分一致性；本任务以 520 票 fixture 验证 shared=519 全过(含 detail/gate/evs 各 519)",
       "path": "export/check_ocean.py",
       "kind": "script",
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M8 C9 跨 surface 校验：ocean.json(v2) 点位可追溯到 board/Discovery 数字（AC-M8「海平面以上点 = Discovery candidate」）",
-        "invariants": "读同一 DB 导出的 board.json + ocean.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean.pts[-1].ign_pct == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean.pts[-1].candidate == board.ignition.candidate(同持续点火 gate)；ps=ocean.pts[-1].ps == board.valuation.ps(同 valuation_daily.ps)；容差仅取整(ign 0.1/ps 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
-        "verification": "make ocean-c9（先 fixture-pipeline + make export 出两份）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked 计数一致；构造不符可触发 GATE_FAIL"
+        "purpose": "M8 C9 跨 surface 校验：ocean.json(v3 columnar bulk) 点位可追溯到 board/Discovery 数字（AC-M8「海平面以上点 = Discovery candidate」），并证 v3 payload 拆分(bulk 三绘制字段 + per-stock 懒加载 detail 九字段)未破 C9",
+        "invariants": "读同一 DB 导出的 board.json + ocean.json + ocean/<T>.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean bulk ign_pct[-1] == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean bulk cand[-1] == board.ignition.candidate(同持续点火 gate)；ps=ocean bulk ps[-1] == board.valuation.ps(同 valuation_daily.ps)；v3 拆分一致：detail.n==len(ocean.dates)(窗口对齐)、bulk 预算的 cand == (ign_pct≥90 AND detail.ign_persist_days[-1]≥5)(gate 不因拆分失同步)、detail.evs[-1] == board.valuation.evs(detail 估值追溯同一 board 数)；容差仅取整(ign 0.1/ps 0.01/evs 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets",
+        "verification": "make ocean-c9（先 fixture-pipeline + make export 出 bulk + ocean/ detail）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked/detail_checked/gate_checked/evs_checked 计数一致；构造不符(含 gate 失同步)可触发 GATE_FAIL"
       }
     },
     {
@@ -591,15 +591,15 @@
       }
     },
     {
-      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json 走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
+      "notes": "themes[] 在 theme_membership 表存在前恒空(M4)；ocean.json + ocean/<T>.json 均走 data/ gitignore 规则不入库；真数据由 `make pipeline` 物化，本任务以合成 fixture 喂真实引擎验证；Makefile export 接线在 M2.5",
       "path": "export/ocean.py",
       "kind": "script",
       "module": "export",
       "stage": "implemented",
       "contract": {
-        "purpose": "M8 导出：DuckDB 日度快照 → web/public/data/ocean.json (schema v2)（Ocean = Ignition × Valuation 海平面图：每票最近 N 个交易日 pts 序列，y=ign_pct/x=原始 P/S(log)，供日期滑杆 + Play 相邻真实快照插值动画）",
-        "invariants": "schema_version=2；顶层 axis{x_metric:ps,x_scale:log,y_metric:ign_pct,sea_level:90} + dates[] + x_domain + count + stocks[]；每票 pts[] 与 dates[](老→新)对齐，pt 字段全部 C9 同源(前端不重算引擎)：ign_pct/ignition/ign_persist_days/candidate=derived_daily 同列(与 Discovery/board 逐票可追溯)、candidate=ign_pct≥90 AND persist≥5(=Discovery 持续点火 gate=海平面以上)、ps/evs/pe/ev_ebitda=valuation_daily、freshness=§10.5 as-of 档(date−as_of_period_end)、ret_10d/ret_1m=daily_bars adj_close/LAG-1(同 board 证据派生)、vol_mult=derived_daily.ig_vsurge(5/60 放量，存列读取)；入选票=最新日同时有有效 ign_pct 且 ps>0 且在 universe(有可渲染 (x,y))，历史日缺任一坐标则 pt=null(播放淡入/淡出，不伪造位置)；x_domain=窗口内所有有效 P/S 的[min,max](log 轴自动域、无写死估值阈值 §16)；mktcap 原始 USD(同 board.json)；输出为派生物、gitignore、不含任何 key/secret",
-        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 len(pts)==len(dates) 且最新 pt 非空；每非空 pt ign_pct∈[0,100]、ps>0；candidate⇒ign_pct≥90；x_domain 为正序区间)；dates 老→新且 dates[-1]==max(derived_daily.date)；`make ocean-c9` 证 ocean.pts[-1] ign_pct/candidate/ps 与 board 同源；≥500 票 fixture 下 count≥500、export<1s"
+        "purpose": "M8 导出(schema v3，payload 拆分扛 M6 扩量)：DuckDB 日度快照 → ① web/public/data/ocean.json bulk(每票仅三个绘制字段 ps/ign_pct/cand 的 columnar 数组，全员前置下载) + ② web/public/data/ocean/<TICKER>.json per-stock 懒加载 detail(九个仅 tooltip 字段)。Ocean = Ignition × Valuation 海平面图(y=ign_pct/x=原始 P/S(log))，供日期滑杆 + Play 相邻真实快照插值动画；bulk+detail 同一遍构建不会失同步(C9)",
+        "invariants": "bulk schema_version=3；顶层 axis{x_metric:ps,x_scale:log,y_metric:ign_pct,sea_level:90} + dates[](老→新) + x_domain + count + stocks[]；每票 columnar 绘制字段 ps[]/ign_pct[]/cand[] 与 dates[] 索引对齐(ps 或 ign_pct 为 null=该日无可渲染位置，播放淡入/淡出不伪造)、cand[i]∈{0,1}(1=持续点火 candidate，null 日为 0)；detail ocean/<T>.json{schema_version,ticker,n,九个 columnar 字段}，与 bulk 同 dates[] 索引对齐(n==len(dates))、null 恰在 bulk 无位置的日(跨文件索引对齐=拆分契约)。字段全部 C9 同源(前端不重算引擎)：ign_pct/cand(及 detail ignition/ign_persist_days)=derived_daily 同列、cand=ign_pct≥90 AND persist≥5(=Discovery 持续点火 gate=海平面以上)、ps(及 detail evs/pe/ev_ebitda/freshness)=valuation_daily、freshness=§10.5 as-of 档(date−as_of_period_end)、detail ret_10d/ret_1m=daily_bars adj_close/LAG-1(同 board 证据派生)、detail vol_mult=derived_daily.ig_vsurge(5/60 放量，存列读取)；入选票=最新日同时有有效 ign_pct 且 ps>0 且在 universe，历史日缺任一坐标则该日全列 null；x_domain=窗口内所有有效 P/S 的[min,max](log 轴自动域、无写死估值阈值 §16)；mktcap 原始 USD(同 board.json)；写 detail 前清空 ocean/ 旧 *.json(universe 收缩不留孤儿)；两文件均派生物、gitignore、不含任何 key/secret",
+        "verification": "fixture-pipeline 后 `python export/ocean.py` 成功；self-check 硬失败守护(每票 ps/ign_pct/cand 列 len==len(dates) 且最新坐标非空；每有位置日 ign_pct∈[0,100]、ps>0、cand∈{0,1}、cand=1⇒ign_pct≥90；x_domain 为正序区间；每票有 detail、detail n 及九列 len==len(dates)、detail 恰在无位置日为 null)；dates 老→新且 dates[-1]==max(derived_daily.date)；`make ocean-c9` 证 bulk[-1] ign_pct/candidate/ps 与 board 同源 + bulk↔detail 拆分一致(gate==ign_pct&persist、evs 追溯)；≥500 票 fixture 下 count≥500、bulk brotli≈100KB(旧整合 v2 596KB→−83%)、export<1s"
       }
     },
     {
@@ -1113,9 +1113,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "AC-M8 Ocean 渲染测试用样本 ocean.json(schema v2)（export/ocean.py 真实产物，520 票 fixture→519 票×N 日；为控体积用 --days 4 导出）",
-        "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；schema_version=2、axis.sea_level=90；每票 pts 与 dates 对齐、最新日非空(≥500 可渲染点)；ign_pct∈[0,100]、ps>0；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)",
-        "verification": "Ocean.test.tsx import 后断言 count≥500、最新日全非空、每票 sector 可识别；再生命令见 Ocean.test.tsx notes"
+        "purpose": "AC-M8 Ocean 渲染测试用样本 ocean.json bulk(schema v3，columnar 绘制字段)（export/ocean.py 真实产物，520 票 fixture→519 票×N 日；为控体积用 --days 4 导出；仅 bulk，detail 不入 fixture——测试内联构造 OceanDetail）",
+        "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；schema_version=3、axis.sea_level=90；每票 columnar ps[]/ign_pct[]/cand[] 与 dates 对齐、最新坐标非空(≥500 可渲染点)；有位置日 ign_pct∈[0,100]、ps>0、cand∈{0,1}；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)；导出顺带写的 __fixtures__/ocean/ detail 目录在再生时 rm 掉(不入测试 fixture)",
+        "verification": "Ocean.test.tsx import 后断言 count≥500、最新坐标全非空、每票 sector 可识别、drawPtAt 重建点位；再生命令见 Ocean.test.tsx notes"
       }
     },
     {
@@ -1221,9 +1221,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json(Ocean) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
-        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)；loadStockBundle/loadStockIndex 懒加载 per-name bundle(M5.4)",
-        "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态"
+        "purpose": "载入 nightly 静态快照：board.json(Discovery) + ocean.json bulk + ocean/<T>.json 懒加载 hover detail(Ocean v3 拆分) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
+        "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadOceanDetail(ticker,signal) 懒加载 ocean/<TICKER>.json(v3 九个 tooltip 字段，hover 时按票取，同 BASE_URL fetch 范式)→ OceanDetail；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)；loadStockBundle/loadStockIndex 懒加载 per-name bundle(M5.4)",
+        "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean(bulk)+hover loadOceanDetail(按票)、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态/tooltip 退化为骨架"
       }
     },
     {
@@ -1281,9 +1281,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Ocean canvas 纯绘制库（M8 海平面图）：log P/S 横轴 + ign_pct 纵轴 + 海平面(ign_pct 90)几何/配色/尺寸 helpers + interpolateOceanPoint 插值 + drawOcean 单次绘制一动画帧(含 candidate glow + pinned 标记 + lasso rect) + nearestPoint/pointsInRect 命中测试（PRD §9.2）",
-        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；makeScales：x=log10 P/S 映射 x_domain→宽、y=ign_pct 0-100(sy 反转故 0 在底)、seaY=sy(sea_level)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色两模式(sector/theme)返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；inScope 按 scope 判定(pinned=ticker∈pinned 集)；interpolateOceanPoint(prev,next,phase)：两点都有→x(log)/y lerp + snap 取最近真实快照、prev only→淡出(fade=1-phase)、next only→淡入(fade=phase)、都无→null(状态恒取真实 snapshot 不伪造)；drawOcean 画海平面以下压暗 + 以上高亮 + waterline(ign 90) + P/S log 网格 + ign 轴刻度 + 当帧点(in-scope 按是否点亮 0.5/0.92、否则淡至 1.2px C10、candidate 加 glow halo + 亮环)+可选 hover 白环 + pinned 强调点(≤PIN_LABEL_CAP 标 ticker，C2)+lasso 选框，并返回非淡点(插值后)屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)、命中用当帧插值位置；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
-        "verification": "Ocean.test.tsx：radiusFor/makeScales(海平面=sy(90)、log P/S 单调)/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/interpolateOceanPoint(双有 lerp、prev-only 淡出、next-only 淡入、都无 null)/nearestPoint/pointsInRect/inScope 纯测；drawOcean mock-ctx 在 519 票 fixture 返回 ≥500 drawn 落框内 + 海平面背景层 + scope 淡化 + hover ring + candidate glow(多 arc+stroke) + 海平面上下 y 摆位 + 切日点位移动 + pinned 标签"
+        "purpose": "Ocean canvas 纯绘制库（M8 海平面图）：log P/S 横轴 + ign_pct 纵轴 + 海平面(ign_pct 90)几何/配色/尺寸 helpers + drawPtAt(从 v3 columnar 列重建当日绘制点) + interpolateOceanPoint 插值 + drawOcean 单次绘制一动画帧(含 candidate glow + pinned 标记 + lasso rect) + nearestPoint/pointsInRect 命中测试（PRD §9.2）",
+        "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；makeScales：x=log10 P/S 映射 x_domain→宽、y=ign_pct 0-100(sy 反转故 0 在底)、seaY=sy(sea_level)；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色两模式(sector/theme)返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawPtAt(s,i)：从 v3 columnar 列(ps[i]/ign_pct[i]/cand[i])重建 OceanDrawPt{ps,ign_pct,candidate}，ps 或 ign_pct 为 null→该日无位置返 null(列→点唯一入口；ign_persist_days 等不在此，走懒加载 OceanDetail)；interpolateOceanPoint(prev,next:OceanDrawPt|null,phase)：两点都有→x(log)/y lerp + snap 取最近真实快照、prev only→淡出(fade=1-phase)、next only→淡入(fade=phase)、都无→null(状态恒取真实 snapshot 不伪造，snap 仅含三绘制字段)；drawOcean 经 drawPtAt 取当帧点，画海平面以下压暗 + 以上高亮 + waterline(ign 90) + P/S log 网格 + ign 轴刻度 + 当帧点(in-scope 按是否点亮 0.5/0.92、否则淡至 1.2px C10、candidate 加 glow halo + 亮环)+可选 hover 白环 + pinned 强调点(≤PIN_LABEL_CAP 标 ticker，C2)+lasso 选框，并返回非淡点(插值后)屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)、命中用当帧插值位置；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集",
+        "verification": "Ocean.test.tsx：radiusFor/makeScales(海平面=sy(90)、log P/S 单调)/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/drawPtAt(列重建点、gap 日 null)/interpolateOceanPoint(双有 lerp、prev-only 淡出、next-only 淡入、都无 null)/nearestPoint/pointsInRect/inScope 纯测；drawOcean mock-ctx 在 519 票 fixture 返回 ≥500 drawn 落框内 + 海平面背景层 + scope 淡化 + hover ring + candidate glow(多 arc+stroke) + 海平面上下 y 摆位 + 切日点位移动 + pinned 标签"
       }
     },
     {
@@ -1329,8 +1329,8 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "board.json(M1.1/M7.2) + ocean.json(M2.1) + rotation.json(M3.3) + stock bundle(M5.3/M7.4) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；OceanData/OceanStock/OceanPt/OceanAxis(M8 v2)：pts 与 dates 对齐、pt 可空(播放淡入/出)、非空 pt ign_pct∈[0,100]+ps>0+candidate+估值倍数+freshness，axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
+        "purpose": "board.json(M1.1/M7.2) + ocean.json bulk + ocean/<T>.json detail(M8 v3) + rotation.json(M3.3) + stock bundle(M5.3/M7.4) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
+        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData、Stock 按 StockBundle(含 ignition)消费无类型错"
       }
     },
@@ -1359,15 +1359,15 @@
       }
     },
     {
-      "notes": "ocean.sample.json 再生：make fixture-pipeline FIXTURE_ARGS=\"--tickers 520 --seed 7\" && python export/ocean.py --out web/src/lib/__fixtures__/ocean.sample.json",
+      "notes": "ocean.sample.json 再生(v3，仅 bulk)：make fixture-pipeline FIXTURE_ARGS=\"--tickers 520 --seed 7\" && python export/ocean.py --days 4 --out web/src/lib/__fixtures__/ocean.sample.json && rm -rf web/src/lib/__fixtures__/ocean(删顺带写的 detail 目录)",
       "path": "web/src/views/Ocean.test.tsx",
       "kind": "code",
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "AC-M2.2/2.3/2.4 提交版回归 gate（vitest）：Ocean 纯绘制库 + drawOcean mock-ctx(≥500 点/scrubber/hover/pin trail/lasso/scope 淡化) + SSR scaffold",
-        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/quadrantVar/colorVar/withAlpha/nearestPoint/pointsInRect/inScope) 直测；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切周点位移动、pinned trail(多 stroke+ticker fillText)、scope=pinned 仅 pinned 非淡、大 pinned(>TRAIL_CAP) 不画 N 条 trail label(text 空、由淡化承载)、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言；fixture=ocean.sample.json",
-        "verification": "npm test / make web-test 全绿（本文件 23 用例）"
+        "purpose": "AC-M8 提交版回归 gate（vitest）：Ocean 纯绘制库 + v3 columnar(drawPtAt)/lazy detail(Tip 骨架) + drawOcean mock-ctx(≥500 点/scrubber/hover/pin/lasso/scope 淡化) + SSR scaffold",
+        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)",
+        "verification": "npm test / make web-test 全绿（本文件 31 用例）"
       }
     },
     {
@@ -1377,9 +1377,9 @@
       "module": "web",
       "stage": "implemented",
       "contract": {
-        "purpose": "Ocean surface（PRD §9.2，M8）：Ignition × Valuation 海平面 canvas + 配色切换 + √市值尺寸 + 日期滑杆 + Play/Pause/prev/next 受控插值动画(rAF) + hover tip(ignition+估值证据) + click pin + lasso 框选 set 全局 scope(首个 scope writer C10)",
-        "invariants": "读 ocean.json(loadOcean) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)+Tip overlay(ignition+估值证据，无 RS/Val pct)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v2/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1 崩)；错误/加载态降级",
-        "verification": "SSR 含 canvas+两配色切换+ign_pct/P-S 轴标+日期 range(max=dates-1)+Play 按钮+latest EOD 标；Tip SSR 含 ignition+估值倍数+freshness、不含 RS/Val pct；命中/绘制/插值正确性见 ocean-draw 头测；npm build(tsc) 通过；浏览器交互+性能"
+        "purpose": "Ocean surface（PRD §9.2，M8 v3）：Ignition × Valuation 海平面 canvas + 配色切换 + √市值尺寸 + 日期滑杆 + Play/Pause/prev/next 受控插值动画(rAF) + hover tip(三绘制字段即时 + 九证据字段 per-stock 懒加载) + click pin + lasso 框选 set 全局 scope(首个 scope writer C10)",
+        "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级",
+        "verification": "SSR 含 canvas+两配色切换+ign_pct/P-S 轴标+日期 range(max=dates-1)+Play 按钮+latest EOD 标；Tip SSR：detail 在显 ignition+估值倍数+freshness、detail=null 显 … 骨架(三绘制字段仍显)、均不含 RS/Val pct；命中/绘制/插值/drawPtAt 正确性见 ocean-draw 头测；npm build(tsc) 通过；浏览器交互+性能(hover 首取 detail)"
       }
     },
     {
