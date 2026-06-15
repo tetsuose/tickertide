@@ -177,8 +177,14 @@ compute:
 	@python3 compute/rotation.py
 	@python3 compute/rotation.py --bucket-type theme
 
-check: check-theme
+check: check-theme pit-check
 	@python3 compute/check.py
+
+# Formal-filing PIT boundary (AC-1/AC-3, PRD §10.5): P/S does not backfill to period_end.
+# Self-contained (builds its own two-quarter sample in a throwaway DB), so it needs no
+# prepared pipeline DB and runs as part of every `make check` / nightly `make pipeline`.
+pit-check:
+	@python3 compute/pit_check.py
 
 # AC-M4 (PRD §14): PIT membership shape + C3 no-retro + C4 cap-bound weights.
 # Skips cleanly (exit 0) when theme_membership is empty — `make compute` on a bare DB

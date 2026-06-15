@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-15T05:42:10.173479+00:00",
+  "updated_at": "2026-06-15T14:28:41.009116+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -241,6 +241,18 @@
         "invariants": "pandas 算 per-stock 时序、分量皆 self-relative（横截面 percentile-rank 在 run.py 做）；与 signals.py 共用同一份 bars 与同一 benchmark 对齐口径（C9，spx.close=adj_close basis、ffill 到本票交易日）；用 adj_close 作价；early⟷reliable 旋钮不触 ignition（PRD §10.8/P7），精度靠 persistence 非权重；窗口短于 composite（10/50/60 vs 63/126/252）测加速度/拐点非水平",
         "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
       }
+    },
+    {
+      "path": "compute/pit_check.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "formal-filing PIT 边界微测(AC-1/AC-3，PRD §10.5)：构造正典两季样本，证 P/S 不回填到 period_end",
+        "invariants": "自给(无网络/无 fixture)：经 compute.db.upsert_*(真实写路径)造两季 fundamentals_q + flat-price daily_bars 落临时 DuckDB、跑真实 compute.valuation；断言 period_end 与 effective_eod_date 之间仍用上一季 revenue(P/S=mktcap/revenue_ttm=100)、effective 当日起用本季(P/S=50)、valuation_basis=formal_filing_pit；确定性(锚定固定日期、非 rng)故不依赖合成 fixture 形状、专测 ASOF 键=effective_eod_date 而非 period_end；PASS/FAIL、任一失败非零退出(CI 友好)；属 dev/CI 工具(duckdb venv 依赖，非 engine stdlib-only)、非 nightly pipeline 数据成员但经 make check 内联跑",
+        "verification": "make pit-check(或 make check/nightly 内联)输出 PIT_OK：2026-04-23 P/S=100(上季 period_end 2025-12-31 effective 2026-02-15)、2026-04-24 起 P/S=50(本季 period_end 2026-03-31 effective 2026-04-24)；若 ASOF 退回 period_end 键则 2026-04-23 误判 P/S=50 → PIT_FAIL"
+      },
+      "notes": ""
     },
     {
       "notes": "",
@@ -1095,6 +1107,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/lib/__fixtures__/board.chart.sample.json",
       "kind": "config",
       "module": "web",
@@ -1103,8 +1116,7 @@
         "purpose": "EvidenceCard mini-chart 渲染测试样本(BoardChartDetail，schema v2)：从 board.sample.json 抽出的单票(stocks[0]) 90d chart，供 Discovery.test SSR 注入渲染 MiniChart —— bulk fixture 已无 chart(payload 拆分)",
         "invariants": "{schema_version:2,ticker,chart:ChartSeries(dates/open/high/low/close/adj_close/volume/ma50/ma150/ma200/high_52w)}；与 board.sample.json 同源同票；含 MA50 + high_52w 供测试断言 svg+MA 线+52w 虚线；与 export/board.py 的 board/<T>.json detail 同形；非运行时数据(运行时走 board/<T>.json、gitignore)",
         "verification": "Discovery.test.tsx 注入其 chart 到 <EvidenceCard chart={...}> 断言 mini-chart svg+var(--ma50)+stroke-dasharray 渲染；schema_version==2"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -1516,5 +1528,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "00cdf793f5822a00b693ad3cc5ccb7659a4d8a41caad726859da49affdd50fd0"
+  "last_structure_digest": "4de3daea221755f6ef461006a523b9b28a92dd7a9108de58da1491d99915d8d8"
 }
