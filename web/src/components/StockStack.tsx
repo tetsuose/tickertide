@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { StockBundle } from '../types'
+import type { StockBundle, RevenueQuarter } from '../types'
 import { viewBoxXFromClient, bandIndexAt, axisTickIndices, tickDate } from '../lib/chart-hover'
 import CursorReadout from './ChartCursor'
 
@@ -8,8 +8,11 @@ import CursorReadout from './ChartCursor'
 // price ↔ revenue ↔ P/S against the same calendar:
 //   PRICE   candlesticks + MA50/150/200 + 52w-high dashed
 //   VOLUME  daily bars (up green / down red)
-//   REVENUE quarterly TTM bars (YoY up green / down red), placed at each period_end
-//   P/S     daily P/S line
+//   REVENUE quarterly TTM bars (YoY up green / down red) at each fiscal period_end, plus a dim
+//           formal-filing marker at each quarter's effective_eod_date (PRD §10.5) — where its
+//           revenue actually enters P/S, a filing-lag right of the bar — so the period_end
+//           placement can't be misread as "known then"
+//   P/S     daily P/S line (steps at effective_eod_date, never period_end)
 // A resident MM/DD date axis runs beneath, and a hover time-cursor spans all four panes —
 // reading close / volume / TTM-revenue / P/S at the cursored day off one vertical, which is
 // the stack's whole point. The cursor is a hover-only overlay (hoverIndex null at rest) so
@@ -147,12 +150,21 @@ export default function StockStack({ bundle }: { bundle: StockBundle }) {
   const hClose = hi != null ? p.close[hi] : null
   const hVol = hi != null ? p.volume[hi] : null
   const hPs = hi != null ? psPts.find((q) => q.i === hi)?.ps ?? null : null
-  // TTM revenue effective at the cursored day = the latest quarter whose period_end ≤ that day
+  // TTM revenue *formally effective* at the cursored day (formal-filing PIT, PRD §10.5): the
+  // latest quarter whose effective_eod_date ≤ that day — NOT period_end ≤ day, which would
+  // surface a quarter's revenue before it was filed (the lookahead this view avoids), and
+  // would disagree with the P/S line (which steps at effective_eod). Falls back to period_end
+  // for pre-PIT bundles that omit effective_eod_date.
+  const hDate = hi != null ? p.dates[hi] : null
   let hRev: number | null = null
-  if (hi != null) {
+  let hRevQ: RevenueQuarter | null = null
+  if (hDate != null) {
     for (const r of revs) {
-      const xi = idxOnOrBefore(r.period_end)
-      if (xi != null && xi <= hi && r.revenue_ttm != null) hRev = r.revenue_ttm as number
+      const eff = r.effective_eod_date ?? r.period_end
+      if (eff != null && eff <= hDate && r.revenue_ttm != null) {
+        hRev = r.revenue_ttm as number
+        hRevQ = r
+      }
     }
   }
 
@@ -266,6 +278,30 @@ export default function StockStack({ bundle }: { bundle: StockBundle }) {
         )
       })}
 
+      {/* formal-filing markers (PRD §10.5): each REVENUE bar sits at its fiscal period_end, but
+          its data only enters P/S from effective_eod_date (~a filing lag later). A dim dashed
+          tick at the effective x + a baseline connector from the bar make that gap visible, so
+          the period_end placement can't be misread as "known then". Skipped when the bundle
+          predates PIT (no effective_eod_date) or the two map to the same trading day. */}
+      {revs.map((r, k) => {
+        const eff = r.effective_eod_date ?? r.period_end
+        const ei = eff != null ? idxOnOrBefore(eff) : null
+        const pi = idxOnOrBefore(r.period_end)
+        if (ei == null || pi == null || ei === pi) return null
+        const ex = X(ei)
+        return (
+          <g key={'f' + k}>
+            <line x1={X(pi)} y1={revBaseline} x2={ex} y2={revBaseline} stroke="var(--dim2)" strokeWidth="0.8" strokeDasharray="1 2" />
+            <line x1={ex} y1={revTop} x2={ex} y2={revBaseline} stroke="var(--dim2)" strokeWidth="0.8" strokeDasharray="2 2" />
+            {k === revs.length - 1 && (
+              <text x={ex + 2} y={revTop + 9} fontSize="7" fill="var(--dim2)" textAnchor="start" fontFamily="var(--mono)">
+                filed
+              </text>
+            )}
+          </g>
+        )
+      })}
+
       {/* P/S over time line */}
       <path d={psPath} fill="none" stroke="var(--blu)" strokeWidth="1.2" />
       {psPts.length > 0 && (
@@ -308,6 +344,17 @@ export default function StockStack({ bundle }: { bundle: StockBundle }) {
           />
           <CursorReadout x={X(hi)} y={volTop + 2} viewW={W} text={hVol != null ? fmtVol(hVol) : '—'} />
           <CursorReadout x={X(hi)} y={revTop + 2} viewW={W} text={hRev != null ? fmtRev(hRev) : '—'} />
+          {/* which fiscal quarter (and from which effective date) this TTM enters P/S — the
+              formal-filing PIT context for the cursored day (§10.5). */}
+          {hRevQ?.period_end != null && (
+            <CursorReadout
+              x={X(hi)}
+              y={revTop + 16}
+              viewW={W}
+              color="var(--dim2)"
+              text={`Q${tickDate(hRevQ.period_end)}${hRevQ.effective_eod_date ? '→' + tickDate(hRevQ.effective_eod_date) : ''}`}
+            />
+          )}
           <CursorReadout
             x={X(hi)}
             y={psTop + 2}

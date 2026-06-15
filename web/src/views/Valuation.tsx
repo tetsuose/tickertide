@@ -20,6 +20,20 @@ function inScope(r: ValuationRow, scope: Scope | undefined, pinned: string[]): b
 
 const mval = (r: ValuationRow, k: MetricKey): number | null => (r[k] as number | null) ?? null
 
+/** Native-tooltip text for the As-of cell: the formal-filing PIT context (PRD §10.5) — the
+ *  fiscal period the denominator belongs to, when it was formally filed / became effective in
+ *  the EOD series, the disclosure lag, and the basis. period_end drives freshness (vintage),
+ *  filed/effective drive availability — kept distinct on purpose. */
+function asofTitle(r: ValuationRow): string {
+  const lines = [`Financial period ended: ${r.as_of_period_end ?? '—'}`]
+  if (r.as_of_filed) lines.push(`Formal filed: ${r.as_of_filed}`)
+  if (r.as_of_effective_eod) lines.push(`Effective in EOD valuation: ${r.as_of_effective_eod}`)
+  if (r.disclosure_lag_days != null) lines.push(`Disclosure lag: ${r.disclosure_lag_days}d`)
+  lines.push(`Basis: ${r.valuation_basis === 'formal_filing_pit' || r.valuation_basis == null ? 'formal-filing PIT' : r.valuation_basis}`)
+  lines.push(`Freshness: ${r.freshness ?? '—'} (vintage = snap − period_end)`)
+  return lines.join('\n')
+}
+
 /** Pure JS sort matching buildValuationSql (cheap-asc / quality-desc, NULLs last). Used in
  *  the injected/SSR path; the duckdb path returns rows already sorted by the same rule. */
 function sortRows(rows: ValuationRow[], metric: MetricKey): ValuationRow[] {
@@ -177,7 +191,7 @@ export default function Valuation({
                 >
                   <td className="l valn-tk">{r.ticker}</td>
                   <td className="l valn-sec">{r.sector ?? '—'}</td>
-                  <td className="l valn-asof">
+                  <td className="l valn-asof" title={asofTitle(r)}>
                     <span className={'vdot ' + (fr ?? 'none')} />
                     {r.as_of_period_end ?? '—'}
                   </td>
@@ -204,7 +218,8 @@ export default function Valuation({
         <span className="vfr-inline vfr-stale">stale ≤160d</span>
         <span className="vfr-inline vfr-overdue">overdue &gt;160d（行变暗）</span>
         · pctile 仅在 fresh cohort 内排（common-vintage，§10.5），stale 行显 <code>vint</code> 不进分母 · scope 下拉 = 全局
-        writer（先 filter 再排序再 pctile）。点行 → Stock。读同一 valuation_daily（与 board/Ocean 同源 C9）。
+        writer（先 filter 再排序再 pctile）。点行 → Stock。读同一 valuation_daily（与 board/Ocean 同源 C9）· 口径 =
+        <b>formal-filing PIT</b>（分母只用正式 SEC filing 的 trailing-4Q；hover As-of 列看 filed/effective/basis/lag）。
       </div>
     </div>
   )

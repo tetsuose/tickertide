@@ -1090,7 +1090,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.4 Stock 四格时间轴对齐 stack（PRD §9.6）：PRICE/VOLUME/REVENUE/P-S 四格共用一条 x 轴 + 季度网格贯穿 + 常驻 MM/DD 日期轴 + 贯穿四格的 hover 时间游标的纯 SVG",
-        "invariants": "props-only 纯 SVG、SSR 同形；主 x 轴=price.dates(~2y 日频)，所有格共用 X(i)；季度网格=每 revenue period_end 映射到最近交易日 index 的竖线贯穿四格；PRICE=K线+MA50/150/200+52wh 虚线、VOLUME=量柱(涨绿跌红)、REVENUE=季度 TTM bars(YoY 增绿降红、无同比灰)、P/S=每日线；各格独立 y range；price/ps date→index 直查、revenue period_end→最近≤index；底部常驻日期刻度(MM/DD，~6 点)；hover 时间游标=一条竖线贯穿四格 + 各格读该日各自序列(PRICE close/VOL 量/REVENUE 该日≤period_end 的最近季 TTM/P-S 当日值)+读数，为 hover-only overlay(hoverIndex 静息 null)故 SSR 不渲染游标；空 price 安全(返回空 svg)",
+        "invariants": "props-only 纯 SVG、SSR 同形；主 x 轴=price.dates(~2y 日频)，所有格共用 X(i)；季度网格=每 revenue period_end 映射到最近交易日 index 的竖线贯穿四格；PRICE=K线+MA50/150/200+52wh 虚线、VOLUME=量柱(涨绿跌红)、REVENUE=季度 TTM bars(YoY 增绿降红、无同比灰)、P/S=每日线；各格独立 y range；price/ps date→index 直查、revenue period_end→最近≤index；底部常驻日期刻度(MM/DD，~6 点)；hover 时间游标=一条竖线贯穿四格 + 各格读该日各自序列(PRICE close/VOL 量/REVENUE 该日≤period_end 的最近季 TTM/P-S 当日值)+读数，为 hover-only overlay(hoverIndex 静息 null)故 SSR 不渲染游标；空 price 安全(返回空 svg)；formal-filing PIT 标记(§10.5)：每季在 effective_eod_date(缺退 period_end)处一条 dim dashed 竖线 + baseline 连接线(bar 在 period_end、数据在 effective 才入 P/S，最新标 filed)，effective 与 period_end 同 index 或 pre-PIT 无 effective 则不画；hover REVENUE 取 effective_eod_date≤游标日的最新季(非 period_end，反 lookahead 且与 P/S 阶进一致)，附该季 period_end→effective 读数",
         "verification": "StockStack.test SSR：四格标签 PRICE/VOL/REVENUE/P-S、季度网格、PS 蓝线、candles/bars rect、空 price 不崩、静息态无游标；浏览器 smoke 四格对齐+季度竖线贯穿+游标各格读数"
       }
     },
@@ -1162,7 +1162,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.4 Stock SSR 测试 fixture：从 stock_bundle.py 导出的一个 bundle(TT07)，注入 Stock/StockStack 跳过 fetch",
-        "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染",
+        "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染；valuation + revenue_q 带 formal-filing PIT 字段(as_of_effective_eod/valuation_basis/disclosure_lag_days；revenue_q filed_date/effective_eod_date)供 §10.5 渲染断言",
         "verification": "Stock.test/StockStack.test 注入渲染；header/卡/分量/四格齐"
       }
     },
@@ -1174,7 +1174,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M5.2 Valuation SSR 测试 fixture：从 valuation.parquet 转出的 rows，注入 Valuation 跳过 duckdb-wasm",
-        "invariants": "逐字段镜像 valuation.parquet（含 peg/margin/themes/freshness/as_of_*）；覆盖 fresh/stale/overdue + 多 theme 票（TT01='AI,SEMI'）；date 列 ISO 字符串（与 duckdb view strftime 输出一致，保证注入路径与浏览器路径同形）",
+        "invariants": "逐字段镜像 valuation.parquet（含 peg/margin/themes/freshness/as_of_*）；覆盖 fresh/stale/overdue + 多 theme 票（TT01='AI,SEMI'）；date 列 ISO 字符串（与 duckdb view strftime 输出一致，保证注入路径与浏览器路径同形）；含 formal-filing PIT 列 as_of_effective_eod/valuation_basis/disclosure_lag_days",
         "verification": "Valuation.test 注入 data.rows SSR 渲染；列/freshness/themes 齐、可复跑"
       }
     },
@@ -1342,7 +1342,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "board.json(M1.1/M7.2) + ocean.json bulk + ocean/<T>.json detail(M8 v3) + rotation.json(M3.3) + stock bundle(M5.3/M7.4) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；Stock(card).chart 可选(schema v2 payload 拆分：bulk 不发 chart、卡片懒加载 board/<T>.json；保留 chart? 仅作旧 v1 数据 artifact 过渡兜底)，90d mini-chart=BoardChartDetail{schema_version,ticker,chart:ChartSeries}=board/<T>.json；ChartSeries 为共享形(Discovery 90d mini + StockBundle 2y price)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)",
+        "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；Stock(card).chart 可选(schema v2 payload 拆分：bulk 不发 chart、卡片懒加载 board/<T>.json；保留 chart? 仅作旧 v1 数据 artifact 过渡兜底)，90d mini-chart=BoardChartDetail{schema_version,ticker,chart:ChartSeries}=board/<T>.json；ChartSeries 为共享形(Discovery 90d mini + StockBundle 2y price)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)；formal-filing PIT(§10.5，可选字段、pre-PIT 缺省)：Valuation/ValuationRow/StockBundle.valuation 带 as_of_effective_eod(==as_of_filed,v1)/valuation_basis/disclosure_lag_days，RevenueQuarter 带 filed_date/effective_eod_date/disclosure_lag_days，OceanDetail 带 as_of_period_end/as_of_effective_eod columnar + valuation_basis 标量",
         "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData、Stock 按 StockBundle(含 ignition)消费无类型错"
       }
     },
@@ -1378,7 +1378,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "AC-M8 提交版回归 gate（vitest）：Ocean 纯绘制库 + v3 columnar(drawPtAt)/lazy detail(Tip 骨架) + drawOcean mock-ctx(≥500 点/scrubber/hover/pin/lasso/scope 淡化) + SSR scaffold",
-        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)",
+        "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)；Tip formal-filing PIT(§10.5)：formal filed 日 + basis tag",
         "verification": "npm test / make web-test 全绿（本文件 31 用例）"
       }
     },
@@ -1390,7 +1390,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Ocean surface（PRD §9.2，M8 v3）：Ignition × Valuation 海平面 canvas + 配色切换 + √市值尺寸 + 日期滑杆 + Play/Pause/prev/next 受控插值动画(rAF) + hover tip(三绘制字段即时 + 九证据字段 per-stock 懒加载) + click pin + lasso 框选 set 全局 scope(首个 scope writer C10)",
-        "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级",
+        "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级；tip 增 formal-filing PIT(§10.5)：per-day formal filed(detail.as_of_effective_eod[di]，滑杆回溯仍诚实)+basis tag",
         "verification": "SSR 含 canvas+两配色切换+ign_pct/P-S 轴标+日期 range(max=dates-1)+Play 按钮+latest EOD 标；Tip SSR：detail 在显 ignition+估值倍数+freshness、detail=null 显 … 骨架(三绘制字段仍显)、均不含 RS/Val pct；命中/绘制/插值/drawPtAt 正确性见 ocean-draw 头测；npm build(tsc) 通过；浏览器交互+性能(hover 首取 detail)"
       }
     },
@@ -1426,7 +1426,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Stock 视图 + StockStack AC（PRD §9.6，M5.4）+ 点火诊断(M7.4 PRD §10.8)的 SSR 回归门",
-        "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)",
+        "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)；formal-filing PIT(§10.5)：StockStack effective filed 标记(filed 标签+dashed 竖线)、Stock 口径注(formal-filing PIT/入估值序列/effective 日)",
         "verification": "npm test 全过；与 Stock.tsx + StockStack 合同一致"
       }
     },
@@ -1438,7 +1438,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Stock detail 视图（PRD §9.6，M5.4 + M7.4 点火诊断 + M8）：per-name bundle 懒加载 + 四格时间轴对齐 stack + ignition 诊断小节(头条)；composite 退出用户可见层(无大分数/无 5 分量 stack)",
-        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后",
+        "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后；formal-filing PIT 口径注(§10.5)：估值卡下显 formal-filing PIT + 财季 period_end/正式披露 filed/入估值序列 effective_eod/披露滞后，footer 同口径说明(REVENUE 在 period_end、P/S 在 effective 阶进、不用预披露/8-K/估计)",
         "verification": "Stock.test SSR(注入 bundle)断言头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 卡/无 composite 5 分量(stk-crow=0)/四格 stack + 点火诊断(5 ignition 分量/点火证据/persistence timeline/🔥candidate/○未点火/step clamp/无 k=/无 range 滑块/无 ignition 隐藏)；浏览器 smoke 懒加载 + 四格渲染"
       }
     },
@@ -1450,7 +1450,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Valuation 视图 AC（PRD §9.5，M5.2）的 SSR 回归门 + buildValuationSql 单测",
-        "invariants": "用 valuation.sample.json（从 parquet 转）+ renderToStaticMarkup 无 duckdb-wasm；断言全 universe 行 / PS 升序便宜在上(nulls last) / PEG+Mgn% 列 / 三档色+vint / sector+theme(themes 列)scope 过滤；buildValuationSql 测 ORDER BY metric ASC/DESC + NULLS LAST",
+        "invariants": "用 valuation.sample.json（从 parquet 转）+ renderToStaticMarkup 无 duckdb-wasm；断言全 universe 行 / PS 升序便宜在上(nulls last) / PEG+Mgn% 列 / 三档色+vint / sector+theme(themes 列)scope 过滤；buildValuationSql 测 ORDER BY metric ASC/DESC + NULLS LAST；As-of title formal-filing PIT(formal filed/effective/basis)",
         "verification": "npm test 全过；与 Valuation.tsx + lib/duckdb 合同一致"
       }
     },
@@ -1462,7 +1462,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "Valuation screener 视图（PRD §9.5，M5.2 正式版）：duckdb-wasm 浏览器查 valuation.parquet 渲染全 universe 横截面表",
-        "invariants": "数据从 duckdb-wasm 查 valuation.parquet（lib/duckdb.queryValuation，metric 变重查）或 initial 注入（SSR/测试，JS sortRows 同序）；列含 PEG/Mgn%（board.json 预览缺的两列）；as-of 三档上色取 freshness（fresh 绿/stale 黄/overdue 红变暗 C7/§10.5）；pctile 仅 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint；scope 下拉=全局 writer，先 filter（sector/theme[themes 列 split]/pinned）再排序再 pctile；读同一 valuation_daily（与 board/Ocean C9 同源）",
+        "invariants": "数据从 duckdb-wasm 查 valuation.parquet（lib/duckdb.queryValuation，metric 变重查）或 initial 注入（SSR/测试，JS sortRows 同序）；列含 PEG/Mgn%（board.json 预览缺的两列）；as-of 三档上色取 freshness（fresh 绿/stale 黄/overdue 红变暗 C7/§10.5）；pctile 仅 fresh cohort 内排（common-vintage §10.5）、非 fresh 显 vint；scope 下拉=全局 writer，先 filter（sector/theme[themes 列 split]/pinned）再排序再 pctile；读同一 valuation_daily（与 board/Ocean C9 同源）；As-of 单元格 title 暴露 formal-filing PIT(§10.5)：financial period/formal filed/effective/disclosure lag/basis；footer 标口径",
         "verification": "Valuation.test SSR（注入 rows）断言全 universe 行 / PS 升序便宜在上 / PEG+Mgn% 列 / 三档色+vint / sector+theme scope 过滤；浏览器 smoke duckdb-wasm 实查"
       }
     },

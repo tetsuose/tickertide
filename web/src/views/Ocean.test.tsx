@@ -66,15 +66,18 @@ function mkStock(
     cand: days.map((d) => (d && d.candidate ? 1 : 0)),
   }
 }
-// the lazy per-stock hover detail (nine columnar fields, index-aligned to dates 0..di).
+// the lazy per-stock hover detail (columnar fields, index-aligned to dates 0..di), including
+// the formal-filing PIT dates (as_of_period_end/as_of_effective_eod) + scalar valuation_basis.
 function mkDetail(di: number, over: Partial<OceanDetail> = {}): OceanDetail {
   const n = di + 1
   const num = (v: number) => Array<number | null>(n).fill(v)
   return {
-    schema_version: 3, ticker: 'X', n,
+    schema_version: 3, ticker: 'X', n, valuation_basis: 'formal_filing_pit',
     ignition: num(40), ign_persist_days: num(3), evs: num(5), pe: num(20),
     ev_ebitda: num(12), ret_10d: num(0.01), ret_1m: num(0.03), vol_mult: num(1.1),
     freshness: Array<'fresh' | null>(n).fill('fresh'),
+    as_of_period_end: Array<string | null>(n).fill('2026-04-16'),
+    as_of_effective_eod: Array<string | null>(n).fill('2026-05-23'),
     ...over,
   }
 }
@@ -356,5 +359,10 @@ describe('AC-M8: Tip shows ignition + valuation evidence (not RS/Val pct)', () =
   it('no longer shows the old RS percentile / Val percentile rows', () => {
     expect(html).not.toContain('RS pct')
     expect(html).not.toContain('Val pct')
+  })
+  it('shows the formal-filing PIT availability date + basis tag (PRD §10.5)', () => {
+    expect(html).toContain('formal filed')
+    expect(html).toContain('2026-05-23')          // detail.as_of_effective_eod[di]
+    expect(html).toContain('formal-filing PIT')   // basis tag in the hint
   })
 })

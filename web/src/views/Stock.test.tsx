@@ -37,6 +37,13 @@ describe('Stock detail (M5.4, per-name bundle)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
     expect(html).toContain('stk-stack')
   })
+
+  it('shows the formal-filing PIT basis note (period / filed / effective, §10.5)', () => {
+    const html = renderToStaticMarkup(<Stock initial={bundle} />)
+    expect(html).toContain('formal-filing PIT')
+    expect(html).toContain('入估值序列')
+    expect(html).toContain(bundle.valuation!.as_of_effective_eod!) // 2026-05-23
+  })
 })
 
 // M7.4 点火诊断 (ignition diagnostic) — the SECOND engine on the Stock surface (PRD §10.8).
@@ -144,6 +151,14 @@ describe('StockStack (M5.4 four panes, one x axis)', () => {
     // revenue bars + candles render as rects; svg present
     expect(html).toContain('<svg')
     expect(html).toContain('<rect')
+  })
+
+  it('draws formal-filing markers at effective_eod_date for in-window quarters (§10.5)', () => {
+    const html = renderToStaticMarkup(<StockStack bundle={bundle} />)
+    // the latest in-window quarter's effective marker is labeled "filed"
+    expect(html).toContain('>filed<')
+    // markers are dashed verticals (distinct from the solid quarter gridlines)
+    expect(html).toContain('stroke-dasharray="2 2"')
   })
 
   it('renders empty-safe with no price data', () => {

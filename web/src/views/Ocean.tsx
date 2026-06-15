@@ -45,6 +45,9 @@ export function Tip({
   const ret1m = detail?.ret_1m[di] ?? null
   const volMult = detail?.vol_mult[di] ?? null
   const fresh = detail?.freshness[di] ?? null
+  // formal-filing PIT (PRD §10.5): the per-day availability date, honest as the slider scrubs.
+  const effEod = detail?.as_of_effective_eod?.[di] ?? null
+  const basis = detail?.valuation_basis
   return (
     <div className="otip">
       <div className="otip-h">
@@ -70,11 +73,12 @@ export function Tip({
         </b>
       </div>
       <div className="otrow"><span>val freshness</span><b>{loading ? LOADING : fresh ?? '—'}</b></div>
+      {effEod != null && <div className="otrow"><span>formal filed</span><b>{effEod}</b></div>}
       <div className="otrow"><span>mkt cap</span><b>{fmtCap(stock.mktcap)}</b></div>
       {stock.themes.length > 0 && (
         <div className="otags">{stock.themes.map((t) => <span key={t.theme}>{t.theme}</span>)}</div>
       )}
-      <div className="ohint">click to pin · drag to lasso scope</div>
+      <div className="ohint">{basis === 'formal_filing_pit' ? 'formal-filing PIT · ' : ''}click to pin · drag to lasso scope</div>
     </div>
   )
 }
