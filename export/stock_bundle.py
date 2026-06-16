@@ -36,11 +36,11 @@ from compute import db  # noqa: E402
 # no parallel copy to drift). _ignition is a pure (ig, bars) -> dict; HIST_BARS just sizes the
 # window the evidence is derived from (board pulls 260; we already pull HIST_DAYS=504, both end
 # at the snapshot, and the evidence windows are the trailing 50/60 bars — identical either way).
-from export.board import _ignition  # noqa: E402
+from export.board import _breakout  # noqa: E402
 
 DATA_DIR = ROOT / "web" / "public" / "data"
 STOCK_DIR = DATA_DIR / "stock"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: ignition→base→breakout block (2026-06-16 spine pivot)
 HIST_DAYS = 504   # ~2y daily price / P/S history for the time-aligned stack (x axis)
 HIGH_WIN = 252    # 52-week high window
 
@@ -133,8 +133,8 @@ def _ps_series(con, ticker: str, snap) -> list[dict]:
 def build_bundle(con, ticker: str, snap) -> dict:
     head = con.execute(
         "SELECT u.name, u.sector, u.mktcap, d.composite, d.c_rs, d.c_high, d.c_trend, d.c_vol, d.c_accel, "
-        "d.ignition, d.ign_pct, d.ign_persist_days, d.ig_accel, d.ig_expand, d.ig_vsurge, "
-        "d.ig_breakout, d.ig_rsturn, d.ma50 "
+        "d.brk_strength, d.brk_strength_pct, d.brk_drift_step, d.brk_fit_gain, d.brk_clearance, "
+        "d.brk_tau_date, d.brk_base_slope, d.brk_brk_slope, d.brk_vsurge, d.ma50 "
         "FROM derived_daily d LEFT JOIN universe u ON u.ticker = d.ticker "
         "WHERE d.ticker = ? AND d.date = ?",
         [ticker, snap],
@@ -150,19 +150,18 @@ def build_bundle(con, ticker: str, snap) -> dict:
 
     bars = _bars(con, ticker, snap)
 
-    # ignition (PRD §10.8) — verbatim from derived_daily, assembled by board.py's canonical
-    # _ignition (C9, never recomputed). Same builder + same bars source as the Discovery card,
-    # so a name's 点火诊断 here and its Discovery 点火证据 are identical. `_vsurge_recon` is an
-    # internal C9 guard hook used by board.build_board; the bundle drops it.
-    ignition = None
-    if head is not None and head[9] is not None:
-        ig = {
-            "ignition": head[9], "ign_pct": head[10], "ign_persist_days": head[11],
-            "ig_accel": head[12], "ig_expand": head[13], "ig_vsurge": head[14],
-            "ig_breakout": head[15], "ig_rsturn": head[16], "ma50": head[17],
+    # base→breakout (PRD §10.8, core engine) — verbatim from derived_daily, assembled by
+    # board.py's canonical _breakout (C9, never recomputed). Same builder + same source as the
+    # Breakouts card, so a name's base/τ/breakout 诊断 here and its Breakouts card are identical.
+    breakout = None
+    if head is not None and head[10] is not None:
+        bk = {
+            "brk_strength": head[9], "brk_strength_pct": head[10], "brk_drift_step": head[11],
+            "brk_fit_gain": head[12], "brk_clearance": head[13], "brk_tau_date": head[14],
+            "brk_base_slope": head[15], "brk_brk_slope": head[16], "brk_vsurge": head[17],
+            "ma50": head[18],
         }
-        ignition = _ignition(ig, bars)
-        ignition.pop("_vsurge_recon", None)
+        breakout = _breakout(bk, snap)
 
     valuation = None
     if val is not None:
@@ -190,7 +189,7 @@ def build_bundle(con, ticker: str, snap) -> dict:
             "rs": _num(head[4], 4), "high": _num(head[5], 4), "trend": _num(head[6], 4),
             "vol": _num(head[7], 4), "accel": _num(head[8], 4),
         } if head else None,
-        "ignition": ignition,
+        "breakout": breakout,
         "valuation": valuation,
         "price": _price(con, ticker, snap, bars),
         "revenue_q": _revenue_q(con, ticker, snap),

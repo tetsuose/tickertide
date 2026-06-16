@@ -1,25 +1,27 @@
-"""M8 C9 cross-surface check: ocean.json positions trace to Stock/Discovery numbers.
+"""C9 cross-surface check: ocean.json positions trace to Breakouts/Stock numbers.
 
-AC (PRD §14): "Ocean 点位与 Stock 数字一致 (C9)". Ocean (export/ocean.py) and the Discovery
+AC (PRD §14): "Ocean 点位与 Stock 数字一致 (C9)". Ocean (export/ocean.py) and the Breakouts
 board (export/board.py) are two independent exporters reading the SAME DuckDB. This script
 proves they agree on the latest snapshot, so an Ocean point is traceable to the very numbers
-the Discovery card / Stock view show. M8 axes are Ignition × Valuation, so the C9 link is:
+the Breakouts card / Stock view show. After the 2026-06-16 spine pivot the axes are
+base→breakout-strength × Valuation, so the C9 link is:
 
   - same as_of date (both export the latest derived_daily snapshot);
-  - ign_pct (y): ocean bulk ign_pct[-1] == board.ignition.ign_pct (both = derived_daily.ign_pct);
-  - candidate : ocean bulk cand[-1] == board.ignition.candidate (both = the 持续点火 gate,
-    ign_pct>=90 AND ign_persist_days>=5 — a point above Ocean's sea level IS a Discovery candidate);
-  - ps (x)    : ocean bulk ps[-1] == board.valuation.ps (both = valuation_daily.ps at the latest date).
+  - brk_pct (y): ocean bulk brk_pct[-1] == board.breakout.brk_strength_pct
+    (both = derived_daily.brk_strength_pct);
+  - candidate : ocean bulk cand[-1] == board.breakout.candidate (both = the recall-first
+    top-decile gate brk_strength_pct>=90 — a point above Ocean's sea level IS a Breakouts
+    candidate; NO persistence gate, ignition retired);
+  - ps (x)    : ocean bulk ps[-1] == board.valuation.ps (both = valuation_daily.ps at latest).
 
-SCHEMA v3 SPLIT: ocean.json is now a COLUMNAR bulk carrying only the three draw fields
-(ps / ign_pct / cand) per stock; the nine hover fields live in per-stock ocean/<TICKER>.json.
-So this check ALSO proves the split stayed consistent (C9 across the two files):
+SCHEMA v4 SPLIT: ocean.json is a COLUMNAR bulk carrying only the three draw fields
+(ps / brk_pct / cand) per stock; the hover fields live in per-stock ocean/<TICKER>.json. So
+this check ALSO proves the split stayed consistent (C9 across the two files):
   - detail aligns to the bulk window (detail.n == len(ocean.dates));
-  - the bulk `cand` flag equals (ign_pct>=90 AND detail.ign_persist_days>=5) at the latest day
-    — i.e. the gate the bulk precomputes matches the persistence the detail carries;
+  - the bulk `cand` flag equals (brk_pct>=90) at the latest day (gate ↔ axis consistency);
   - detail evs[-1] == board.valuation.evs, and detail as_of_effective_eod[-1] ==
-    board.valuation.as_of_effective_eod (the detail's valuation + formal-filing PIT availability
-    date trace to the SAME board valuation_daily row; §10.5).
+    board.valuation.as_of_effective_eod (detail valuation + formal-filing PIT date trace to
+    the SAME board valuation_daily row; §10.5).
 
 Run on the SAME DB's two exports (see `make ocean-c9`). Exits non-zero on any mismatch so it
 can gate. Names/counts only — no secrets.
@@ -32,27 +34,26 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IGN_TOL = 0.1   # both rounded to 1 decimal off the same derived_daily.ign_pct
+BRK_TOL = 0.1   # both rounded to 1 decimal off the same derived_daily.brk_strength_pct
 PS_TOL = 0.01   # both rounded to 2 decimals off the same valuation_daily.ps
 EVS_TOL = 0.01  # both rounded to 2 decimals off the same valuation_daily.evs
-SEA_LEVEL = 90      # == export/ocean.py SEA_LEVEL (the candidate gate's ign_pct floor)
-IGN_PERSIST_MIN = 5  # == export/ocean.py IGN_PERSIST_MIN (the candidate gate's persistence floor)
+SEA_LEVEL = 90      # == export/ocean.py SEA_LEVEL (the candidate gate's brk_pct floor)
 
 
 def _latest_bulk(stock: dict):
-    """Reconstruct the latest (x, y, gate) from the v3 columnar bulk, or None if the last day
+    """Reconstruct the latest (x, y, gate) from the v4 columnar bulk, or None if the last day
     has no renderable position. Mirrors the export's inclusion rule (latest must be non-null)."""
     ps = stock.get("ps") or []
-    ig = stock.get("ign_pct") or []
+    brk = stock.get("brk_pct") or []
     cand = stock.get("cand") or []
-    if not ps or not ig or ps[-1] is None or ig[-1] is None:
+    if not ps or not brk or ps[-1] is None or brk[-1] is None:
         return None
-    return {"ps": ps[-1], "ign_pct": ig[-1], "candidate": bool(cand[-1]) if cand else False}
+    return {"ps": ps[-1], "brk_pct": brk[-1], "candidate": bool(cand[-1]) if cand else False}
 
 
 def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tuple[bool, list[str], dict]:
     """Return (ok, problems, stats). Compares the two exports' latest snapshot, plus (when a
-    detail map is given) the v3 bulk↔detail split for the same shared tickers."""
+    detail map is given) the v4 bulk↔detail split for the same shared tickers."""
     problems: list[str] = []
     detail_by_ticker = detail_by_ticker or {}
 
@@ -63,7 +64,7 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
     b_by = {s["ticker"]: s for s in board.get("stocks", [])}
     shared = [s for s in ocean.get("stocks", []) if s["ticker"] in b_by]
 
-    ign_checked = ps_checked = cand_checked = 0
+    brk_checked = ps_checked = cand_checked = 0
     gate_checked = evs_checked = detail_checked = aoe_checked = 0
     for o in shared:
         t = o["ticker"]
@@ -72,18 +73,18 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
         if pt is None:
             problems.append(f"{t}: ocean latest pt is null")
             continue
-        big = b.get("ignition") or {}
-        # ign_pct: ocean.ign_pct vs board.ignition.ign_pct (both = derived_daily.ign_pct).
-        b_ign = big.get("ign_pct")
-        if b_ign is not None and pt.get("ign_pct") is not None:
-            ign_checked += 1
-            if abs(pt["ign_pct"] - b_ign) > IGN_TOL:
-                problems.append(f"{t}: ign_pct ocean={pt['ign_pct']} vs board={b_ign}")
-        # candidate: the 持续点火 gate must agree (sea-level population == Discovery candidates).
-        if "candidate" in big:
+        bb = b.get("breakout") or {}
+        # brk_pct: ocean.brk_pct vs board.breakout.brk_strength_pct (both = derived_daily.brk_strength_pct).
+        b_brk = bb.get("brk_strength_pct")
+        if b_brk is not None and pt.get("brk_pct") is not None:
+            brk_checked += 1
+            if abs(pt["brk_pct"] - b_brk) > BRK_TOL:
+                problems.append(f"{t}: brk_pct ocean={pt['brk_pct']} vs board={b_brk}")
+        # candidate: the recall-first top-decile gate must agree (sea-level population == board candidates).
+        if "candidate" in bb:
             cand_checked += 1
-            if bool(pt["candidate"]) != bool(big["candidate"]):
-                problems.append(f"{t}: candidate ocean={pt['candidate']} vs board={big['candidate']}")
+            if bool(pt["candidate"]) != bool(bb["candidate"]):
+                problems.append(f"{t}: candidate ocean={pt['candidate']} vs board={bb['candidate']}")
         # ps: ocean.ps vs board.valuation.ps (both = valuation_daily.ps at latest).
         b_ps = (b.get("valuation") or {}).get("ps")
         if b_ps is not None and pt.get("ps") is not None:
@@ -91,22 +92,20 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
             if abs(pt["ps"] - b_ps) > PS_TOL:
                 problems.append(f"{t}: ps ocean={pt['ps']} vs board={b_ps}")
 
-        # v3 split: the per-stock detail file must align to the bulk window and stay consistent.
+        # v4 split: the per-stock detail file must align to the bulk window and stay consistent.
         det = detail_by_ticker.get(t)
         if det is not None:
             detail_checked += 1
             if n_dates and det.get("n") != n_dates:
                 problems.append(f"{t}: detail n={det.get('n')} != ocean dates {n_dates}")
-            persist = (det.get("ign_persist_days") or [None])[-1]
-            # the bulk's precomputed `cand` must equal the gate recomputed from the detail's
-            # persistence + the bulk's ign_pct (proves the split didn't desync the gate).
-            if persist is not None and pt.get("ign_pct") is not None:
+            # the bulk's precomputed `cand` must equal the recall-first gate recomputed from the
+            # bulk's brk_pct (proves the gate ↔ axis pairing; no persistence — ignition retired).
+            if pt.get("brk_pct") is not None:
                 gate_checked += 1
-                gate = pt["ign_pct"] >= SEA_LEVEL and persist >= IGN_PERSIST_MIN
+                gate = pt["brk_pct"] >= SEA_LEVEL
                 if bool(gate) != bool(pt["candidate"]):
                     problems.append(
-                        f"{t}: detail gate mismatch cand={pt['candidate']} but "
-                        f"ign_pct={pt['ign_pct']}/persist={persist}"
+                        f"{t}: gate mismatch cand={pt['candidate']} but brk_pct={pt['brk_pct']}"
                     )
             # detail evs traces to the SAME board valuation number.
             d_evs = (det.get("evs") or [None])[-1]
@@ -130,7 +129,7 @@ def check(board: dict, ocean: dict, detail_by_ticker: dict | None = None) -> tup
         "board_stocks": len(b_by),
         "ocean_stocks": len(ocean.get("stocks", [])),
         "shared": len(shared),
-        "ign_checked": ign_checked,
+        "brk_checked": brk_checked,
         "cand_checked": cand_checked,
         "ps_checked": ps_checked,
         "detail_checked": detail_checked,
@@ -155,11 +154,11 @@ def _load_detail(detail_dir: Path, tickers) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="TickerTide M8 C9 cross-surface check (ocean vs board, v3 bulk + detail).")
+    ap = argparse.ArgumentParser(description="TickerTide C9 cross-surface check (ocean vs board, v4 bulk + detail).")
     ap.add_argument("--board", default=str(ROOT / "web" / "public" / "data" / "board.json"))
     ap.add_argument("--ocean", default=str(ROOT / "web" / "public" / "data" / "ocean.json"))
     ap.add_argument("--ocean-detail-dir", default=str(ROOT / "web" / "public" / "data" / "ocean"),
-                    help="per-stock hover detail dir (ocean/<TICKER>.json, schema v3)")
+                    help="per-stock hover detail dir (ocean/<TICKER>.json, schema v4)")
     args = ap.parse_args(argv)
 
     board = json.loads(Path(args.board).read_text())
@@ -170,13 +169,13 @@ def main(argv: list[str] | None = None) -> int:
     ok, problems, stats = check(board, ocean, detail_by_ticker)
 
     print(f"[ocean-c9] as_of board={board.get('as_of_date')} ocean={ocean.get('as_of_date')}  "
-          f"shared={stats['shared']}  ign_checked={stats['ign_checked']}  "
+          f"shared={stats['shared']}  brk_checked={stats['brk_checked']}  "
           f"cand_checked={stats['cand_checked']}  ps_checked={stats['ps_checked']}  "
           f"detail_checked={stats['detail_checked']}  gate_checked={stats['gate_checked']}  "
           f"evs_checked={stats['evs_checked']}  aoe_checked={stats['aoe_checked']}")
     if ok:
-        print("[ocean-c9] GATE_PASS C9 ocean↔board consistent (ign_pct=ign_pct, candidate=持续点火 gate, "
-              "ps=valuation_daily.ps) + v3 bulk↔detail split aligned (gate==ign_pct&persist, evs traces)")
+        print("[ocean-c9] GATE_PASS C9 ocean↔board consistent (brk_pct=brk_strength_pct, "
+              "candidate=recall-first top-decile gate, ps=valuation_daily.ps) + v4 bulk↔detail aligned")
         return 0
     print(f"[ocean-c9] GATE_FAIL {len(problems)} mismatch(es):", file=sys.stderr)
     for p in problems[:20]:

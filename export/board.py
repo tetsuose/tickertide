@@ -32,24 +32,20 @@ traceable to one source (PRD §9.3 "同一份 export"):
                           (transparent proxy; a dedicated breakout signal is a
                           later milestone — it is NOT an engine number)
 
-The SECOND engine (ignition = early discovery, PRD §10.8) is carried per stock
-alongside composite. Discovery (M7.3) sorts by "持续点火" — sustained ignition —
-NOT composite, so each stock ships its ignition score, cross-sectional ign_pct,
-top-decile persistence streak, the 5 raw self-relative components ig_* verbatim
-from derived_daily (NEVER recomputed here — C9, same source as compute/run.py),
-and an `ign_candidate` flag = ign_pct>=90 AND ign_persist_days>=IGN_PERSIST_MIN
-(the persistence filter, PRD §10.8.2 — instantaneous ignition has no lift; only
-sustained ignition does). ignition is the project core and has no tunable
-parameter; the early<->reliable knob is gone (PRD §16) — composite is the
-fixed-weight (k=0.5) confirmation side-read, ignition the discovery engine.
+The CORE engine (base→breakout, PRD §10.8; 2026-06-16 spine pivot — replaces ignition,
+which is retired) is carried per stock. Breakouts (the renamed Discovery, §9.3) sorts by
+base→breakout STRENGTH, so each stock ships its cross-sectional `brk_strength_pct`, raw
+`brk_strength`, the estimated changepoint `brk_tau_date`, and the dimensionless features
+(base_slope/σ, brk_slope/σ, drift_step, fit_gain, ceiling clearance, volume surge) — all
+verbatim from derived_daily (NEVER recomputed here — C9, same source as compute/run.py) —
+plus a `candidate` flag = brk_strength_pct>=BRK_TOP_DECILE. recall-first: top decile = on
+the board; NO persistence gate (ignition retired), false positives are expected and
+fundamentals/financials are the downstream precision stage (§10.8.3). No tunable knob.
 
-The ignition card also ships human-readable 点火证据 (ignition evidence) — the
-plain-language form of what lit the engine: breakout day / volume surge× /
-10d-vs-50d step-rate ratio / whether price reclaimed MA50. vol_mult× is the
-engine's own ig_vsurge verbatim; the breakout day + step-rate ratio are derived
-from the SAME bars the chart ships (same windows ignition.py uses: BREAKOUT_WIN
-=60, ACCEL_FAST/SLOW=10/50), so the evidence stays traceable to one source and
-mirrors the raw components without re-scoring the engine.
+The base/τ/breakout 证据 mirrors the stored features (flat base → steep breakout: the kink
+date τ, days since τ, drift_step, fit_gain, ceiling clearance, breakout-side volume surge),
+so the card shows what the changepoint fit found without re-scoring the engine. composite is
+also retired (kept transitionally for the C9 reconstruct guard until the web stops reading it).
 
 This export carries each engine's score verbatim and never recomputes it; the
 client reads the exported composite directly and uses the c_* only to show each
@@ -77,7 +73,7 @@ sys.path.insert(0, str(ROOT))
 
 from compute import db, signals  # noqa: E402
 
-SCHEMA_VERSION = 2  # v2: payload split — bulk board.json (no chart) + per-stock board/<T>.json
+SCHEMA_VERSION = 3  # v3: ignition→base→breakout block (2026-06-16 spine pivot); v2 = payload split
 DEFAULT_OUT = ROOT / "web" / "public" / "data" / "board.json"
 
 CHART_DAYS = 90          # mini-chart window (PRD §9.3: ~90d K线)
@@ -89,13 +85,10 @@ FRESH_DAYS = 95          # <=95d = fresh (current quarter reported), PRD §10.5
 STALE_DAYS = 160         # <=160d = stale (one quarter behind); >160d = overdue
 COMPOSITE_TOL = 1e-6     # C9 self-check tolerance (engine vs reconstructed)
 
-# ignition (PRD §10.8) — sustained-ignition candidate gate + evidence windows.
-IGN_TOP_DECILE = 90      # ign_pct >= this = top decile (lit), PRD §10.8.2
-IGN_PERSIST_MIN = 5      # consecutive lit days for the "持续点火" candidate (§3 default ~5)
-IGN_BREAKOUT_WIN = 60    # breakout/reclaim prior-high window (= ignition.BREAKOUT_WIN)
-IGN_ACCEL_FAST = 10      # step-rate fast window (= ignition.ACCEL_FAST)
-IGN_ACCEL_SLOW = 50      # step-rate slow window (= ignition.ACCEL_SLOW)
-IGNITION_TOL = 1e-6      # ignition self-check tolerance (stored vs reconstructed component)
+# base→breakout (PRD §10.8, CORE engine after the 2026-06-16 spine pivot) — recall-first
+# top-decile candidate gate. No persistence gate (ignition retired); false positives are
+# expected, fundamentals are the downstream precision stage (§10.8.3).
+BRK_TOP_DECILE = 90      # brk_strength_pct >= this = top-decile candidate (recall-first, §10.8)
 
 
 def freshness(age_days: int | None) -> str | None:
@@ -201,82 +194,53 @@ def _evidence(d: dict, bars: list[tuple], snap) -> dict:
     }
 
 
-def _ignition(ig: dict, bars: list[tuple]) -> dict:
-    """Per-stock ignition block + 点火证据, verbatim from derived_daily (C9).
+def _breakout(bk: dict, snap) -> dict:
+    """Per-stock base→breakout block, verbatim from derived_daily (C9, core engine §10.8).
 
-    `ig` carries the engine's stored ignition numbers (NEVER recomputed here):
-    score `ignition`∈[0,100], cross-sectional `ign_pct`∈[0,100], persistence
-    streak `ign_persist_days`, the 5 raw self-relative components ig_*, and ma50.
-    `candidate` = top-decile AND sustained (PRD §10.8.2) — Discovery's "持续点火"
-    sort key. The components are shipped raw so the client can show what lit the
-    engine without re-scoring it.
+    `bk` carries the engine's stored base→breakout numbers (NEVER recomputed here):
+    cross-sectional `brk_strength_pct`∈[0,100], raw `brk_strength`, the estimated changepoint
+    `brk_tau_date`, and the dimensionless features (base_slope/σ, brk_slope/σ, drift_step,
+    fit_gain, ceiling clearance, volume surge). `candidate` = top decile (brk_strength_pct>=90)
+    — Breakouts' recall-first sort key; NO persistence gate (ignition retired), false positives
+    are expected and fundamentals are the downstream precision stage (§10.8.3).
 
-    The human-readable 点火证据 (evidence) mirrors the raw components from the SAME
-    bars the chart ships (same windows ignition.py uses): vol_mult× is the engine's
-    own ig_vsurge verbatim; breakout_day is the date of the trailing-60d adj_close
-    high (the breakout reference); reclaimed_ma50 is the close>MA50 gate inside
-    ig_breakout; step_rate_ratio is (ret_10/10)/(ret_50/50), the readable form of
-    ig_accel. Returns ig_vsurge under `_vsurge_recon` so build_board can assert the
-    derived multiplier reproduces the stored component (ignition C9 guard)."""
-    score = ig.get("ignition")
-    pct = ig.get("ign_pct")
-    persist = ig.get("ign_persist_days")
-    candidate = (
-        pct is not None and persist is not None
-        and pct >= IGN_TOP_DECILE and persist >= IGN_PERSIST_MIN
-    )
+    The base/τ/breakout 证据 mirrors the stored features so the card can show what the kink
+    fit found (flat base → steep breakout) without re-scoring the engine. All values are read
+    verbatim from derived_daily; the only derived field is days_since_tau = snap − τ."""
+    pct = bk.get("brk_strength_pct")
+    tau = bk.get("brk_tau_date")
+    candidate = pct is not None and pct >= BRK_TOP_DECILE
 
-    adj = [b[5] for b in bars]
-    ma50 = ig.get("ma50")
-    close = adj[-1] if adj else None
-    reclaimed_ma50 = (close > ma50) if (close is not None and ma50 is not None) else None
+    days_since_tau = None
+    if tau is not None:
+        try:
+            td = tau if isinstance(tau, date) else date.fromisoformat(str(tau))
+            days_since_tau = (snap - td).days
+        except (TypeError, ValueError):
+            days_since_tau = None
 
-    # breakout day: date of the trailing-60d adj_close high (= ignition's hi60 ref).
-    breakout_day = days_since_breakout = None
-    win = adj[-IGN_BREAKOUT_WIN:]
-    win_bars = bars[-IGN_BREAKOUT_WIN:]
-    if win and any(p is not None for p in win):
-        hi_i, run_max = 0, -math.inf
-        for i, p in enumerate(win):
-            if p is not None and p >= run_max:
-                run_max, hi_i = p, i
-        breakout_day = _iso(win_bars[hi_i][0])
-        days_since_breakout = (bars[-1][0] - win_bars[hi_i][0]).days
-
-    # 10d-vs-50d step-rate ratio: readable form of ig_accel (slope steepening).
-    step_rate_ratio = None
-    if len(adj) > IGN_ACCEL_SLOW and adj[-1] is not None:
-        f0, s0 = adj[-1 - IGN_ACCEL_FAST], adj[-1 - IGN_ACCEL_SLOW]
-        if f0 and s0:
-            r_fast = (adj[-1] / f0 - 1) / IGN_ACCEL_FAST
-            r_slow = (adj[-1] / s0 - 1) / IGN_ACCEL_SLOW
-            if r_slow:
-                step_rate_ratio = r_fast / r_slow
-
-    block = {
-        "ignition": _num(score, 2),
-        "ign_pct": _num(pct, 1),
-        "ign_persist_days": int(persist) if persist is not None else None,
+    return {
+        "brk_strength_pct": _num(pct, 1),
+        "brk_strength": _num(bk.get("brk_strength"), 4),
         "candidate": bool(candidate),
-        "components": {
-            "accel": _num(ig.get("ig_accel"), 4),
-            "expand": _num(ig.get("ig_expand"), 4),
-            "vsurge": _num(ig.get("ig_vsurge"), 4),
-            "breakout": _num(ig.get("ig_breakout"), 4),
-            "rsturn": _num(ig.get("ig_rsturn"), 4),
+        "features": {
+            "base_slope": _num(bk.get("brk_base_slope"), 3),
+            "brk_slope": _num(bk.get("brk_brk_slope"), 3),
+            "drift_step": _num(bk.get("brk_drift_step"), 3),
+            "fit_gain": _num(bk.get("brk_fit_gain"), 3),
+            "clearance": _num(bk.get("brk_clearance"), 3),
+            "vsurge": _num(bk.get("brk_vsurge"), 3),
         },
         "evidence": {
-            "breakout_day": breakout_day,
-            "days_since_breakout": days_since_breakout,
-            "vol_mult": _num(ig.get("ig_vsurge"), 3),   # engine ig_vsurge verbatim (rounded for display)
-            "step_rate_ratio": _num(step_rate_ratio, 3),
-            "reclaimed_ma50": reclaimed_ma50,
-            "ma50": _num(ma50, 4),
+            "tau_date": _iso(tau),
+            "days_since_tau": days_since_tau,
+            "drift_step": _num(bk.get("brk_drift_step"), 3),
+            "fit_gain": _num(bk.get("brk_fit_gain"), 3),
+            "clearance": _num(bk.get("brk_clearance"), 3),
+            "vol_mult": _num(bk.get("brk_vsurge"), 3),   # breakout-side volume surge (stored col, C9)
+            "ma50": _num(bk.get("ma50"), 4),
         },
-        # unrounded ig_vsurge passed straight through, for the C9 identity guard.
-        "_vsurge_recon": _num(ig.get("ig_vsurge")),
     }
-    return block
 
 
 def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 60) -> tuple[dict, dict]:
@@ -302,8 +266,8 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
                d.composite, d.rank_in_universe,
                d.c_rs, d.c_high, d.c_trend, d.c_vol, d.c_accel,
                d.ret_63, d.ret_126, d.high_prox,
-               d.ignition, d.ign_pct, d.ign_persist_days,
-               d.ig_accel, d.ig_expand, d.ig_vsurge, d.ig_breakout, d.ig_rsturn, d.ma50
+               d.brk_strength, d.brk_strength_pct, d.brk_drift_step, d.brk_fit_gain,
+               d.brk_clearance, d.brk_tau_date, d.brk_base_slope, d.brk_brk_slope, d.brk_vsurge, d.ma50
         FROM derived_daily d
         LEFT JOIN universe u ON u.ticker = d.ticker
         WHERE d.date = ?
@@ -313,16 +277,16 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
     ).fetchall()
 
     stocks, max_drift, n_val = [], 0.0, 0
-    ign_max_drift, n_ign, n_cand = 0.0, 0, 0
+    n_brk, n_cand = 0, 0
     chart_by_ticker: dict[str, dict] = {}  # v2 split: per-stock mini-chart (board/<t>.json)
     for r in head:
         t = r[0]
         comp = {"rs": r[6], "high": r[7], "trend": r[8], "vol": r[9], "accel": r[10]}
         d = {"ret_63": r[11], "ret_126": r[12], "high_prox": r[13]}
-        ig = {
-            "ignition": r[14], "ign_pct": r[15], "ign_persist_days": r[16],
-            "ig_accel": r[17], "ig_expand": r[18], "ig_vsurge": r[19],
-            "ig_breakout": r[20], "ig_rsturn": r[21], "ma50": r[22],
+        bk = {
+            "brk_strength": r[14], "brk_strength_pct": r[15], "brk_drift_step": r[16],
+            "brk_fit_gain": r[17], "brk_clearance": r[18], "brk_tau_date": r[19],
+            "brk_base_slope": r[20], "brk_brk_slope": r[21], "brk_vsurge": r[22], "ma50": r[23],
         }
 
         bars = con.execute(
@@ -371,16 +335,14 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
         if r[4] is not None:
             max_drift = max(max_drift, abs(recon - r[4]))
 
-        ign_block = _ignition(ig, bars)
-        if ign_block["ignition"] is not None:
-            n_ign += 1
-        if ign_block["candidate"]:
+        brk_block = _breakout(bk, snap)
+        if brk_block["brk_strength_pct"] is not None:
+            n_brk += 1
+        if brk_block["candidate"]:
             n_cand += 1
-        # ignition C9 guard: the shipped vol_mult× must trace to the stored ig_vsurge
-        # component verbatim (same source) — catches ignition export drift / re-scoring.
-        ev_vsurge = ign_block.pop("_vsurge_recon")
-        if ev_vsurge is not None and r[19] is not None:
-            ign_max_drift = max(ign_max_drift, abs(ev_vsurge - r[19]))
+        # No reconstruct guard for base→breakout: every field is read verbatim from
+        # derived_daily (the engine is NEVER re-derived here), so there is no drift to catch
+        # (unlike the composite C9 guard below, which re-weights c_* and must match).
 
         stocks.append({
             "ticker": t,
@@ -393,7 +355,7 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
             "rank": int(r[5]) if r[5] is not None else None,
             "components": {key: _num(comp[key], 4) for key in comp},
             "evidence": _evidence(d, bars, snap),
-            "ignition": ign_block,
+            "breakout": brk_block,
             "valuation": valuation,
         })
         # v2 payload split: the ~90d mini-chart rides in its OWN per-stock file
@@ -410,23 +372,15 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
             f"C9 drift: reconstructed composite differs from engine by {max_drift:.6f} "
             f"(> {COMPOSITE_TOL}). Exported c_* or weights({k}) are out of sync with the engine."
         )
-    if ign_max_drift > IGNITION_TOL:
-        raise RuntimeError(
-            f"ignition C9 drift: evidence vol_mult differs from stored ig_vsurge by "
-            f"{ign_max_drift:.6f} (> {IGNITION_TOL}). Ignition evidence is out of sync "
-            f"with derived_daily — the export is re-deriving instead of reading C9."
-        )
-
     bulk = {
         "schema_version": SCHEMA_VERSION,
         "as_of_date": _iso(snap),
         "composite_recon_max_drift": round(max_drift, 9),
-        "ignition_recon_max_drift": round(ign_max_drift, 9),
-        "ignition_persist_min": IGN_PERSIST_MIN,
         "count": len(stocks),
         "valuation_coverage": n_val,
-        "ignition_coverage": n_ign,
-        "ignition_candidates": n_cand,
+        "breakout_coverage": n_brk,
+        "breakout_candidates": n_cand,
+        "brk_top_decile": BRK_TOP_DECILE,
         "stocks": stocks,
     }
     _self_check(bulk, chart_by_ticker)
@@ -510,9 +464,9 @@ def main(argv: list[str] | None = None) -> int:
     kb = out.stat().st_size / 1024
     chart_kb = chart_bytes / 1024
     print(f"[board] {args.out}  as_of={board['as_of_date']}  stocks={board['count']}  "
-          f"valuation={board['valuation_coverage']}  ignition={board['ignition_coverage']}  "
-          f"ign_candidates={board['ignition_candidates']}(persist>={board['ignition_persist_min']})  "
-          f"C9_drift={board['composite_recon_max_drift']}  ign_drift={board['ignition_recon_max_drift']}  "
+          f"valuation={board['valuation_coverage']}  breakout={board['breakout_coverage']}  "
+          f"brk_candidates={board['breakout_candidates']}(brk_pct>={board['brk_top_decile']})  "
+          f"C9_drift={board['composite_recon_max_drift']}  "
           f"bulk={kb:.1f}KB  charts={len(chart_by_ticker)}×→{chart_kb:.1f}KB")
     return 0
 
