@@ -65,6 +65,20 @@ def run_checks(con) -> list[tuple[str, bool, str]]:
             persist_ok = (g[4] is None) or (g[4] >= 0)
             checks.append(("ign_persist_days >= 0", persist_ok, f"persist∈[{g[4]},{g[5]}]"))
 
+        # base→breakout (PRD §10.8, CORE engine after the 2026-06-16 spine pivot): the per-stock
+        # changepoint features + cross-sectional brk_strength_pct populate the SAME derived_daily
+        # row (C9). brk_strength_pct∈[0,100], brk_strength>=0 (recall-first; 0 = guards failed).
+        n_brk = con.execute("SELECT count(*) FROM derived_daily WHERE brk_strength_pct IS NOT NULL").fetchone()[0]
+        checks.append(("base→breakout generated", n_brk > 0, f"{n_brk} rows with brk_strength_pct"))
+        if n_brk > 0:
+            gb = con.execute(
+                "SELECT min(brk_strength_pct), max(brk_strength_pct), min(brk_strength) "
+                "FROM derived_daily WHERE brk_strength_pct IS NOT NULL"
+            ).fetchone()
+            brk_range = gb[0] >= -1e-9 and gb[1] <= 100 + 1e-9 and (gb[2] is None or gb[2] >= -1e-9)
+            checks.append(("brk_strength_pct∈[0,100], brk_strength>=0", brk_range,
+                           f"brk_pct∈[{gb[0]:.1f},{gb[1]:.1f}] brk_strength_min={gb[2]}"))
+
     # fundamentals_q formal-filing only (AC-7, PRD §10.5): v1 ingests ONLY formal SEC
     # filings — no preliminary / 8-K earnings / press release / estimate rows.
     fq = db.count(con, "fundamentals_q")

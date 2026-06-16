@@ -65,7 +65,7 @@ jobs:
           make theme-c9
           make ocean-c9
           make valuation-c9
-          make ignition-c9
+          make breakout-c9
 
       - name: web build (static dist, data bundled from public/data)
         # VITE_DUCKDB_R2_BASE points the Valuation screener's duckdb-wasm at the R2-hosted
