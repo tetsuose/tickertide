@@ -1,9 +1,25 @@
 # TickerTide — ROADMAP（开发方案）
 
 > PRD §13 里程碑的执行展开。**M0·M1·M2·M3 + 部署轨 D 写到可直接 `make task-open` 执行的粒度（★ 详细方案）；M4–M6 给纲要**（目标/前置/关键未决/验收指针），随各自临近再细化。**D（部署 + 夜间自动化）是正交 infra 轨，建议 M3 后与 M4/M5 并行。**
-> **进度（2026-06-13）：M0 ✅（PR #1–#8）· M1 ✅（#9–#14）· M2 ✅ Ocean（#16–#20）· M3 ✅ Rotation（#25–#29）· D ✅ 部署（#37–#44、#48、#50；tickertide.pages.dev）· M4 ✅ DONE 主题分类（M4.1–4.4 #32–#36、M4.6 接线 #51、M4.5 LLM 抽取+human 审批 #52）· M5 ✅ DONE 正式版（Valuation duckdb-wasm 全 universe + PEG/Mgn% #57/#58、Stock per-name bundle + 四格时间轴 stack #59/#60、收口 #61；预览 #53；wasm 走 R2 绕 Pages 25MiB 限——待 operator 配 R2）· M7 ✅ DONE ignition 发现引擎 + Discovery 持续点火榜（M7.1 compute #64、M7.2 export #65、M7.3 Discovery #66、M7.4 Stock 诊断 #67、M7.5 收口 #68；`make ac-m7` 一键复验 AC-M7 五条）· M8 ✅ DONE Ocean 重构（Ignition × Valuation 海平面图 + 日期滑杆/Play 插值动画；composite 退出用户可见层）。**
+> **进度（2026-06-13）：M0 ✅（PR #1–#8）· M1 ✅（#9–#14）· M2 ✅ Ocean（#16–#20）· M3 ✅ Rotation（#25–#29）· D ✅ 部署（#37–#44、#48、#50；tickertide.pages.dev）· M4 ✅ DONE 主题分类（M4.1–4.4 #32–#36、M4.6 接线 #51、M4.5 LLM 抽取+human 审批 #52）· M5 ✅ DONE 正式版（Valuation duckdb-wasm 全 universe + PEG/Mgn% #57/#58、Stock per-name bundle + 四格时间轴 stack #59/#60、收口 #61；预览 #53；wasm 走 R2 绕 Pages 25MiB 限——待 operator 配 R2）· M7 ✅ DONE ignition 发现引擎 + Discovery 持续点火榜（M7.1 compute #64、M7.2 export #65、M7.3 Discovery #66、M7.4 Stock 诊断 #67、M7.5 收口 #68；`make ac-m7` 一键复验 AC-M7 五条）· M8 ✅ DONE Ocean 重构（Ignition × Valuation 海平面图 + 日期滑杆/Play 插值动画；composite 退出用户可见层）。 · **2026-06-16 SPINE PIVOT**：核心引擎转 base→breakout、ignition+composite 退役、Discovery→Breakouts、Ocean 纵轴改 base→breakout 强度（PRD §10.8/§16 已修订 ✅）；M7/M8 重做中（M7⟲ 引擎换芯 / M8⟲ Ocean 纵轴）。**
 > **M4.5 NVDA demo（真实上线）**：`themes/extract.py` 拉真实 10-K → `claude` CLI（print 模式，**订阅 plan 额度，不接 API key**）→ 候选；sejonep 审批 AI 0.90/SEMI 1.00（C6）。真实 nightly 暴露并修了 2 个数据成熟度 bug：**theme 历史不足**（#54 seed as_of 回填到 bars 最早日 + check_theme graceful SKIP）、**approved as_of off-by-one**（#55 默认用 10-K filing 日而非审批日，否则最新 EOD board 回落 seed）。线上 NVDA 现显 SEMI 100%/AI 90% chip、theme Rotation 8 线 ×52 周。
-> **ignition 双引擎（2026-06-13 立项 → ✅ M7 DONE）**：重新梳理算法发现现有 `composite` 是趋势确认引擎、系统性滞后于「早期发现」初衷 → 新增 **`ignition` 发现引擎**（短窗口/拐点/突破，与 composite 并列）。实证（`analysis/verify_ignition.py` timing + `analysis/precision_ignition.py` precision）：ignition 比 composite 早 14–45 周点亮已知大牛股（ARM/MRVL/AAOI/SNDK）；**瞬时点火无精度，唯 persistence（持续 ~5 日）有 lift** → **Discovery = 「持续点火」榜**，三级漏斗（触发→持续→翻财报）。规格 PRD §10.8/§16、BUILD-PLAN §4.8。**M7.1–M7.5 已全 merged（#64–#68）**：ignition 5 分量落 `derived_daily` → board 持续点火榜 + 点火证据 → Discovery 改持续点火排序 → Stock 点火诊断 → AC-M7 五条一键复验（`make ac-m7`）。**双引擎脊柱兑现，下一步 M6 扩量。**
+> **ignition 双引擎（2026-06-13 立项 → ✅ M7 DONE）**：重新梳理算法发现现有 `composite` 是趋势确认引擎、系统性滞后于「早期发现」初衷 → 新增 **`ignition` 发现引擎**（短窗口/拐点/突破，与 composite 并列）。实证（`analysis/verify_ignition.py` timing + `analysis/precision_ignition.py` precision）：ignition 比 composite 早 14–45 周点亮已知大牛股（ARM/MRVL/AAOI/SNDK）；**瞬时点火无精度，唯 persistence（持续 ~5 日）有 lift** → **Discovery = 「持续点火」榜**，三级漏斗（触发→持续→翻财报）。规格 PRD §10.8/§16、BUILD-PLAN §4.8。**M7.1–M7.5 已全 merged（#64–#68）**：ignition 5 分量落 `derived_daily` → board 持续点火榜 + 点火证据 → Discovery 改持续点火排序 → Stock 点火诊断 → AC-M7 五条一键复验（`make ac-m7`）。**双引擎脊柱兑现。**（⚠️ **2026-06-16 SPINE PIVOT 后此 ignition 双引擎方案已 SUPERSEDED**——见下方 Pivot 段。）
+
+---
+
+## 🔄 2026-06-16 Spine Pivot — 核心引擎转 base→breakout（ignition 退役）
+
+> **背景**：深挖发现 ignition（瞬时点火 + persistence）forward edge ≈ 0 causal（全宇宙 754 池实测，中位 lift≈0；唯一有 lift 的 e_persist 用未来不可因果实现）。北极星 = 在 multi-bagger 长期上行的*早期*捕捉异动，真正服务它的是 **base→breakout（长平台 base → 陡突破）**：log 价单变点 τ（2 段分段线性 OLS、τ 自适应、无固定窗口）+ 无量纲特征（base_slope/σ≈0、drift_step=(s2−s1)/σ≳0.13、fit_gain=1−SSE2/SSE1≳0.7、ceiling clearance、bar-level VCP、volume surge）、**recall-first 取 top-N、无可调参**（PRD §10.8/§16 已修订 ✅）。**ignition 与 composite 双退役；Discovery→Breakouts（突破）；Ocean 纵轴 = base→breakout 强度。** 实证原型 `analysis/`（base_breakout / live_screen / full_screen：全市场 6749→habitat 3715→拉到 3593→747 候选）。
+
+**改造程序（PR 化，依赖序）：**
+1. ✅ **PRD / SoT 修订**（§1.2/§2/§4/§5.1/§7/§9/§10.6-10.8/§11-14/§16/§17 + 附录 A/B/C；本 PR，`make verify` 两 gate GATE_PASS）。
+2. **引擎层** `compute/breakout.py`（变点 τ + 无量纲特征 + strength）→ 接 `compute/run.py` 写 `derived_daily.brk_*`；停 `compute/ignition.py` 出 UI。+ File-Contracts。
+3. **导出层** `export/board.py` / `ocean.py` / `stock_bundle.py` 出 `brk_*` 字段、Ocean 纵轴改 `brk_strength_pct`、candidate gate 去 persistence；改 schema 版本（**须跑 nightly 才上数据**）。
+4. **Web 层** Discovery→Breakouts（view / nav / `types.ts`）、Ocean 纵轴标签、删 `ign_*` / composite UI、EvidenceCard 改 base/τ/breakout 标注 + MiniChart 叠加。
+5. **验证** analysis 原型入库 + walk-forward / OOS + 重写 AC-M7/M8（守 C9 单一真源）。
+6. **PE 缺口** screener 无 PE → Valuation/Stock 接 EDGAR `fundamentals_q` 或 yfinance info。
+
+> 旧 ignition 双引擎方案（上方 ignition 立项注 + 下方 M7/M8 DONE 段）保留作**历史记录**（同 M2 SUPERSEDED 体例）。
 > 引用而非复制：数学见 PRD §10，schema 见 PRD §12，约束见 PRD §7。冲突以 PRD §16 为准。
 >
 > **执行原则（just-in-time）**：M2 之后的实现级决策（客户端框架、duckdb-wasm 接法、shard 粒度、权重常数、theme 阈值）在 PRD §17 标为未决；本文不提前承诺，等 M0 经验落地后回写。每个 milestone 拆成若干 task(worktree+PR)，对应 File-Contracts 的 `planned → implemented → verified` 推进。
