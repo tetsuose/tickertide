@@ -14,7 +14,7 @@ describe('Stock detail (M5.4, per-name bundle)', () => {
   it('renders the per-name header with the ignition headline (not composite)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} ticker={bundle.meta.ticker} />)
     expect(html).toContain(`stk-tk">${bundle.meta.ticker}<`)
-    expect(html).toContain('IGN PCT')        // M8 headline = ignition
+    expect(html).toContain('BRK PCT')        // headline = base→breakout
     expect(html).not.toContain('COMPOSITE')   // composite headline removed
   })
 
@@ -46,95 +46,83 @@ describe('Stock detail (M5.4, per-name bundle)', () => {
   })
 })
 
-// M7.4 点火诊断 (ignition diagnostic) — the SECOND engine on the Stock surface (PRD §10.8).
-// The fixture (TT07) carries its real ignition block verbatim from the export (C9). A real
-// candidate block (TT22, 🔥 ign_pct 96.6 / persist 6) and a blown-up step_rate are injected to
-// exercise the candidate + clamp branches without re-mocking the engine.
-const igEvidence = (over: Partial<NonNullable<StockBundle['ignition']>['evidence']> = {}) => ({
-  breakout_day: '2026-06-05',
-  days_since_breakout: 0,
-  vol_mult: 0.994,
-  step_rate_ratio: 1.59,
-  reclaimed_ma50: true,
+// base/τ/breakout 诊断 — the CORE engine on the Stock surface (PRD §10.8, 2026-06-16 pivot).
+// The fixture carries its real breakout block verbatim from the export (C9). A candidate +
+// a non-candidate block are injected to exercise both branches without re-mocking the engine.
+const brkEvidence = (over: Partial<NonNullable<StockBundle['breakout']>['evidence']> = {}) => ({
+  tau_date: '2026-03-01',
+  days_since_tau: 96,
+  drift_step: 0.24,
+  fit_gain: 0.88,
+  clearance: 0.6,
+  vol_mult: 1.2,
   ma50: 189.2,
   ...over,
 })
-const candidateIgnition = {
-  ignition: 82.07,
-  ign_pct: 96.0,
-  ign_persist_days: 6,
+const candidateBreakout = {
+  brk_strength_pct: 96.0,
+  brk_strength: 0.45,
   candidate: true,
-  components: { accel: 0.0087, expand: 1.2455, vsurge: 0.9938, breakout: 1.0, rsturn: 0.0566 },
-  evidence: igEvidence(),
+  features: { base_slope: 0.01, brk_slope: 0.25, drift_step: 0.24, fit_gain: 0.88, clearance: 0.6, vsurge: 1.2 },
+  evidence: brkEvidence(),
 }
-const withIgnition = (ign: StockBundle['ignition']): StockBundle => ({ ...bundle, ignition: ign })
+const withBreakout = (brk: StockBundle['breakout']): StockBundle => ({ ...bundle, breakout: brk })
 
-describe('Stock 点火诊断 (M7.4, second engine — ignition)', () => {
-  it('renders the ignition diagnostic panel from the fixture block (5 components + 点火证据)', () => {
+describe('Stock base→breakout 诊断 (core engine)', () => {
+  it('renders the base→breakout diagnostic panel from the fixture block (6 features + 证据)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
-    // panel + its title
     expect(html).toContain('stk-ign')
-    expect(html).toContain('点火诊断')
-    // all 5 raw ignition components are listed
-    for (const label of ['ACCEL', 'EXPAND', 'VSURGE', 'BREAKOUT', 'RSTURN'])
+    expect(html).toContain('base→breakout 诊断')
+    // all 6 dimensionless features are listed
+    for (const label of ['BASE', 'BRK', 'DRIFT', 'FIT', 'CLEAR', 'VSURGE'])
       expect(html).toContain(`>${label}<`)
-    expect(count(html, 'stk-igncrow')).toBe(5)
-    // the 点火证据 strip reuses the M7.3 .ec-ignev idiom (breakout / vol× / step / MA50)
+    expect(count(html, 'stk-igncrow')).toBe(6)
+    // the base/τ/breakout 证据 strip reuses the .ec-ignev idiom (τ / drift / fit / vol)
     expect(html).toContain('ec-ignev')
-    expect(html).toContain('MA50')
-    // persistence timeline present
-    expect(html).toContain('stk-igntl')
+    expect(html).toContain('drift')
   })
 
-  it('M8: composite is no longer a user-visible concept (no stack, no big score)', () => {
+  it('composite/ignition are no longer user-visible concepts (no stack, no big score, no 🔥)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
     expect(html).not.toContain('stk-comp')   // composite 5-component stack removed
     expect(count(html, 'stk-crow')).toBe(0)
     expect(html).not.toContain('COMPOSITE')  // composite headline removed
-    // the ignition diagnostic (the core engine) remains the focus.
-    expect(html).toContain('点火诊断')
+    expect(html).not.toContain('🔥')         // ignition marker removed
+    expect(html).not.toContain('IGN PCT')    // ignition headline removed
+    // the base→breakout diagnostic (the core engine) remains the focus.
+    expect(html).toContain('base→breakout 诊断')
   })
 
-  it('marks a 持续点火 candidate (🔥) with the streak (uses TT22 real block)', () => {
-    const html = renderToStaticMarkup(<Stock initial={withIgnition(candidateIgnition)} />)
-    expect(html).toContain('🔥 持续点火')
-    expect(html).toContain('持续')
-    // persistence streak = 6 lit day-cells
-    expect(count(html, 'stk-igntl-c on')).toBe(6)
-    // ign_pct shown rounded
+  it('marks a base→breakout candidate (🚀) with days-since-τ', () => {
+    const html = renderToStaticMarkup(<Stock initial={withBreakout(candidateBreakout)} />)
+    expect(html).toContain('🚀 已突破')
+    // brk_pct shown rounded
     expect(html).toContain('96')
+    // τ + days-since-τ on the evidence strip
+    expect(html).toContain('96d前')
   })
 
-  it('shows ○ 未点火 for a non-candidate (fixture TT07: persist=0)', () => {
+  it('shows ○ 未突破 for a non-candidate', () => {
+    const nonCand = withBreakout({ ...candidateBreakout, candidate: false, brk_strength_pct: 50.0 })
+    const html = renderToStaticMarkup(<Stock initial={nonCand} />)
+    expect(html).toContain('○ 未突破')
+  })
+
+  it('base→breakout is the headline, with no knob (PRD §16): no per-k label, no slider, no early⟷reliable', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} />)
-    expect(html).toContain('○ 未点火')
-    expect(count(html, 'stk-igntl-c on')).toBe(0) // no lit cells when persist=0
-  })
-
-  it('clamps a blown-up step_rate_ratio (>20×) on the evidence strip', () => {
-    const blown = withIgnition({ ...candidateIgnition, evidence: igEvidence({ step_rate_ratio: 685 }) })
-    const html = renderToStaticMarkup(<Stock initial={blown} />)
-    // renderToStaticMarkup escapes '>' as '&gt;' (same as the Discovery clamp assertion)
-    expect(html).toContain('&gt;20×')
-  })
-
-  it('ignition is the headline, with no knob (PRD §16): no per-k label, no slider, no early⟷reliable', () => {
-    // ignition has no tunable parameter; Stock takes no k prop and carries no range slider.
-    const html = renderToStaticMarkup(<Stock initial={bundle} />)
-    expect(html).toContain('发现核心')      // ignition headline label
+    expect(html).toContain('发现核心')      // base→breakout headline label
+    expect(html).toContain('BRK PCT')
     expect(html).not.toContain('k=')
     expect(html).not.toContain('type="range"')
     expect(html).not.toContain('early')
   })
 
-  it('hides the panel for a pre-M7.4 bundle with no ignition block (back-compat)', () => {
-    const noIgn = { ...bundle, ignition: null } as StockBundle
-    const html = renderToStaticMarkup(<Stock initial={noIgn} />)
-    // the diagnostic panel + its components are gone (the foot keeps a prose mention, so we
-    // assert on the panel's class structure, not the words).
+  it('hides the panel for a bundle with no breakout block (back-compat)', () => {
+    const noBrk = { ...bundle, breakout: null } as StockBundle
+    const html = renderToStaticMarkup(<Stock initial={noBrk} />)
     expect(html).not.toContain('class="stk-ign"')
     expect(count(html, 'stk-igncrow')).toBe(0)
-    expect(html).not.toContain('点火诊断 · ignition')
+    expect(html).not.toContain('base→breakout 诊断')
   })
 })
 

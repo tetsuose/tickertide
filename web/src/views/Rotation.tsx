@@ -9,7 +9,7 @@ import {
   viewBoxXFromClient, viewBoxYFromClient, pointIndexAt, nearestSeriesAt, axisTickIndices, tickDate,
 } from '../lib/chart-hover'
 import CursorReadout from '../components/ChartCursor'
-import Discovery from './Discovery'
+import Breakouts from './Breakouts'
 
 // Rotation (PRD §9.4): the narrow-decide surface. Overview = every bucket's RS-Ratio on
 // one SVG multi-line chart (height=level >100 outperforms SPY, slope=momentum) + an
@@ -307,10 +307,10 @@ export default function Rotation({
           <div><span className="dim">members</span><b>{drilled.member_count ?? '—'}</b></div>
         </div>
         <div className="rot-memhead">
-          <span>成员 · top by 持续点火 <em className="tag">scope 收窄到该 {noun}</em></span>
-          <button className="seg" onClick={() => onJumpTab?.('discovery')}>在 Discovery 看全部成员 →</button>
+          <span>成员 · top by base→breakout 强度 <em className="tag">scope 收窄到该 {noun}</em></span>
+          <button className="seg" onClick={() => onJumpTab?.('breakouts')}>在 Breakouts 看全部成员 →</button>
         </div>
-        <Discovery scope={scope} limit={6} />
+        <Breakouts scope={scope} limit={6} />
         <div className="foot">
           单条 RS-Ratio 放大：<b>高度=level、线色=斜率(↑绿/↓红)=momentum</b>（N=1 时 color 空出来给斜率）。下面是该 {noun}
           成员证据卡（复用 board.json，按 scope filter — C9/DRY）。点「← all {noun}s」或顶部 scope ✕ 清 scope 回总览。

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { SurfaceId, Scope, ManifestData } from './types'
-import Discovery from './views/Discovery'
+import Breakouts from './views/Breakouts'
 import Ocean from './views/Ocean'
 import Rotation from './views/Rotation'
 import Valuation from './views/Valuation'
@@ -13,31 +13,31 @@ import { dataAgeDays, freshness, ageLabel } from './lib/freshness'
 // later milestones.
 const SURFACES: { id: SurfaceId; label: string }[] = [
   { id: 'ocean', label: 'Ocean' },
-  { id: 'discovery', label: 'Discovery' },
+  { id: 'breakouts', label: 'Breakouts' },
   { id: 'rotation', label: 'Rotation' },
   { id: 'valuation', label: 'Valuation' },
   { id: 'stock', label: 'Stock' },
 ]
 
-// Discovery proper shows the top-N 持续点火 candidates (PRD §9.3 bounded/decide) — the
+// Breakouts proper shows the top-N base→breakout candidates (PRD §9.3 bounded/decide) — the
 // board stays a bounded shortlist, not the full universe dump.
-const DISCOVERY_LIMIT = 20
+const BREAKOUTS_LIMIT = 20
 
 const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb: string }> = {
   ocean: {
     scale: 'wide · explore',
     milestone: 'M8',
-    blurb: 'Ignition × Valuation 海平面图：y = ign_pct（海平面 = 90，上方 = 点亮），x = 原始 P/S（log 轴）。日期滑杆 + Play 在相邻真实 EOD 快照间平滑插值。',
+    blurb: 'base→breakout 强度 × Valuation 二维相图：y = brk_pct（海平面 = 90，上方 = 已突破），x = 原始 P/S（log 轴）。日期滑杆 + Play 在相邻真实 EOD 快照间平滑插值。',
   },
-  discovery: {
+  breakouts: {
     scale: 'bounded · decide',
-    milestone: 'M1.3 – M7',
-    blurb: 'evidence-first 卡流：按 ignition 持续点火排序（PRD §10.8，核心引擎）；每张卡 6 个原始数字 + 点火证据，永不给 buy/target。数据来自 export/board.py 的 board.json。',
+    milestone: 'M7（base→breakout）',
+    blurb: 'evidence-first 卡流：按 base→breakout 强度排序（PRD §10.8，核心引擎，recall-first）；逐张检视入选候选价格走势 + base/τ/breakout 标注，假阳交基本面 precision，永不给 buy/target。数据来自 export/board.py 的 board.json。',
   },
   rotation: {
     scale: 'narrow · decide',
     milestone: 'M3',
-    blurb: 'sector / theme 的 RS-Ratio 多线图（非散点）+ enriched league 表（含 # igniting / # candidates）；点 bucket → N=1 单线 + 成员卡。',
+    blurb: 'sector / theme 的 RS-Ratio 多线图（非散点）+ enriched league 表（含 # breakout candidates）；点 bucket → N=1 单线 + 成员卡。',
   },
   valuation: {
     scale: 'wide · explore',
@@ -47,12 +47,12 @@ const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb:
   stock: {
     scale: 'narrow · detail',
     milestone: 'M5 · 预览',
-    blurb: 'per-name 面板：头部 ign_pct + 价格/MA/成交量图 + 6 估值倍数 + 点火诊断（board.json 同源）。price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
+    blurb: 'per-name 面板：头部 brk_pct + 价格/MA/成交量图 + 6 估值倍数 + base/τ/breakout 诊断（board.json 同源）。price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
   },
 }
 
 export default function App() {
-  const [tab, setTab] = useState<SurfaceId>('discovery')
+  const [tab, setTab] = useState<SurfaceId>('breakouts')
   // global scope filter — single source, sticky across tabs (PRD §9.1.2, C8/C10).
   // Two writers: Ocean's lasso (M2.4) sets scope='pinned'; Rotation's league row/line
   // click (M3.4) sets scope='sector'. Discovery/Ocean/Rotation all respect it (filter /
@@ -121,8 +121,8 @@ export default function App() {
           </nav>
 
           <div className="enginenote">
-            <span className="enginelead">IGNITION</span>
-            <span className="enginehint">持续点火 = 发现核心引擎（无可调参） · 证据优先：raw evidence + valuation，永不给 buy/target</span>
+            <span className="enginelead">BASE→BREAKOUT</span>
+            <span className="enginehint">base→breakout = 发现核心引擎（长平台→陡突破，τ 估计，无可调参） · 证据优先：raw evidence + valuation，永不给 buy/target</span>
           </div>
         </div>
 
@@ -134,7 +134,7 @@ export default function App() {
                 ✕
               </button>
             </span>
-            <span className="scopehint">filtering Discovery · Valuation · Rotation · Ocean</span>
+            <span className="scopehint">filtering Breakouts · Valuation · Rotation · Ocean</span>
           </div>
         )}
 
@@ -145,8 +145,8 @@ export default function App() {
             </span>
             <span className="khint">{info.milestone}</span>
           </div>
-          {tab === 'discovery' ? (
-            <Discovery scope={scope} pinned={pinned} limit={DISCOVERY_LIMIT} onOpen={openStock} />
+          {tab === 'breakouts' ? (
+            <Breakouts scope={scope} pinned={pinned} limit={BREAKOUTS_LIMIT} onOpen={openStock} />
           ) : tab === 'ocean' ? (
             <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} onOpen={openStock} />
           ) : tab === 'rotation' ? (

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { StockBundle, IgnitionComponents } from '../types'
+import type { StockBundle, BreakoutFeatures } from '../types'
 import { loadStockBundle, loadStockIndex } from '../lib/data'
 import StockStack from '../components/StockStack'
-import { fmtMktcap, fmtMonthDay, fmtStepRate, num, pct } from '../lib/format'
+import { fmtMktcap, fmtMonthDay, num, pct } from '../lib/format'
 
 // Stock detail (PRD §9.6, M5.4) — per-name, NOT scope-filtered. Reads one lazily-fetched
 // bundle (export/stock_bundle.py) for ANY universe ticker, not board.json's top-N. The core
@@ -11,16 +11,15 @@ import { fmtMktcap, fmtMonthDay, fmtStepRate, num, pct } from '../lib/format'
 // injects a bundle for SSR/tests. Same valuation_daily/fundamentals_q as every surface (C9).
 // The headline is the ignition read (the core engine); composite is no longer shown (M8).
 
-// ignition's 5 raw self-relative components (PRD §10.8). Unlike composite's c_* ∈ [0,1],
-// these are the engine's RAW signals (the [0,1] normalization happens cross-sectionally in
-// run.py and is folded into ign_pct) — so we show the raw value + a short "what it measures"
-// label, NOT a 0–100% bar (a bar would misrepresent an un-normalized number).
-const IGN_COMPONENTS: { key: keyof IgnitionComponents; label: string; what: string }[] = [
-  { key: 'accel', label: 'ACCEL', what: '10d–50d 步速比（加速度）' },
-  { key: 'expand', label: 'EXPAND', what: '收缩→扩张（波动率展开）' },
-  { key: 'vsurge', label: 'VSURGE', what: '放量（5日/60日成交量比）' },
-  { key: 'breakout', label: 'BREAKOUT', what: '突破 + 收复 MA50（gate ∈ [0,1]）' },
-  { key: 'rsturn', label: 'RSTURN', what: 'RS 拐点（相对强度转向）' },
+// base→breakout's 6 dimensionless features (PRD §10.8, ÷ daily-return σ) — the kink the
+// changepoint fit found. Shown raw with a short "what it measures" label.
+const BRK_FEATURES: { key: keyof BreakoutFeatures; label: string; what: string }[] = [
+  { key: 'base_slope', label: 'BASE', what: 'base 段斜率/σ（≈0 = 平台）' },
+  { key: 'brk_slope', label: 'BRK', what: 'breakout 段斜率/σ（陡）' },
+  { key: 'drift_step', label: 'DRIFT', what: '(s2−s1)/σ 斜率跳变（最强判别，≳0.13）' },
+  { key: 'fit_gain', label: 'FIT', what: '1−SSE2/SSE1 拐点显著度（≳0.7）' },
+  { key: 'clearance', label: 'CLEAR', what: '清越 base 平台高点（>0 = 已突破）' },
+  { key: 'vsurge', label: 'VSURGE', what: '突破段放量（vs base）' },
 ]
 
 type ValKey = 'ps' | 'evs' | 'ev_ebitda' | 'pe' | 'growth' | 'rule40'
@@ -32,28 +31,6 @@ const VAL_CARDS: { key: ValKey; label: string; kind: 'num' | 'pct' }[] = [
   { key: 'growth', label: 'Rev growth', kind: 'pct' },
   { key: 'rule40', label: 'Rule of 40', kind: 'num' },
 ]
-
-// persistence streak as a discrete day-cell row (newest at right). `days` consecutive lit
-// cells (top-decile ign_pct) precede an "今" anchor; capped at TL_MAX so a long streak stays
-// a bounded strip. persistence — not an instantaneous spike — is what carries the lift
-// (PRD §10.8.2, 实证 analysis/precision_ignition.py), so it gets its own timeline.
-const TL_MAX = 10
-function PersistTimeline({ days }: { days: number | null }) {
-  const n = days ?? 0
-  const lit = Math.min(n, TL_MAX)
-  const cells = Array.from({ length: TL_MAX }, (_, i) => i < lit) // oldest..newest (left..right)
-  return (
-    <div className="stk-igntl" title={`持续点火 ${n} 个交易日（连续位于 top decile）`}>
-      <span className="stk-igntl-lab">持续</span>
-      <span className="stk-igntl-cells">
-        {cells.map((on, i) => (
-          <i key={i} className={on ? 'stk-igntl-c on' : 'stk-igntl-c'} />
-        ))}
-      </span>
-      <span className="stk-igntl-now">今 · {n}d{n > TL_MAX ? ` (显示末 ${TL_MAX})` : ''}</span>
-    </div>
-  )
-}
 
 export default function Stock({
   initial,
@@ -113,7 +90,7 @@ export default function Stock({
 
   const m = bundle.meta
   const v = bundle.valuation
-  const ign = bundle.ignition
+  const brk = bundle.breakout
   const opts = tickers.length ? tickers : [m.ticker]
 
   return (
@@ -149,11 +126,11 @@ export default function Stock({
             </div>
           )}
         </div>
-        {/* headline = the ignition read (the core engine, PRD §10.8). green when 持续点火
-            candidate (above the sea level AND sustained). Composite is gone (M8). */}
-        <div className="stk-score" style={{ color: ign?.candidate ? 'var(--score-hi)' : 'var(--txt)' }}>
-          <div className="stk-scorev">{ign?.ign_pct == null ? '—' : ign.ign_pct.toFixed(0)}</div>
-          <div className="stk-scorel">IGN PCT · 发现核心</div>
+        {/* headline = the base→breakout read (core engine, PRD §10.8). green when a
+            base→breakout candidate (top decile, recall-first). composite/ignition gone. */}
+        <div className="stk-score" style={{ color: brk?.candidate ? 'var(--score-hi)' : 'var(--txt)' }}>
+          <div className="stk-scorev">{brk?.brk_strength_pct == null ? '—' : brk.brk_strength_pct.toFixed(0)}</div>
+          <div className="stk-scorel">BRK PCT · 发现核心</div>
         </div>
       </div>
 
@@ -161,83 +138,75 @@ export default function Stock({
         <StockStack bundle={bundle} />
       </div>
 
-      {/* 点火诊断 (ignition diagnostic, PRD §10.8) — the SECOND engine, parallel to the
-          composite stack below. Bridges the price↔fundamentals chart (where the breakout /
-          vol surge is visible) into 翻财报: ignition flags "刚起步在加速"; the user confirms
-          with fundamentals. Verbatim from derived_daily (same block as the Discovery card, C9).
-          ignition is the core engine and has no tunable parameter (PRD §16). */}
-      {ign && (
+      {/* base/τ/breakout 诊断 (PRD §10.8) — the CORE engine. Bridges the price↔fundamentals
+          chart (where the flat base → steep breakout is visible) into 翻财报: base→breakout
+          flags "刚从长平台突破"; the user confirms with fundamentals (recall-first, the user IS
+          the precision stage). Verbatim from derived_daily (same block as the Breakouts card,
+          C9). base→breakout is the core engine and has no tunable parameter (PRD §16). */}
+      {brk && (
         <div className="stk-ign">
           <div className="stk-ignt">
-            <span className="stk-ignt-l">点火诊断 · ignition</span>
-            <span className="stk-ignt-r">发现引擎（短窗口 · 核心 · 无可调参）</span>
+            <span className="stk-ignt-l">base→breakout 诊断</span>
+            <span className="stk-ignt-r">发现引擎（log 价单变点 τ · 核心 · 无可调参）</span>
           </div>
 
-          {/* persistence timeline: 持续点火 = top-decile ign_pct sustained ≥persist_min days
-              (PRD §10.8.2). This streak — not an instantaneous spike — is the real lift. */}
+          {/* recall-first gate: candidate = brk_strength_pct top decile (no persistence). */}
           <div className="stk-ignhead">
             <span
-              className={ign.candidate ? 'stk-ignflag on' : 'stk-ignflag'}
+              className={brk.candidate ? 'stk-ignflag on' : 'stk-ignflag'}
               title={
-                ign.candidate
-                  ? '持续点火 candidate：横截面 top decile 且持续 ≥5 日'
-                  : '未达持续点火门槛（top decile 且持续 ≥5 日）'
+                brk.candidate
+                  ? 'base→breakout candidate：强度横截面 top decile（recall-first，无 persistence）'
+                  : '未达 base→breakout 门槛（强度 top decile）'
               }
             >
-              {ign.candidate ? '🔥 持续点火' : '○ 未点火'}
+              {brk.candidate ? '🚀 已突破' : '○ 未突破'}
             </span>
-            <span className="stk-ignmeta" title="ignition 的每日横截面 percentile（≥90 = top decile = lit）">
-              ign_pct <b>{ign.ign_pct == null ? '—' : ign.ign_pct.toFixed(0)}</b>
+            <span className="stk-ignmeta" title="base→breakout 强度的每日横截面 percentile（≥90 = top decile = 已突破）">
+              brk_pct <b>{brk.brk_strength_pct == null ? '—' : brk.brk_strength_pct.toFixed(0)}</b>
             </span>
-            <span className="stk-ignmeta" title="连续位于 top decile（lit）的交易日数 — persistence 是精度关键">
-              持续 <b>{ign.ign_persist_days ?? '—'}</b>d
+            <span className="stk-ignmeta" title="估计变点 τ（log 价 2 段分段线性拟合的拐点）">
+              τ <b>{brk.evidence.tau_date ?? '—'}</b>
             </span>
-            <span className="stk-ignmeta" title="ignition 综合分 ∈ [0,100]（5 分量横截面 percentile 等权均值）">
-              score <b>{ign.ignition == null ? '—' : ign.ignition.toFixed(0)}</b>
+            <span className="stk-ignmeta" title="(s2−s1)/σ 斜率跳变（最强判别量）">
+              drift <b>{brk.evidence.drift_step == null ? '—' : brk.evidence.drift_step.toFixed(2)}</b>
             </span>
           </div>
 
-          {/* persistence streak as a discrete day-cell timeline (newest at right). The lit
-              cells = the consecutive top-decile days the candidate gate counts. */}
-          <PersistTimeline days={ign.ign_persist_days} />
-
-          {/* 点火证据 (ignition evidence) — same fields/source as the Discovery card strip
-              (reused .ec-ignev idiom, M7.3): breakout day / vol surge× / step-rate (clamped) /
-              reclaimed MA50. vol_mult here is ig_vsurge (5/60 ratio), distinct from the
-              valuation card's numbers. */}
+          {/* base/τ/breakout 证据 — same fields/source as the Breakouts card strip (reused
+              .ec-ignev idiom): kink τ + days-since / drift_step / fit_gain / volume surge. */}
           <div className="ec-ignev stk-ignev">
-            <span className="ec-ignev-i" title="trailing-60d high（突破参照日）+ 距今天数">
-              <em>brk</em> {fmtMonthDay(ign.evidence.breakout_day)}
-              {ign.evidence.days_since_breakout != null && (
-                <i className="ec-ignev-d"> ·{ign.evidence.days_since_breakout}d前</i>
+            <span className="ec-ignev-i" title="估计变点 τ（base→breakout 拐点）+ 距今天数">
+              <em>τ</em> {fmtMonthDay(brk.evidence.tau_date)}
+              {brk.evidence.days_since_tau != null && (
+                <i className="ec-ignev-d"> ·{brk.evidence.days_since_tau}d前</i>
               )}
             </span>
-            <span className="ec-ignev-i" title="放量× = ig_vsurge（5日/60日成交量比）">
+            <span className="ec-ignev-i" title="drift_step = (s2−s1)/σ 斜率跳变（≳0.13）">
+              <em>drift</em>{' '}
+              <b style={{ color: (brk.evidence.drift_step ?? 0) >= 0.13 ? 'var(--grn)' : 'var(--txt)' }}>
+                {brk.evidence.drift_step == null ? '—' : brk.evidence.drift_step.toFixed(2)}
+              </b>
+            </span>
+            <span className="ec-ignev-i" title="fit_gain = 1−SSE2/SSE1 拐点显著度（≳0.7）">
+              <em>fit</em>{' '}
+              <b style={{ color: (brk.evidence.fit_gain ?? 0) >= 0.7 ? 'var(--grn)' : 'var(--txt)' }}>
+                {brk.evidence.fit_gain == null ? '—' : brk.evidence.fit_gain.toFixed(2)}
+              </b>
+            </span>
+            <span className="ec-ignev-i" title="突破段放量× = brk_vsurge">
               <em>vol</em>{' '}
-              <b style={{ color: (ign.evidence.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
-                {ign.evidence.vol_mult == null ? '—' : ign.evidence.vol_mult.toFixed(2) + '×'}
-              </b>
-            </span>
-            <span className="ec-ignev-i" title="步速比 = (ret10/10)/(ret50/50)，ig_accel 可读形（显示已 clamp ±20×）">
-              <em>step</em>{' '}
-              <b style={{ color: (ign.evidence.step_rate_ratio ?? 0) >= 1 ? 'var(--grn)' : 'var(--txt)' }}>
-                {fmtStepRate(ign.evidence.step_rate_ratio)}
-              </b>
-            </span>
-            <span className="ec-ignev-i" title="是否收复 MA50（ig_breakout 的 gate：close>MA50）">
-              <em>MA50</em>{' '}
-              <b style={{ color: ign.evidence.reclaimed_ma50 ? 'var(--grn)' : 'var(--dim)' }}>
-                {ign.evidence.reclaimed_ma50 == null ? '—' : ign.evidence.reclaimed_ma50 ? '收复✓' : '未收复'}
+              <b style={{ color: (brk.evidence.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
+                {brk.evidence.vol_mult == null ? '—' : brk.evidence.vol_mult.toFixed(2) + '×'}
               </b>
             </span>
           </div>
 
-          {/* 5 raw self-relative components (PRD §10.8) — what lit the engine, shown raw
-              (NOT a 0–100% bar; only `breakout` is ∈ [0,1]). */}
+          {/* the 6 dimensionless features (PRD §10.8) — what the changepoint fit found. */}
           <div className="stk-igncomp">
-            <div className="stk-igncompt">ignition 5 分量（原始 self-relative · 归一在横截面发生，见 ign_pct）</div>
-            {IGN_COMPONENTS.map(({ key, label, what }) => {
-              const cv = ign.components[key]
+            <div className="stk-igncompt">base→breakout 6 无量纲特征（÷ 日收益 σ · log 价单变点 τ 拟合）</div>
+            {BRK_FEATURES.map(({ key, label, what }) => {
+              const cv = brk.features[key]
               return (
                 <div key={key} className="stk-igncrow" title={what}>
                   <span className="stk-igncl">{label}</span>

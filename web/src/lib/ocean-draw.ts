@@ -2,11 +2,11 @@
 // drawOcean() that paints ONE animation frame onto a 2D context. Kept free of React and of
 // the real canvas so the logic is unit-testable headlessly (inject a mock ctx + a fake
 // palette). The surface is an Ignition × Valuation SEA-LEVEL map (PRD §9.2):
-//   y = ign_pct (0-100), with a fixed sea level at ign_pct = 90 (above = lit; jump height
-//       ∝ ign_pct - 90). Above the line is highlighted, below is darkened.
+//   y = brk_pct (0-100), with a fixed sea level at brk_pct = 90 (above = 已突破; jump height
+//       ∝ brk_pct - 90). Above the line is highlighted, below is darkened.
 //   x = raw trailing P/S TTM on a LOG scale (data-driven domain; NOT a percentile, §16).
 // Points are sized by √mktcap, colored by sector/theme, faded by scope; candidates (the
-// Discovery 持续点火 gate) get a glow + bright ring. Play tweens positions between adjacent
+// Breakouts candidate (recall-first)) get a glow + bright ring. Play tweens positions between adjacent
 // real EOD snapshots via interpolateOceanPoint — visual only; tooltip/state read the REAL
 // snapshot, never an interpolated value.
 //
@@ -16,7 +16,7 @@
 import type { OceanData, OceanStock, OceanDrawPt, Scope } from '../types'
 
 // Plot box in logical px (canvas backs at 2x for retina). 880×470 with L/R/T/B insets:
-// left for the ign_pct axis labels, bottom for the P/S log-axis labels.
+// left for the brk_pct axis labels, bottom for the P/S log-axis labels.
 export const OCEAN_GEOM = { w: 880, h: 470, pl: 46, pr: 18, pt: 16, pb: 40 } as const
 export type Geom = typeof OCEAN_GEOM
 
@@ -109,15 +109,15 @@ export function inScope(s: OceanStock, scope: Scope, pinned: string[] = []): boo
 
 export interface Scales {
   sx: (ps: number) => number       // raw P/S -> px (log scale over x_domain)
-  sy: (ignPct: number) => number   // ign_pct -> px (split axis: 0 bottom, seaLevel mid, 100 top)
+  sy: (brkPct: number) => number   // brk_pct -> px (split axis: 0 bottom, seaLevel mid, 100 top)
   plotW: number
   plotH: number
   seaY: number                     // px of the sea level (=== sy(seaLevel)) — the plot midpoint
 }
 
-/** x = log10 P/S mapped over [x_domain] -> plot width; y = ign_pct on a SPLIT (broken) axis:
+/** x = log10 P/S mapped over [x_domain] -> plot width; y = brk_pct on a SPLIT (broken) axis:
  *  the sea level (ign 90) sits at the plot's vertical MIDPOINT, so the narrow above-sea band
- *  [seaLevel,100] (the lit catch zone — the only ign_pct worth resolving finely) and the wide
+ *  [seaLevel,100] (the lit catch zone — the only brk_pct worth resolving finely) and the wide
  *  below-sea band [0,seaLevel] each own half the height — different px-per-pct on each side. */
 export function makeScales(
   xDomain: readonly [number, number], seaLevel: number, g: Geom = OCEAN_GEOM,
@@ -181,21 +181,21 @@ export function withAlpha(hex: string, a: number): string {
 // --- play-animation interpolation (visual only) ---
 
 /** Reconstruct a stock's DRAW snapshot at date index i from the v3 columnar bulk, or null if
- *  there's no renderable position that day (ps or ign_pct missing). The candidate flag is the
+ *  there's no renderable position that day (ps or brk_pct missing). The candidate flag is the
  *  precomputed gate (cand[i]===1); ign_persist_days etc. are not here (they live in OceanDetail,
  *  fetched lazily on hover). This is the single place the columnar arrays become a point. */
 export function drawPtAt(s: OceanStock, i: number): OceanDrawPt | null {
   const ps = s.ps[i]
-  const ign = s.ign_pct[i]
+  const ign = s.brk_pct[i]
   if (ps == null || ign == null) return null
-  return { ps, ign_pct: ign, candidate: s.cand[i] === 1 }
+  return { ps, brk_pct: ign, candidate: s.cand[i] === 1 }
 }
 
 /** One animation frame for a stock: interpolated position (data space) + the REAL snapshot
  *  it reads draw state from + a fade alpha. position is lerped; `snap` is NEVER synthesized. */
 export interface FramePoint {
   ps: number
-  ign_pct: number
+  brk_pct: number
   snap: OceanDrawPt
   fade: number   // 0..1 — 1 fully present; <1 while fading in/out at a gap
 }
@@ -211,10 +211,10 @@ export function interpolateOceanPoint(
 ): FramePoint | null {
   const t = clamp(phase, 0, 1)
   if (prev && next) {
-    return { ps: lerpLog(prev.ps, next.ps, t), ign_pct: lerp(prev.ign_pct, next.ign_pct, t), snap: t < 0.5 ? prev : next, fade: 1 }
+    return { ps: lerpLog(prev.ps, next.ps, t), brk_pct: lerp(prev.brk_pct, next.brk_pct, t), snap: t < 0.5 ? prev : next, fade: 1 }
   }
-  if (prev) return { ps: prev.ps, ign_pct: prev.ign_pct, snap: prev, fade: 1 - t } // fade out
-  if (next) return { ps: next.ps, ign_pct: next.ign_pct, snap: next, fade: t }     // fade in
+  if (prev) return { ps: prev.ps, brk_pct: prev.brk_pct, snap: prev, fade: 1 - t } // fade out
+  if (next) return { ps: next.ps, brk_pct: next.brk_pct, snap: next, fade: t }     // fade in
   return null
 }
 
@@ -271,10 +271,10 @@ export interface DrawnPoint {
 }
 
 /** Paint the sea-level backdrop (above highlighted, below darkened, waterline at ign 90 +
- *  the ign_pct / P/S axis ticks) and this frame's points, then return the non-faded points'
+ *  the brk_pct / P/S axis ticks) and this frame's points, then return the non-faded points'
  *  on-screen (interpolated) positions for hit-testing. In-scope / theme-member points draw
  *  bright above the sea, dimmer below; out-of-scope fade to a 1.2px dot (C10). Candidates
- *  (持续点火 gate) get a glow halo + bright ring. */
+ *  (突破候选 gate) get a glow halo + bright ring. */
 export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
   const g = o.geom ?? OCEAN_GEOM
   const seaLevel = o.data.axis?.sea_level ?? 90
@@ -283,11 +283,11 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
 
   const topY = g.pt
   const botY = g.pt + plotH
-  // below-sea darken (ign_pct < 90 = not lit): a translucent dark band.
+  // below-sea darken (brk_pct < 90 = not lit): a translucent dark band.
   ctx.globalAlpha = 1
   ctx.fillStyle = withAlpha(o.palette['--bg'] || '#080b11', 0.35)
   ctx.fillRect(g.pl, seaY, plotW, botY - seaY)
-  // above-sea highlight (ign_pct >= 90 = lit): a faint green wash = the catch zone.
+  // above-sea highlight (brk_pct >= 90 = 已突破): a faint green wash = the catch zone.
   ctx.fillStyle = withAlpha(o.palette['--grn'], 0.06)
   ctx.fillRect(g.pl, topY, plotW, seaY - topY)
 
@@ -304,14 +304,14 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
     ctx.stroke()
     ctx.fillText(fmtPsTick(v), X - 6, botY + 14)
   }
-  // ign_pct y ticks. 90 = the sea level (plot midpoint); 95 anchors the magnified above-sea
+  // brk_pct y ticks. 90 = the sea level (plot midpoint); 95 anchors the magnified above-sea
   // half so the expanded catch-zone band stays readable on the split axis.
   for (const v of [0, 50, seaLevel, 95, 100]) {
     ctx.fillStyle = v === seaLevel ? o.palette['--grn'] || '#2ec07a' : o.palette['--dim'] || '#56616f'
     ctx.fillText(String(v), g.pl - 24, sy(v) + 3)
   }
 
-  // the waterline at ign_pct = 90.
+  // the waterline at brk_pct = 90.
   ctx.strokeStyle = withAlpha(o.palette['--grn'], 0.85)
   ctx.lineWidth = 1.5
   ctx.beginPath()
@@ -321,7 +321,7 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
   ctx.globalAlpha = 1
   ctx.fillStyle = o.palette['--grn'] || '#2ec07a'
   ctx.font = '600 10px IBM Plex Mono, monospace'
-  ctx.fillText(`sea level · ign ${seaLevel}`, g.pl + plotW - 110, seaY - 5)
+  ctx.fillText(`sea level · brk ${seaLevel}`, g.pl + plotW - 110, seaY - 5)
 
   const lastDate = o.dateIndex >= o.data.dates.length - 1
   const ph = lastDate ? 0 : o.phase
@@ -337,8 +337,8 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
         : true
     const faded = !inScope(s, o.scope, o.pinned) || !member
     const X = sx(fp.ps)
-    const Y = sy(fp.ign_pct)
-    const lit = fp.ign_pct >= seaLevel
+    const Y = sy(fp.brk_pct)
+    const lit = fp.brk_pct >= seaLevel
     const r = radiusFor(s.mktcap)
     const fill = o.palette[colorVar(s, o.colorBy, o.activeTheme)] ?? o.palette['--dim2']
 
@@ -351,7 +351,7 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
       continue
     }
 
-    // candidate (持续点火): a glow halo behind the dot.
+    // candidate (突破候选): a glow halo behind the dot.
     if (fp.snap.candidate) {
       ctx.globalAlpha = 0.22 * fp.fade
       ctx.fillStyle = fill
@@ -404,7 +404,7 @@ export function drawOcean(ctx: CanvasLike, o: DrawOpts): DrawnPoint[] {
       const fp = interpolateOceanPoint(prev, next, ph)
       if (!fp) continue
       const X = sx(fp.ps)
-      const Y = sy(fp.ign_pct)
+      const Y = sy(fp.brk_pct)
       const col = o.palette[colorVar(s, o.colorBy, o.activeTheme)] || o.palette['--dim2']
       ctx.globalAlpha = 1
       ctx.fillStyle = col

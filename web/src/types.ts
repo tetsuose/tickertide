@@ -26,43 +26,42 @@ export interface Evidence {
   vol_mult: number | null
 }
 
-/** 5 raw self-relative ignition components (PRD §10.8) — verbatim from derived_daily.
- * NOT ∈ [0,1] (these are the engine's raw signals; only `breakout` is ∈ [0,1]). The
- * [0,1] normalization happens cross-sectionally in run.py and is folded into `ign_pct`. */
-export interface IgnitionComponents {
-  accel: number | null
-  expand: number | null
+/** The 6 dimensionless base→breakout features (PRD §10.8, ÷ daily-return σ) — verbatim
+ * from derived_daily. base_slope≈0 (flat base), drift_step ≳0.13 (the slope jump),
+ * fit_gain ≳0.7 (kink salience), clearance>0 (cleared the base high), vsurge (breakout
+ * volume). The cross-sectional rank is folded into `brk_strength_pct`. */
+export interface BreakoutFeatures {
+  base_slope: number | null
+  brk_slope: number | null
+  drift_step: number | null
+  fit_gain: number | null
+  clearance: number | null
   vsurge: number | null
-  breakout: number | null
-  rsturn: number | null
 }
 
-/** Human-readable 点火证据 (PRD §10.8) — derived from the SAME bars the chart ships.
- * `vol_mult` is the engine's ig_vsurge verbatim (5/60 vol ratio — distinct from
- * Evidence.vol_mult, which is the 50d ratio). `step_rate_ratio` = (ret10/10)/(ret50/50);
- * it blows up when ret50≈0, so the card MUST clamp/format it for display (M7.2 pitfall). */
-export interface IgnitionEvidence {
-  breakout_day: string | null
-  days_since_breakout: number | null
+/** Human-readable base/τ/breakout 证据 (PRD §10.8) — the kink the changepoint fit found.
+ * `vol_mult` is the engine's brk_vsurge verbatim. `days_since_tau` = snap − τ. */
+export interface BreakoutEvidence {
+  tau_date: string | null
+  days_since_tau: number | null
+  drift_step: number | null
+  fit_gain: number | null
+  clearance: number | null
   vol_mult: number | null
-  step_rate_ratio: number | null
-  reclaimed_ma50: boolean | null
   ma50: number | null
 }
 
-/** The SECOND engine (ignition = early discovery, PRD §10.8), carried per stock
- * alongside composite. Discovery (M7.3) sorts by 持续点火 — sustained ignition —
- * NOT composite: `candidate` (= top-decile ign_pct AND ign_persist_days >= persist_min)
- * first, then ign_persist_days desc, then ign_pct desc. ignition is the project's core
- * engine and has no tunable parameter (the early⟷reliable knob is gone, PRD §16). Same
- * source as every surface (derived_daily, C9) — the client never recomputes the engine. */
-export interface Ignition {
-  ignition: number | null
-  ign_pct: number | null
-  ign_persist_days: number | null
+/** The CORE engine (base→breakout, PRD §10.8; 2026-06-16 spine pivot — replaces ignition).
+ * Breakouts (the renamed Discovery) sorts by base→breakout STRENGTH: `candidate`
+ * (= brk_strength_pct >= top decile, recall-first — NO persistence) first, then
+ * brk_strength_pct desc. No tunable parameter. Same source as every surface (derived_daily,
+ * C9) — the client never recomputes the engine. `brk_tau_date` = the estimated changepoint. */
+export interface Breakout {
+  brk_strength_pct: number | null
+  brk_strength: number | null
   candidate: boolean
-  components: IgnitionComponents
-  evidence: IgnitionEvidence
+  features: BreakoutFeatures
+  evidence: BreakoutEvidence
 }
 
 export interface Valuation {
@@ -115,8 +114,8 @@ export interface Stock {
   rank: number | null
   components: Components
   evidence: Evidence
-  /** Second engine (PRD §10.8). Optional: pre-M7 fixtures / partial exports may omit it. */
-  ignition?: Ignition
+  /** Core engine (base→breakout, PRD §10.8). Optional: partial exports may omit it. */
+  breakout?: Breakout
   valuation: Valuation | null
   /** schema v2 payload split: the bulk board.json no longer ships the chart (~96% of the raw
    *  payload, yet only ~20 cards show at once) — it loads lazily per card via loadBoardChart ->
@@ -132,11 +131,10 @@ export interface BoardData {
   composite_recon_max_drift: number
   count: number
   valuation_coverage: number
-  /** ignition rollups (PRD §10.8) — optional for pre-M7 fixtures. */
-  ignition_coverage?: number
-  ignition_candidates?: number
-  ignition_persist_min?: number
-  ignition_recon_max_drift?: number
+  /** base→breakout rollups (PRD §10.8) — optional for partial exports. */
+  breakout_coverage?: number
+  breakout_candidates?: number
+  brk_top_decile?: number
   stocks: Stock[]
 }
 
@@ -152,7 +150,7 @@ export interface BoardChartDetail {
 }
 
 /** The five lenses, in the contract's fixed order (PRD §9.0). */
-export type SurfaceId = 'ocean' | 'discovery' | 'rotation' | 'valuation' | 'stock'
+export type SurfaceId = 'ocean' | 'breakouts' | 'rotation' | 'valuation' | 'stock'
 
 /** Global scope filter (PRD §9.1.2, C8/C10). Single source, sticky across tabs. */
 export type Scope =
@@ -178,7 +176,7 @@ export type Scope =
  *  lerps x/y between adjacent real snapshots — it never synthesizes candidate. */
 export interface OceanDrawPt {
   ps: number
-  ign_pct: number
+  brk_pct: number
   candidate: boolean
 }
 
@@ -188,9 +186,9 @@ export interface OceanStock {
   mktcap: number | null
   themes: ThemeTag[]
   // columnar draw fields, each aligned to OceanData.dates (oldest→newest). null at index i =
-  // no renderable position that day. cand[i] ∈ {0,1} (1 = 持续点火 candidate); 0 on a null day.
+  // no renderable position that day. cand[i] ∈ {0,1} (1 = base→breakout candidate); 0 on a null day.
   ps: (number | null)[]
-  ign_pct: (number | null)[]
+  brk_pct: (number | null)[]
   cand: (0 | 1)[]
 }
 
@@ -206,8 +204,11 @@ export interface OceanDetail {
    *  index-aligned to OceanData.dates so the tooltip stays honest while the slider scrubs.
    *  Optional: pre-PIT detail omits them. */
   valuation_basis?: string
-  ignition: (number | null)[]
-  ign_persist_days: (number | null)[]
+  brk_strength: (number | null)[]
+  brk_drift_step: (number | null)[]
+  brk_fit_gain: (number | null)[]
+  brk_clearance: (number | null)[]
+  brk_tau_date: (string | null)[]
   evs: (number | null)[]
   pe: (number | null)[]
   ev_ebitda: (number | null)[]
@@ -223,8 +224,8 @@ export interface OceanDetail {
 export interface OceanAxis {
   x_metric: string   // 'ps' (raw trailing P/S TTM)
   x_scale: string    // 'log'
-  y_metric: string   // 'ign_pct'
-  sea_level: number  // 90 (the ignition top-decile line)
+  y_metric: string   // 'brk_strength_pct'
+  sea_level: number  // 90 (the base→breakout top-decile line)
 }
 
 export interface OceanData {
@@ -371,11 +372,11 @@ export interface StockBundle {
     themes: ThemeTag[]
   }
   components: Components | null
-  /** Second engine (ignition = early discovery, PRD §10.8) — verbatim from derived_daily,
-   * same block board.json ships per Discovery card (C9). Drives Stock's 点火诊断 (5 raw
-   * components + 点火证据 + persistence). Optional/null: pre-M7.4 bundles or names the engine
-   * couldn't score omit it. ignition is the core engine, no tunable parameter (PRD §16). */
-  ignition?: Ignition | null
+  /** Core engine (base→breakout, PRD §10.8) — verbatim from derived_daily, same block
+   * board.json ships per Breakouts card (C9). Drives Stock's base/τ/breakout 诊断 (6
+   * dimensionless features + evidence). Optional/null: names the engine couldn't score omit
+   * it. base→breakout is the core engine, no tunable parameter (PRD §16). */
+  breakout?: Breakout | null
   valuation: {
     pe: number | null
     ps: number | null
