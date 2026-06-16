@@ -95,23 +95,13 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   c_trend           DOUBLE,    -- component [0,1]: trend_quality
   c_vol             DOUBLE,    -- component [0,1]: volume score
   c_accel           DOUBLE,    -- component [0,1]: rs_accel score
-  composite         DOUBLE,    -- 100 * Σ wᵢ·cᵢ at default k
+  composite         DOUBLE,    -- 100 * Σ wᵢ·cᵢ at default k (calc-layer only, §10.6 — NOT user-visible)
   rank_in_universe  INTEGER,   -- dense rank by composite per date (1 = strongest)
-  -- ignition engine (early discovery, PRD §10.8) — the 5 raw self-relative short-window
-  -- components, each then cross-sectionally percentile-ranked to [0,1] and averaged:
-  ig_accel          DOUBLE,    -- momentum acceleration: ret_10/10 - ret_50/50 (slope steepening)
-  ig_expand         DOUBLE,    -- squeeze->expansion: mean(|Δp|,10)/mean(|Δp|,60) (range opening)
-  ig_vsurge         DOUBLE,    -- volume surge: mean(vol,5)/mean(vol,60) (vs own recent base)
-  ig_breakout       DOUBLE,    -- breakout/reclaim: clamp(close/max(close,60),0,1)·1[close>MA50]
-  ig_rsturn         DOUBLE,    -- RS-line turn: slope10(P/P_spx) - slope30(P/P_spx)/3 (inflection)
-  ignition          DOUBLE,    -- 100·mean(cross-sectional percentile-rank of the 5 components), [0,100]
-  ign_pct           DOUBLE,    -- cross-sectional percentile of ignition, per date, 0-100
-  ign_persist_days  INTEGER,   -- consecutive days (incl. today) with ign_pct>=90 (top-decile persistence)
-  -- base→breakout engine (CORE detection, PRD §10.8; 2026-06-16 spine pivot). Replaces
-  -- ignition as the core; the composite + ignition columns above are RETIRED (§10.6/§10.8),
-  -- kept transitionally until export/web stop reading them. Per-stock causal log-price
-  -- single-changepoint τ + dimensionless features (÷ daily-return σ); brk_strength_pct is
-  -- the cross-sectional rank (computed in compute/run.py, like ign_pct).
+  -- base→breakout engine (CORE detection, PRD §10.8; 2026-06-16 spine pivot). The single core
+  -- engine — ignition is fully RETIRED (its ig_*/ignition/ign_pct/ign_persist_days columns were
+  -- dropped, db.drop_ignition_columns). composite stays as calc-layer residue (§10.6, board C9
+  -- guard only). Per-stock causal log-price single-changepoint τ + dimensionless features
+  -- (÷ daily-return σ); brk_strength_pct is the cross-sectional rank (compute/run.py).
   brk_tau_date      VARCHAR,   -- estimated changepoint date (2-seg piecewise-linear kink on log price)
   brk_base_slope    DOUBLE,    -- s1/σ: base-segment slope (≈0 = flat long base)
   brk_brk_slope     DOUBLE,    -- s2/σ: breakout-segment slope (steep)

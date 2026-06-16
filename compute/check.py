@@ -46,25 +46,6 @@ def run_checks(con) -> list[tuple[str, bool, str]]:
         )
         checks.append(("5 components in [0,1]", in_range, "component ranges within [0,1]"))
 
-        # AC-M7 (PRD §10.8): ignition engine generated, the 5 percentile-ranked
-        # components average into ignition (the [0,1] guarantee shows as ignition∈[0,100]
-        # since ignition = 100·mean(5 ranked-each-in-[0,1])), ign_pct∈[0,100], persistence≥0.
-        # ignition shares the per-stock derived_daily row (C9); assert it was populated.
-        n_ign = con.execute("SELECT count(*) FROM derived_daily WHERE ignition IS NOT NULL").fetchone()[0]
-        checks.append(("ignition generated", n_ign > 0, f"{n_ign} rows with ignition"))
-        if n_ign > 0:
-            g = con.execute(
-                "SELECT min(ignition), max(ignition), min(ign_pct), max(ign_pct), "
-                "min(ign_persist_days), max(ign_persist_days) FROM derived_daily WHERE ignition IS NOT NULL"
-            ).fetchone()
-            comp_in_range = g[0] >= -1e-9 and g[1] <= 100 + 1e-9
-            checks.append(("ignition 5 components in [0,1] (ignition∈[0,100])", comp_in_range,
-                           f"ignition∈[{g[0]:.1f},{g[1]:.1f}]"))
-            pct_in_range = (g[2] is None) or (g[2] >= -1e-9 and g[3] <= 100 + 1e-9)
-            checks.append(("ign_pct in [0,100]", pct_in_range, f"ign_pct∈[{g[2]},{g[3]}]"))
-            persist_ok = (g[4] is None) or (g[4] >= 0)
-            checks.append(("ign_persist_days >= 0", persist_ok, f"persist∈[{g[4]},{g[5]}]"))
-
         # base→breakout (PRD §10.8, CORE engine after the 2026-06-16 spine pivot): the per-stock
         # changepoint features + cross-sectional brk_strength_pct populate the SAME derived_daily
         # row (C9). brk_strength_pct∈[0,100], brk_strength>=0 (recall-first; 0 = guards failed).

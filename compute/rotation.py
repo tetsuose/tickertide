@@ -130,8 +130,7 @@ def compute_rotation(con, n1: int | None = None, n2: int | None = None,
 # export/rotation.py (M3.3) calls league_table() for the latest snapshot. ---
 
 AT_HIGH_PROX = 0.99       # within 1% of the 252d high counts as "at 52-week high"
-IGN_SEA_LEVEL = 90        # ign_pct >= this = lit (== board.py IGN_TOP_DECILE; sea level, §10.8.2)
-IGN_PERSIST_MIN = 5       # consecutive lit days for a 持续点火 candidate (== board.py)
+BRK_SEA_LEVEL = 90        # brk_strength_pct >= this = base→breakout candidate (== board.BRK_TOP_DECILE, §10.8)
 REL_HORIZONS = {"rel_ret_1m": 21, "rel_ret_3m": 63, "rel_ret_6m": 126}  # trading days
 
 
@@ -152,10 +151,11 @@ def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
     """Per-bucket member breadth / #at-52w-high / ignition aggregates on `latest_date`, over
     the bucket's MEMBERS (sector: universe.sector; theme: theme_membership PIT). The member
     numbers come from derived_daily / daily_bars — the SAME per-stock source as Discovery /
-    Ocean / Stock, so the league traces back (C9). M8: composite median is gone (composite
-    is no longer user-visible); the league aggregates the discovery engine instead —
-    `igniting` (members above the sea level, ign_pct>=90) and `candidates` (the 持续点火
-    gate, ign_pct>=90 AND ign_persist_days>=5, the SAME gate Discovery sorts by)."""
+    Ocean / Stock, so the league traces back (C9). 2026-06-16 spine pivot: composite median +
+    ignition are gone; the league aggregates the base→breakout engine instead —
+    `candidates` (members at base→breakout top decile, brk_strength_pct>=90, the SAME
+    recall-first gate Breakouts sorts by). `igniting` == `candidates` (no separate lit tier —
+    base→breakout has one recall-first gate, no persistence)."""
     mem = _bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
@@ -163,8 +163,7 @@ def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
             """
             WITH m AS (
               SELECT mr.bucket AS bucket,
-                     CASE WHEN d.ign_pct >= ? THEN 1 ELSE 0 END AS lit,
-                     CASE WHEN d.ign_pct >= ? AND d.ign_persist_days >= ? THEN 1 ELSE 0 END AS cand,
+                     CASE WHEN d.brk_strength_pct >= ? THEN 1 ELSE 0 END AS cand,
                      CASE WHEN b.close > d.ma50  THEN 1.0 ELSE 0.0 END AS gt50,
                      CASE WHEN b.close > d.ma200 THEN 1.0 ELSE 0.0 END AS gt200,
                      CASE WHEN d.high_prox >= ? THEN 1 ELSE 0 END      AS athigh
@@ -177,11 +176,11 @@ def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
                    100.0*avg(gt50)  AS breadth_ma50,
                    100.0*avg(gt200) AS breadth_ma200,
                    sum(athigh)      AS at_high,
-                   sum(lit)         AS igniting,
+                   sum(cand)        AS igniting,
                    sum(cand)        AS candidates
             FROM m GROUP BY bucket
             """,
-            [IGN_SEA_LEVEL, IGN_SEA_LEVEL, IGN_PERSIST_MIN, AT_HIGH_PROX, latest_date],
+            [BRK_SEA_LEVEL, AT_HIGH_PROX, latest_date],
         ).df()
     finally:
         con.unregister("mem_rel")
