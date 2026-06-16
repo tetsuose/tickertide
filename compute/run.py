@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 import pandas as pd  # noqa: E402
 
-from compute import db, ignition, signals  # noqa: E402
+from compute import breakout, db, ignition, signals  # noqa: E402
 
 
 def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
@@ -42,11 +42,13 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
         if len(bars) < min_bars:
             skipped += 1
             continue
-        m = signals.compute_metrics(bars, spx)       # composite inputs (long windows)
-        g = ignition.compute_ignition(bars, spx)     # ignition components (short windows)
-        # Both engines share the SAME bars (C9) and emit a str `date`; merge per ticker
-        # so each (ticker,date) row carries both engines' per-stock features.
-        m = m.merge(g, on="date", how="left")
+        m = signals.compute_metrics(bars, spx)       # composite inputs (long windows) — RETIRED, transitional
+        g = ignition.compute_ignition(bars, spx)     # ignition components (short windows) — RETIRED, transitional
+        b = breakout.compute_breakout(bars)          # base→breakout features (core engine, PRD §10.8)
+        # All engines share the SAME bars (C9) and emit a str `date`; merge per ticker so
+        # each (ticker,date) row carries every engine's per-stock features. composite/ignition
+        # are kept transitionally (expand-then-contract) until export/web stop reading them.
+        m = m.merge(g, on="date", how="left").merge(b, on="date", how="left")
         m["ticker"] = t
         frames.append(m)
 
@@ -56,6 +58,7 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
 
     w = signals.weights(k)
     con.register("allm", allm)
+    db.ensure_breakout_columns(con)   # migrate existing derived_daily to carry brk_* (§10.8)
     db.clear_derived(con)
     con.execute(
         f"""
@@ -69,7 +72,10 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
             PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_expand)  AS p_expand,
             PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_vsurge)  AS p_vsurge,
             PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_breakout) AS p_breakout,
-            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_rsturn)  AS p_rsturn
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY ig_rsturn)  AS p_rsturn,
+            -- base→breakout (core, PRD §10.8): cross-sectional percentile of the per-stock
+            -- raw strength → brk_strength_pct (drives Ocean y-axis / Breakouts ranking).
+            PERCENT_RANK() OVER (PARTITION BY date ORDER BY brk_strength) * 100 AS brk_strength_pct
           FROM allm WHERE rs_raw IS NOT NULL
         ),
         y AS (
@@ -120,7 +126,9 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
                ewmac_fast, ewmac_slow, c_rs, c_high, c_trend, c_vol, c_accel, composite,
                CAST(RANK() OVER (PARTITION BY date ORDER BY composite DESC) AS INTEGER) AS rank_in_universe,
                ig_accel, ig_expand, ig_vsurge, ig_breakout, ig_rsturn,
-               ignition, ign_pct, ign_persist_days
+               ignition, ign_pct, ign_persist_days,
+               brk_tau_date, brk_base_slope, brk_brk_slope, brk_drift_step, brk_fit_gain,
+               brk_clearance, brk_vcp, brk_vsurge, brk_strength, brk_strength_pct
         FROM c
         """
     )
@@ -152,12 +160,13 @@ def main(argv: list[str] | None = None) -> int:
         "FROM derived_daily WHERE date = ? ORDER BY composite DESC LIMIT 5", [latest]
     ).fetchall():
         print(f"    {r[0]:6} composite={r[1]:5}  rs_pct={r[2]:3}  c_high={r[3]}  c_trend={r[4]}  rank={r[5]}")
-    print("[compute] top 5 by ignition (early discovery; persist = consecutive days in top decile):")
+    print("[compute] top 5 by base→breakout strength (core, PRD §10.8; brk_pct = cross-sectional rank):")
     for r in con.execute(
-        "SELECT ticker, round(ignition,1), round(ign_pct,0), ign_persist_days "
-        "FROM derived_daily WHERE date = ? ORDER BY ignition DESC LIMIT 5", [latest]
+        "SELECT ticker, brk_tau_date, round(brk_strength_pct,0), round(brk_drift_step,2), "
+        "round(brk_fit_gain,2), round(brk_clearance,2) "
+        "FROM derived_daily WHERE date = ? AND brk_strength > 0 ORDER BY brk_strength DESC LIMIT 5", [latest]
     ).fetchall():
-        print(f"    {r[0]:6} ignition={r[1]:5}  ign_pct={r[2]:3}  persist={r[3]}d")
+        print(f"    {r[0]:6} τ={r[1]}  brk_pct={r[2]:3}  drift={r[3]}  fit={r[4]}  clr={r[5]}")
     con.close()
     return 0
 

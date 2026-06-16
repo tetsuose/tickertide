@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-15T14:28:41.009116+00:00",
+  "updated_at": "2026-06-16T13:43:12.829232+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -171,6 +171,18 @@
       }
     },
     {
+      "path": "compute/breakout.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "per-stock base→breakout 信号数学（核心探测引擎，PRD §10.8，2026-06-16 spine pivot 取代 ignition）：在 log 价格上逐日因果估计单变点 τ（2 段分段线性 OLS、扫合法切点取最小总 SSE、无固定 base/breakout 窗口），导出无量纲特征（base_slope=s1/σ、brk_slope=s2/σ、drift_step=(s2−s1)/σ、fit_gain=1−SSE2/SSE1、ceiling clearance、bar-level VCP、volume surge）与 recall-first brk_strength",
+        "invariants": "pandas/numpy 算 per-stock 时序（横截面 PERCENT_RANK(brk_strength)→brk_strength_pct 在 run.py 做，C9）；因果——每个交易日仅用 trailing H 窗、τ 限 recency band(REC_LO..REC_HI)，绝不前视；用 adj_close 作 log 价；常数离线定死、无用户旋钮（PRD §10.8.4：H=504/MINSEG=40/REC 15-252/SLACK_FLAT=1.5/退化护栏 CLEAR_MAX/BRK_SLOPE_CAP/BASE_PX_MIN/BASE_FLAT_MAX）；strength=fit·max(0,drift)·exp(−1.5|base_slope|) 且护栏不过即 0（recall-first，假阳交下游基本面 precision）；与 analysis/ 原型（full_screen/live_screen）同源数学",
+        "verification": "compute_breakout 返回 date + brk_tau_date + 8 特征列；fit_gain≤1（2 段嵌套 1 段、SSE2≤SSE1line）；brk_strength≥0；护栏不过的票 strength=0 不进候选；横截面后（run.py）brk_strength_pct∈[0,100]；公式对齐 PRD §10.8.1-10.8.4"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "compute/check.py",
       "kind": "script",
@@ -214,7 +226,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1) + clear_bucket_bars 按 bucket_type 清(M4.2 theme index 重建)；formal-filing PIT 常量(SOURCE_FORMAL_FILING/SOURCE_FORM_UNKNOWN)+FUNDAMENTALS_COLS 列契约",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、upsert/read_bucket_rrg 管周线 RS-Ratio 序列、clear_bucket_rrg 按 bucket_type 限域清(M4.3：sector/theme rrg 共表共存，重建只清自己那型；None=全清向后兼容))同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理；upsert_fundamentals 具名列写入(decouple 物理列序 CREATE vs ALTER-append)，含 effective_eod_date/source_type/source_form 三 formal-filing PIT provenance(v1 effective==filed、source_type=formal_filing)",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、upsert/read_bucket_rrg 管周线 RS-Ratio 序列、clear_bucket_rrg 按 bucket_type 限域清(M4.3：sector/theme rrg 共表共存，重建只清自己那型；None=全清向后兼容))同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理；upsert_fundamentals 具名列写入(decouple 物理列序 CREATE vs ALTER-append)，含 effective_eod_date/source_type/source_form 三 formal-filing PIT provenance(v1 effective==filed、source_type=formal_filing)；ensure_breakout_columns 幂等 ALTER 既有 derived_daily 增 brk_* 列（base→breakout 迁移，§10.8）",
         "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；clear_bucket_bars('theme')/clear_bucket_rrg('theme') 只清 theme 行、sector 行保留；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确"
       }
     },
@@ -243,6 +255,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/pit_check.py",
       "kind": "script",
       "module": "compute",
@@ -251,8 +264,7 @@
         "purpose": "formal-filing PIT 边界微测(AC-1/AC-3，PRD §10.5)：构造正典两季样本，证 P/S 不回填到 period_end",
         "invariants": "自给(无网络/无 fixture)：经 compute.db.upsert_*(真实写路径)造两季 fundamentals_q + flat-price daily_bars 落临时 DuckDB、跑真实 compute.valuation；断言 period_end 与 effective_eod_date 之间仍用上一季 revenue(P/S=mktcap/revenue_ttm=100)、effective 当日起用本季(P/S=50)、valuation_basis=formal_filing_pit；确定性(锚定固定日期、非 rng)故不依赖合成 fixture 形状、专测 ASOF 键=effective_eod_date 而非 period_end；PASS/FAIL、任一失败非零退出(CI 友好)；属 dev/CI 工具(duckdb venv 依赖，非 engine stdlib-only)、非 nightly pipeline 数据成员但经 make check 内联跑",
         "verification": "make pit-check(或 make check/nightly 内联)输出 PIT_OK：2026-04-23 P/S=100(上季 period_end 2025-12-31 effective 2026-02-15)、2026-04-24 起 P/S=50(本季 period_end 2026-03-31 effective 2026-04-24)；若 ASOF 退回 period_end 键则 2026-04-23 误判 P/S=50 → PIT_FAIL"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -274,7 +286,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "M0.3+M7.1 compute 编排：daily_bars + spx_daily → derived_daily（横截面 rs_pct + composite + ignition）",
-        "invariants": "pandas 算 per-stock（signals 长窗 + ignition 短窗，共用同一份 bars，C9）、DuckDB 算横截面 PERCENT_RANK/rank；composite 分量 c_* 存原始供 client 按任意 k 重配权、composite 仅默认 k 快照；ignition=100·mean(5 分量各自横截面 percentile-rank)、ign_pct=ignition 的横截面 percentile、ign_persist_days=连续(含当日)ign_pct≥90 的天数(islands 技法,非 lit 行=0)；clear+重算幂等",
+        "invariants": "pandas 算 per-stock（signals 长窗 + ignition 短窗，共用同一份 bars，C9）、DuckDB 算横截面 PERCENT_RANK/rank；composite 分量 c_* 存原始供 client 按任意 k 重配权、composite 仅默认 k 快照；ignition=100·mean(5 分量各自横截面 percentile-rank)、ign_pct=ignition 的横截面 percentile、ign_persist_days=连续(含当日)ign_pct≥90 的天数(islands 技法,非 lit 行=0)；clear+重算幂等；**base→breakout（核心，§10.8，2026-06-16 pivot）**：第三台 per-stock 引擎 compute_breakout 合并入 allm，db.ensure_breakout_columns 迁移后横截面 PERCENT_RANK(brk_strength)→brk_strength_pct 写 derived_daily.brk_*；composite/ignition 退役过渡期仍算（expand-then-contract，待 export/web 停读后移除）",
         "verification": "compute_all 后 derived_daily 非空；composite 5 分量∈[0,1]、composite∈[0,100]；ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0；smoke 打印 top-by-composite 与 top-by-ignition 方向合理"
       }
     },
@@ -730,7 +742,7 @@
       "stage": "implemented",
       "contract": {
         "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) + theme_membership(多对多 ticker↔theme 连续 exposure,point-in-time) 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q formal-filing PIT(PRD §10.5)：filed_date=正式披露日、effective_eod_date=ASOF 可得键(v1==filed_date)、source_type='formal_filing'(v1 唯一值)、source_form('unknown')，period_end 仅业务归属期绝不作可得对齐；valuation_daily 暴露 as_of_period_end 供 common-vintage(freshness=date−period_end)、as_of_effective_eod=实际 ASOF 键(v1==as_of_filed)、valuation_basis='formal_filing_pit' 标口径；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q formal-filing PIT(PRD §10.5)：filed_date=正式披露日、effective_eod_date=ASOF 可得键(v1==filed_date)、source_type='formal_filing'(v1 唯一值)、source_form('unknown')，period_end 仅业务归属期绝不作可得对齐；valuation_daily 暴露 as_of_period_end 供 common-vintage(freshness=date−period_end)、as_of_effective_eod=实际 ASOF 键(v1==as_of_filed)、valuation_basis='formal_filing_pit' 标口径；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)；derived_daily 增 brk_*（base→breakout 核心引擎，§10.8；composite/ignition 列转退役过渡保留）",
         "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错；derived_daily 含 ig_*/ignition/ign_pct/ign_persist_days 列"
       }
     },
@@ -1528,5 +1540,5 @@
     }
   ],
   "retired_entries": [],
-  "last_structure_digest": "4de3daea221755f6ef461006a523b9b28a92dd7a9108de58da1491d99915d8d8"
+  "last_structure_digest": "a2e64c1e0d67fc13ca66a02640989c4acf0e4122682fb085f9c56d07f88ff83f"
 }
