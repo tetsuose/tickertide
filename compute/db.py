@@ -146,6 +146,19 @@ def ensure_breakout_columns(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(f"ALTER TABLE derived_daily ADD COLUMN IF NOT EXISTS {name} {typ}")
 
 
+# ignition columns retired by the 2026-06-16 spine pivot (base→breakout is the core engine).
+# Drop them from an existing derived_daily so run.py's INSERT (which no longer SELECTs them)
+# matches the table. Idempotent: DROP COLUMN IF EXISTS. composite/c_* stay (calc-layer, §10.6).
+_IGNITION_COLS = ["ig_accel", "ig_expand", "ig_vsurge", "ig_breakout", "ig_rsturn",
+                  "ignition", "ign_pct", "ign_persist_days"]
+
+
+def drop_ignition_columns(con: duckdb.DuckDBPyConnection) -> None:
+    """Drop the retired ignition columns from derived_daily if present (migration)."""
+    for name in _IGNITION_COLS:
+        con.execute(f"ALTER TABLE derived_daily DROP COLUMN IF EXISTS {name}")
+
+
 # --- M0.2 fundamentals (EDGAR) ---
 
 # Formal-filing PIT provenance (PRD §10.5). v1 ingests ONLY formal SEC filings, so every

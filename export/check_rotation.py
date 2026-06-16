@@ -55,10 +55,10 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
         elif s.get("sector"):
             by_bucket[s["sector"]].append(s)
 
-    def _ign_pct(s):
-        return (s.get("ignition") or {}).get("ign_pct")
+    def _brk_pct(s):
+        return (s.get("breakout") or {}).get("brk_strength_pct")
 
-    mem_checked = ign_checked = 0
+    mem_checked = brk_checked = 0
     for b in rotation.get("buckets", []):
         bk = b["bucket"]
         members = by_bucket.get(bk, [])
@@ -69,14 +69,15 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
             mem_checked += 1
             if b["member_count"] != len(members):
                 problems.append(f"{bk}: member_count rotation={b['member_count']} vs board={len(members)}")
-        # igniting / candidates trace to the board's own ignition block (the SAME gate).
+        # igniting / candidates trace to the board's base→breakout block (the SAME recall-first
+        # gate, brk_strength_pct>=90 == board.breakout.candidate). 2026-06-16 spine pivot.
         if b.get("igniting") is not None:
-            ign_checked += 1
-            lit = sum(1 for s in members if _ign_pct(s) is not None and _ign_pct(s) >= SEA_LEVEL)
+            brk_checked += 1
+            lit = sum(1 for s in members if _brk_pct(s) is not None and _brk_pct(s) >= SEA_LEVEL)
             if b["igniting"] != lit:
                 problems.append(f"{bk}: igniting rotation={b['igniting']} vs board={lit}")
         if b.get("candidates") is not None:
-            cands = sum(1 for s in members if (s.get("ignition") or {}).get("candidate"))
+            cands = sum(1 for s in members if (s.get("breakout") or {}).get("candidate"))
             if b["candidates"] != cands:
                 problems.append(f"{bk}: candidates rotation={b['candidates']} vs board={cands}")
 
@@ -84,7 +85,7 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
         "board_stocks": len(board_tickers),
         "rotation_buckets": len(rotation.get("buckets", [])),
         "member_count_checked": mem_checked,
-        "ignition_checked": ign_checked,
+        "breakout_checked": brk_checked,
     }
     return (not problems), problems, stats
 
@@ -101,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[rotation-c9] as_of board={board.get('as_of_date')} rotation={rotation.get('as_of_date')}  "
           f"buckets={stats['rotation_buckets']}  member_count_checked={stats['member_count_checked']}  "
-          f"ignition_checked={stats['ignition_checked']}")
+          f"breakout_checked={stats['breakout_checked']}")
     if ok:
         print("[rotation-c9] GATE_PASS C9 rotation league↔board members consistent "
               "(member_count, igniting, candidates, members⊆board)")

@@ -300,8 +300,7 @@ export default function Rotation({
           <div><span className="dim">breadth &gt;MA50</span><b>{drilled.breadth_ma50?.toFixed(0) ?? '—'}%</b></div>
           <div><span className="dim">breadth &gt;MA200</span><b>{drilled.breadth_ma200?.toFixed(0) ?? '—'}%</b></div>
           <div><span className="dim"># at 52w high</span><b>{drilled.at_high ?? '—'}</b></div>
-          <div><span className="dim"># igniting</span><b style={{ color: (drilled.igniting ?? 0) > 0 ? 'var(--grn)' : undefined }}>{drilled.igniting ?? '—'}</b></div>
-          <div><span className="dim"># candidates</span><b style={{ color: (drilled.candidates ?? 0) > 0 ? 'var(--grn)' : undefined }}>{drilled.candidates ?? '—'}</b></div>
+          <div><span className="dim"># 突破候选</span><b style={{ color: (drilled.candidates ?? 0) > 0 ? 'var(--grn)' : undefined }}>{drilled.candidates ?? '—'}</b></div>
           <div><span className="dim">agg EV/S</span><b>{drilled.agg_evs?.toFixed(1) ?? '—'}</b></div>
           <div><span className="dim">rel ret 1m/3m/6m</span><b>{fmtPct(drilled.rel_ret_1m)} / {fmtPct(drilled.rel_ret_3m)} / {fmtPct(drilled.rel_ret_6m)}</b></div>
           <div><span className="dim">members</span><b>{drilled.member_count ?? '—'}</b></div>

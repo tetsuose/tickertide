@@ -69,11 +69,12 @@ def _etf_map() -> dict:
 
 
 def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
-    """Top-N member tickers per bucket by ignition (ign_pct) on `latest_date`. Bucket
-    membership is rotation._bucket_members (sector: universe.sector; theme: theme_membership
-    point-in-time, many-to-many) — the SAME source the league uses (C9). M8: ordered by the
-    discovery engine, not composite. The client filters board.json by scope for the actual
-    evidence cards (DRY/C9); this carries the ticker list only."""
+    """Top-N member tickers per bucket by base→breakout strength (brk_strength_pct) on
+    `latest_date`. Bucket membership is rotation._bucket_members (sector: universe.sector;
+    theme: theme_membership point-in-time, many-to-many) — the SAME source the league uses
+    (C9). 2026-06-16 spine pivot: ordered by the base→breakout engine, not composite/ignition.
+    The client filters board.json by scope for the actual evidence cards (DRY/C9); this carries
+    the ticker list only."""
     mem = rotation._bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
@@ -81,8 +82,8 @@ def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
             """
             SELECT mr.bucket AS bucket, d.ticker
             FROM derived_daily d JOIN mem_rel mr ON mr.ticker = d.ticker
-            WHERE d.date = ? AND d.ign_pct IS NOT NULL
-            ORDER BY mr.bucket, d.ign_pct DESC
+            WHERE d.date = ? AND d.brk_strength_pct IS NOT NULL
+            ORDER BY mr.bucket, d.brk_strength_pct DESC
             """,
             [latest_date],
         ).fetchall()
