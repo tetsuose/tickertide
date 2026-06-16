@@ -26,12 +26,12 @@ describe('App top bar: early⟷reliable knob removed (PRD §16)', () => {
 
   it('shows the IGNITION engine note in its place (core engine, no tunable parameter)', () => {
     expect(html).toContain('enginenote')
-    expect(html).toContain('IGNITION')
+    expect(html).toContain('BASE→BREAKOUT')
     expect(html).toContain('无可调参')
   })
 
-  it('still renders the 5-lens tab bar and the default Discovery surface', () => {
-    for (const label of ['Ocean', 'Discovery', 'Rotation', 'Valuation', 'Stock'])
+  it('still renders the 5-lens tab bar and the default Breakouts surface', () => {
+    for (const label of ['Ocean', 'Breakouts', 'Rotation', 'Valuation', 'Stock'])
       expect(html).toContain(label)
   })
 })

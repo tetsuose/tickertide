@@ -3,19 +3,8 @@ import type { Stock, ChartSeries } from '../types'
 import MiniChart from './MiniChart'
 import { loadBoardChart } from '../lib/data'
 
-// step-rate ratio = (ret10/10)/(ret50/50): the readable form of ig_accel (PRD §10.8).
-// It blows up when ret50≈0 (M7.2 pitfall: fixture TT20=685) — mathematically faithful
-// but useless on the card. Clamp the DISPLAY at ±SR_CLAMP (the engine's ranked ig_accel
-// is unaffected — this is display-only) and mark clamped values with a leading >/<.
-const SR_CLAMP = 20
-function fmtStepRate(v: number | null): string {
-  if (v == null) return '—'
-  if (v > SR_CLAMP) return `>${SR_CLAMP}×`
-  if (v < -SR_CLAMP) return `<-${SR_CLAMP}×`
-  return v.toFixed(1) + '×'
-}
-
 const fmtDate = (d: string | null): string => (d == null ? '—' : d.slice(5)) // MM-DD
+const fmtNum = (v: number | null, nd = 2): string => (v == null ? '—' : v.toFixed(nd))
 
 function fmtMktcap(v: number | null): string {
   if (v == null) return '—'
@@ -29,9 +18,9 @@ const pct = (v: number | null): string =>
   v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%'
 
 // evidence-card = the collapsed state of a Stock (PRD §9.1.3): scannable raw facts,
-// ignition-first. Composite is NO LONGER shown (M8 — composite is not a user-visible
-// concept). The card header surfaces the 持续点火 state; the 点火证据 strip + the 6 raw
-// evidence numbers + the mini-chart carry the rest. Click anywhere → open Stock.
+// base→breakout-first (2026-06-16 spine pivot — ignition retired; composite is not a
+// user-visible concept). The card header surfaces the base→breakout state; the base/τ/breakout
+// 证据 strip + the 6 raw evidence numbers + the mini-chart carry the rest. Click → open Stock.
 export default function EvidenceCard({
   stock,
   onOpen,
@@ -44,7 +33,7 @@ export default function EvidenceCard({
   chart?: ChartSeries
 }) {
   const e = stock.evidence
-  const ign = stock.ignition
+  const brk = stock.breakout
 
   // schema v2 payload split: the mini-chart is NOT in the bulk board.json — fetch this card's
   // chart on render (board/<ticker>.json). Chart source priority: injected prop (SSR/tests) →
@@ -77,52 +66,52 @@ export default function EvidenceCard({
           </span>
         </div>
         <div className="ec-headr">
-          {/* 持续点火 badge: this IS the Discovery sort signal (PRD §10.8.2). candidate
-              = top-decile ign_pct AND sustained ≥persist_min days. When not a candidate, a
-              dim ign_pct chip still gives the ignition read (composite badge is gone, M8). */}
-          {ign?.candidate ? (
+          {/* base→breakout badge: this IS the Breakouts sort signal (PRD §10.8). candidate
+              = brk_strength_pct top decile (recall-first, no persistence). When not a candidate,
+              a dim brk_pct chip still gives the breakout read (composite/ignition are gone). */}
+          {brk?.candidate ? (
             <span
               className="ec-ign"
-              title={`持续点火 candidate: ign_pct ${ign.ign_pct?.toFixed(0)} · 持续 ${ign.ign_persist_days}d`}
+              title={`突破候选: brk_pct ${brk.brk_strength_pct?.toFixed(0)} · τ ${brk.evidence.tau_date ?? '—'}`}
             >
-              🔥 {ign.ign_persist_days}d
+              🚀 {brk.evidence.days_since_tau != null ? `${brk.evidence.days_since_tau}d` : '突破'}
             </span>
-          ) : ign?.ign_pct != null ? (
-            <span className="ec-ignpct" title="ignition 横截面百分位（≥90 = 海平面以上 = 点亮）">
-              ign {ign.ign_pct.toFixed(0)}
+          ) : brk?.brk_strength_pct != null ? (
+            <span className="ec-ignpct" title="base→breakout 强度横截面百分位（≥90 = 海平面以上 = 已突破）">
+              brk {brk.brk_strength_pct.toFixed(0)}
             </span>
           ) : null}
         </div>
       </div>
 
-      {/* 点火证据 (ignition evidence, PRD §10.8) — the card's primary read on the
-          ignition board: breakout day / vol surge× / step-rate (clamped) / reclaimed MA50.
-          Same source as the chart bars (C9). vol_mult here is ig_vsurge (5/60 ratio),
-          distinct from the 50d vol_mult in the field strip below. */}
-      {ign && (
+      {/* base/τ/breakout 证据 (PRD §10.8) — the card's primary read on the breakout board:
+          estimated kink τ + days-since / drift_step (slope jump) / fit_gain (kink salience) /
+          breakout-side volume surge. Same source as the chart bars (C9). vol_mult here is
+          brk_vsurge, distinct from the 50d vol_mult in the field strip below. */}
+      {brk && (
         <div className="ec-ignev">
-          <span className="ec-ignev-i" title="trailing-60d high (breakout reference) + 距今天数">
-            <em>brk</em> {fmtDate(ign.evidence.breakout_day)}
-            {ign.evidence.days_since_breakout != null && (
-              <i className="ec-ignev-d"> ·{ign.evidence.days_since_breakout}d前</i>
+          <span className="ec-ignev-i" title="估计变点 τ（base→breakout 拐点）+ 距今天数">
+            <em>τ</em> {fmtDate(brk.evidence.tau_date)}
+            {brk.evidence.days_since_tau != null && (
+              <i className="ec-ignev-d"> ·{brk.evidence.days_since_tau}d前</i>
             )}
           </span>
-          <span className="ec-ignev-i" title="放量× = ig_vsurge（5日/60日成交量比）">
+          <span className="ec-ignev-i" title="drift_step = (s2−s1)/σ，斜率跳变（最强判别，≳0.13）">
+            <em>drift</em>{' '}
+            <b style={{ color: (brk.evidence.drift_step ?? 0) >= 0.13 ? 'var(--grn)' : 'var(--txt)' }}>
+              {fmtNum(brk.evidence.drift_step)}
+            </b>
+          </span>
+          <span className="ec-ignev-i" title="fit_gain = 1−SSE2/SSE1，拐点显著度（≳0.7）">
+            <em>fit</em>{' '}
+            <b style={{ color: (brk.evidence.fit_gain ?? 0) >= 0.7 ? 'var(--grn)' : 'var(--txt)' }}>
+              {fmtNum(brk.evidence.fit_gain)}
+            </b>
+          </span>
+          <span className="ec-ignev-i" title="突破段放量× = brk_vsurge">
             <em>vol</em>{' '}
-            <b style={{ color: (ign.evidence.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
-              {ign.evidence.vol_mult == null ? '—' : ign.evidence.vol_mult.toFixed(2) + '×'}
-            </b>
-          </span>
-          <span className="ec-ignev-i" title="步速比 = (ret10/10)/(ret50/50)，ig_accel 可读形（显示已 clamp ±20×）">
-            <em>step</em>{' '}
-            <b style={{ color: (ign.evidence.step_rate_ratio ?? 0) >= 1 ? 'var(--grn)' : 'var(--txt)' }}>
-              {fmtStepRate(ign.evidence.step_rate_ratio)}
-            </b>
-          </span>
-          <span className="ec-ignev-i" title="是否收复 MA50（ig_breakout 的 gate：close>MA50）">
-            <em>MA50</em>{' '}
-            <b style={{ color: ign.evidence.reclaimed_ma50 ? 'var(--grn)' : 'var(--dim)' }}>
-              {ign.evidence.reclaimed_ma50 == null ? '—' : ign.evidence.reclaimed_ma50 ? '收复✓' : '未收复'}
+            <b style={{ color: (brk.evidence.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
+              {brk.evidence.vol_mult == null ? '—' : brk.evidence.vol_mult.toFixed(2) + '×'}
             </b>
           </span>
         </div>

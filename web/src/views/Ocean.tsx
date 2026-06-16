@@ -37,7 +37,8 @@ export function Tip({
   stock, draw, detail, di,
 }: { stock: OceanStock; draw: OceanDrawPt; detail: OceanDetail | null; di: number }) {
   const loading = detail == null
-  const persist = detail?.ign_persist_days[di] ?? null
+  const drift = detail?.brk_drift_step[di] ?? null
+  const tau = detail?.brk_tau_date?.[di] ?? null
   const evs = detail?.evs[di] ?? null
   const pe = detail?.pe[di] ?? null
   const evEbitda = detail?.ev_ebitda[di] ?? null
@@ -54,12 +55,12 @@ export function Tip({
         <b>{stock.ticker}</b> <span className="dim">{stock.sector ?? '—'}</span>
       </div>
       <div className="otrow">
-        <span>ign_pct</span>
-        <b style={{ color: draw.ign_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>{draw.ign_pct.toFixed(0)}</b>
+        <span>brk_pct</span>
+        <b style={{ color: draw.brk_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>{draw.brk_pct.toFixed(0)}</b>
       </div>
       <div className="otrow">
-        <span>持续点火</span>
-        <b>{loading ? LOADING : `${persist ?? '—'}d`}{draw.candidate ? ' · 🔥candidate' : ''}</b>
+        <span>突破 drift·τ</span>
+        <b>{loading ? LOADING : `${drift != null ? drift.toFixed(2) : '—'} · ${tau ?? '—'}`}{draw.candidate ? ' · 🚀candidate' : ''}</b>
       </div>
       <div className="otrow"><span>P/S</span><b>{draw.ps != null ? draw.ps.toFixed(1) : 'n.m.'}</b></div>
       <div className="otrow"><span>EV/S</span><b>{loading ? LOADING : num(evs)}</b></div>
@@ -168,7 +169,7 @@ export default function Ocean({
   // ocean.json must be schema v3 (M8 payload split — columnar bulk + lazy per-stock detail). A
   // frontend-only deploy can transiently serve an OLD v1/v2 payload until a nightly re-export
   // lands — guard so the surface degrades to a notice instead of crashing on the columns.
-  const okSchema = !!data && data.schema_version === 3 && Array.isArray(data.dates) && !!data.axis
+  const okSchema = !!data && data.schema_version === 4 && Array.isArray(data.dates) && !!data.axis
   // Effective date index: scrubbed value, else the latest snapshot.
   const di = okSchema ? dateIndex ?? data!.dates.length - 1 : 0
   useEffect(() => {
@@ -407,8 +408,8 @@ export default function Ocean({
           onContextMenu={onContextMenu}
         />
         <div className="oax-x">P/S (log) → (便宜 · 贵)</div>
-        <div className="oax-y">ign_pct ↑ (点火强度)</div>
-        <div className="oquad">↑ 海平面以上 = 持续点火</div>
+        <div className="oax-y">brk_pct ↑ (突破强度)</div>
+        <div className="oquad">↑ 海平面以上 = 突破候选</div>
         {hover && hoverStock && hoverDraw && (
           <div
             className="otipwrap"
@@ -450,8 +451,8 @@ export default function Ocean({
       </div>
 
       <div className="foot">
-        <b>Ignition × Valuation 海平面图</b>：纵轴 = ign_pct（点火横截面百分位），<b>海平面 = ign_pct 90</b>（top decile）；
-        海平面以上 = 正在快速上涨 / 加速 / 突破 / 放量，跃出高度 ∝ ign_pct−90，与 Discovery 持续点火候选同源（C9）。横轴 =
+        <b>base→breakout 强度 × Valuation 二维相图</b>：纵轴 = brk_pct（base→breakout 强度横截面百分位），<b>海平面 = brk_pct 90</b>（top decile）；
+        海平面以上 = 长平台后陡突破（drift_step/τ 拐点 + 清越平台高点 + 放量），跃出高度 ∝ brk_pct−90，与 Breakouts 候选同源（C9）。横轴 =
         <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}；candidate 加光晕 +
         亮环。拖<b>日期滑杆</b>切 EOD；<b>▶ Play</b> 在相邻真实快照间平滑插值移动（仅视觉，tooltip/状态取真实快照，不伪造交易日）；
         <b>点击 pin</b>、<b>框选 lasso</b> → set 全局 scope（跨 tab 同步、可一键清）；<b>右键点 dot</b> → 在 Stock tab 打开该票。as_of {data.as_of_date} · {data.count} 点 ·
