@@ -129,6 +129,23 @@ def clear_derived(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("DELETE FROM derived_daily")
 
 
+# base→breakout columns (PRD §10.8, 2026-06-16 spine pivot). Added to derived_daily after
+# the schema froze with only ignition/composite columns → ALTER existing DBs in place
+# (fresh DBs already get them from ingest/schema.sql). Idempotent: ADD COLUMN IF NOT EXISTS.
+_BREAKOUT_COLS = [
+    ("brk_tau_date", "VARCHAR"), ("brk_base_slope", "DOUBLE"), ("brk_brk_slope", "DOUBLE"),
+    ("brk_drift_step", "DOUBLE"), ("brk_fit_gain", "DOUBLE"), ("brk_clearance", "DOUBLE"),
+    ("brk_vcp", "DOUBLE"), ("brk_vsurge", "DOUBLE"), ("brk_strength", "DOUBLE"),
+    ("brk_strength_pct", "DOUBLE"),
+]
+
+
+def ensure_breakout_columns(con: duckdb.DuckDBPyConnection) -> None:
+    """Add the base→breakout columns to an existing derived_daily if missing (migration)."""
+    for name, typ in _BREAKOUT_COLS:
+        con.execute(f"ALTER TABLE derived_daily ADD COLUMN IF NOT EXISTS {name} {typ}")
+
+
 # --- M0.2 fundamentals (EDGAR) ---
 
 # Formal-filing PIT provenance (PRD §10.5). v1 ingests ONLY formal SEC filings, so every

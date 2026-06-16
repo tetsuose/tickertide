@@ -107,6 +107,21 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   ignition          DOUBLE,    -- 100·mean(cross-sectional percentile-rank of the 5 components), [0,100]
   ign_pct           DOUBLE,    -- cross-sectional percentile of ignition, per date, 0-100
   ign_persist_days  INTEGER,   -- consecutive days (incl. today) with ign_pct>=90 (top-decile persistence)
+  -- base→breakout engine (CORE detection, PRD §10.8; 2026-06-16 spine pivot). Replaces
+  -- ignition as the core; the composite + ignition columns above are RETIRED (§10.6/§10.8),
+  -- kept transitionally until export/web stop reading them. Per-stock causal log-price
+  -- single-changepoint τ + dimensionless features (÷ daily-return σ); brk_strength_pct is
+  -- the cross-sectional rank (computed in compute/run.py, like ign_pct).
+  brk_tau_date      VARCHAR,   -- estimated changepoint date (2-seg piecewise-linear kink on log price)
+  brk_base_slope    DOUBLE,    -- s1/σ: base-segment slope (≈0 = flat long base)
+  brk_brk_slope     DOUBLE,    -- s2/σ: breakout-segment slope (steep)
+  brk_drift_step    DOUBLE,    -- (s2-s1)/σ: slope jump (strongest discriminator, ≳0.13)
+  brk_fit_gain      DOUBLE,    -- 1-SSE2/SSE1: kink salience (≳0.7)
+  brk_clearance     DOUBLE,    -- close/max(base-high) - 1: did price clear the base ceiling
+  brk_vcp           DOUBLE,    -- bar-level VCP: ATR(breakout)/ATR(base) (coil release)
+  brk_vsurge        DOUBLE,    -- volume surge: mean(vol breakout)/mean(vol base)
+  brk_strength      DOUBLE,    -- recall-first combined strength (0 if degeneracy guards fail)
+  brk_strength_pct  DOUBLE,    -- cross-sectional percentile of brk_strength, per date, 0-100
   PRIMARY KEY (ticker, date)
 );
 
