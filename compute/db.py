@@ -63,6 +63,31 @@ def upsert_bars(con: duckdb.DuckDBPyConnection, ticker: str, bars: Sequence[Sequ
     return len(payload)
 
 
+def upsert_splits(con: duckdb.DuckDBPyConnection, ticker: str, rows: Sequence[Sequence]) -> int:
+    """INSERT OR REPLACE split events. Each row = (ex_date, ratio). ratio = shares-out
+    multiplier on/after ex_date (forward 10-for-1 → 10.0; reverse 1-for-5 → 0.2). Feeds
+    compute/valuation.py split-alignment (PRD §10.5): keeps the EDGAR per-share fundamentals
+    (filing-lagged) in the SAME split basis as the yfinance price (exchange-immediate), so a
+    just-split ticker's P/S, P/E, EV/S, EV/EBITDA, PEG don't collapse by the split ratio.
+    Idempotent on (ticker, ex_date); split history is stable, so callers need not clear first."""
+    if not rows:
+        return 0
+    payload = [(ticker, d, r) for (d, r) in rows]
+    con.executemany("INSERT OR REPLACE INTO splits VALUES (?, ?, ?)", payload)
+    return len(payload)
+
+
+def clear_splits(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("DELETE FROM splits")
+
+
+def read_splits(con: duckdb.DuckDBPyConnection, ticker: str):
+    """Return a ticker's split events as a pandas DataFrame (ex_date, ratio), oldest first."""
+    return con.execute(
+        "SELECT ex_date, ratio FROM splits WHERE ticker = ? ORDER BY ex_date", [ticker]
+    ).df()
+
+
 def upsert_spx(con: duckdb.DuckDBPyConnection, bars: Sequence[Sequence]) -> int:
     """INSERT OR REPLACE benchmark closes. Each bar = (date, ..., close, ...) -> (date, close)."""
     if not bars:

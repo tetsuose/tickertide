@@ -47,3 +47,28 @@ class YFinanceProvider:
                 int(vol) if vol is not None and vol == vol else None,
             ))
         return out
+
+    def get_splits(self, ticker: str) -> list[tuple]:
+        """Return [(ex_date_iso, ratio)] forward/reverse splits from Yahoo, oldest first.
+        ratio = shares-out multiplier on/after ex_date (10-for-1 → 10.0; reverse 1-for-8 →
+        0.125). Feeds split-alignment (PRD §10.5): the bars above are split-adjusted to the
+        latest session, so per-share EDGAR fundamentals must be lifted to the same basis.
+        Empty on no splits / fetch failure (fragile source — treat outages as expected)."""
+        import yfinance as yf  # lazy: heavy import
+
+        try:
+            s = yf.Ticker(ticker).splits  # pandas Series: index = ex-date, value = ratio
+        except Exception:
+            return []
+        if s is None or len(s) == 0:
+            return []
+        out: list[tuple] = []
+        for idx, val in s.items():
+            try:
+                r = float(val)
+            except (TypeError, ValueError):
+                continue
+            if r > 0 and r != 1.0:  # 0/NaN are bad rows; 1.0 is a no-op split
+                out.append((idx.date().isoformat(), r))
+        out.sort()
+        return out

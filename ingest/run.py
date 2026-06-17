@@ -66,22 +66,32 @@ def main() -> int:
     print(f"[bars] provider={args.provider} targets={len(tickers)} (seed={len(seed)} + top {args.limit})")
 
     provider = prices.get_provider(args.provider)
-    ok = skipped = 0
+    ok = skipped = n_splits = 0
     for i, t in enumerate(tickers, 1):
         try:
             bars = provider.get_bars(t, args.lookback_days)
             if bars:
                 db.upsert_bars(con, t, bars)
                 ok += 1
+                # Splits keep the EDGAR per-share fundamentals in the SAME split basis as these
+                # (split-adjusted) bars — without them a just-split ticker's P/S·P/E collapse by
+                # the split ratio until its next 10-Q (PRD §10.5 split-alignment). Best-effort:
+                # a splits fetch failure must not drop the bars we already stored.
+                try:
+                    sp = provider.get_splits(t)
+                    if sp:
+                        n_splits += db.upsert_splits(con, t, sp)
+                except Exception as e:
+                    print(f"  [splits skip] {t}: {type(e).__name__}: {str(e)[:60]}")
             else:
                 skipped += 1
         except Exception as e:  # provider/network flakiness is expected (esp. yfinance)
             skipped += 1
             print(f"  [skip] {t}: {type(e).__name__}: {str(e)[:80]}")
         if i % 50 == 0:
-            print(f"  ... {i}/{len(tickers)} (ok={ok} skip={skipped})")
+            print(f"  ... {i}/{len(tickers)} (ok={ok} skip={skipped} splits={n_splits})")
 
-    print(f"[bars] done ok={ok} skipped={skipped}")
+    print(f"[bars] done ok={ok} skipped={skipped} splits={n_splits}")
 
     try:
         spx = provider.get_bars(BENCHMARK, args.lookback_days)
@@ -93,7 +103,8 @@ def main() -> int:
     print(
         f"[summary] universe={db.count(con,'universe')} "
         f"bar_tickers={db.distinct_bar_tickers(con)} "
-        f"bars={db.count(con,'daily_bars')} spx={db.count(con,'spx_daily')}"
+        f"bars={db.count(con,'daily_bars')} spx={db.count(con,'spx_daily')} "
+        f"splits={db.count(con,'splits')}"
     )
     con.close()
     return 0

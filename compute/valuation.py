@@ -7,9 +7,18 @@ NEVER period_end) so a given trading day only ever sees financials already forma
 filed and effective on that day (anti-lookahead). A quarter ending Mar 31 but filed in
 Apr enters P/S in Apr, not Mar. Output tags valuation_basis='formal_filing_pit'.
 
-  pe        = close / eps_ttm                         (eps_ttm<=0 -> NULL = n.m., fall back to ps)
-  ps        = (shares*close) / revenue_ttm
-  evs       = EV / revenue_ttm,  EV = shares*close + total_debt − cash
+SPLIT-ALIGNMENT (PRD §10.5): the price (adj_close) is split-adjusted to the latest session
+the moment a split takes effect, but EDGAR per-share figures (eps) and the share count
+(shares) only re-state at the NEXT formal filing — months later. Multiplying a pre-split
+share count by a post-split price collapses P/S, P/E, EV/S, EV/EBITDA, PEG by the split
+ratio. So each filing carries split_adj = ∏ ratio of splits with ex_date in (effective_eod,
+price-basis] (the splits table), and eps/shares are lifted to the price basis below. Revenue,
+EBITDA, debt, cash are absolute amounts → split-invariant → untouched. No lagging split →
+split_adj = 1.0 → identical to the pre-split behaviour (most tickers).
+
+  pe        = close·split_adj / eps_ttm               (eps_ttm<=0 -> NULL = n.m., fall back to ps)
+  ps        = (shares·split_adj·close) / revenue_ttm
+  evs       = EV / revenue_ttm,  EV = shares·split_adj·close + total_debt − cash
   ev_ebitda = EV / ebitda_ttm                          (ebitda_ttm<=0/NULL -> NULL, fall back to evs)
   growth    = revenue_ttm YoY (4 quarters back, ~1yr span-checked)
   margin    = ebitda_ttm / revenue_ttm
@@ -36,36 +45,56 @@ from compute import db  # noqa: E402
 
 _SQL = """
 INSERT INTO valuation_daily
-WITH fe AS (
-  SELECT ticker, period_end, filed_date,
+WITH bar_basis AS (
+  -- The split basis of the price series. yfinance back-adjusts the WHOLE price history to the
+  -- latest session, so every bar of a ticker is stated in the split basis as of its last bar.
+  SELECT ticker, max(date) AS basis_date FROM daily_bars GROUP BY ticker
+),
+fe AS (
+  SELECT f.ticker, f.period_end, f.filed_date,
     -- formal-filing PIT ASOF key (PRD §10.5): the EOD from which this filing is usable.
     -- v1 == filed_date; COALESCE guards rows back-filled before the column existed.
-    COALESCE(effective_eod_date, filed_date) AS effective_eod_date,
-    revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm,
-    CASE WHEN datediff('day', LAG(period_end, 4) OVER w, period_end) BETWEEN 330 AND 400
-         THEN revenue_ttm / NULLIF(LAG(revenue_ttm, 4) OVER w, 0) - 1 END AS growth,
-    CASE WHEN revenue_ttm > 0 AND ebitda_ttm IS NOT NULL THEN ebitda_ttm / revenue_ttm END AS margin
-  FROM fundamentals_q
-  WINDOW w AS (PARTITION BY ticker ORDER BY period_end)
+    COALESCE(f.effective_eod_date, f.filed_date) AS effective_eod_date,
+    f.revenue_ttm, f.shares, f.total_debt, f.cash, f.ebitda_ttm, f.eps_ttm,
+    CASE WHEN datediff('day', LAG(f.period_end, 4) OVER w, f.period_end) BETWEEN 330 AND 400
+         THEN f.revenue_ttm / NULLIF(LAG(f.revenue_ttm, 4) OVER w, 0) - 1 END AS growth,
+    CASE WHEN f.revenue_ttm > 0 AND f.ebitda_ttm IS NOT NULL THEN f.ebitda_ttm / f.revenue_ttm END AS margin,
+    -- split-alignment factor (PRD §10.5): cumulative ratio of splits that took effect AFTER this
+    -- filing became usable (effective_eod_date) and on/before the price basis date. The price is
+    -- ALREADY in the post-split basis (yfinance), but this filing's eps/shares are pre-split; the
+    -- factor lifts them to the price basis. exp(Σ ln ratio) = product, NULL→COALESCE 1.0 (no split
+    -- in the window → byte-identical to pre-split behaviour; ratio>0 keeps ln defined).
+    COALESCE((
+      SELECT exp(sum(ln(s.ratio)))
+      FROM splits s, bar_basis bb
+      WHERE s.ticker = f.ticker AND bb.ticker = f.ticker
+        AND s.ex_date > COALESCE(f.effective_eod_date, f.filed_date)
+        AND s.ex_date <= bb.basis_date
+    ), 1.0) AS split_adj
+  FROM fundamentals_q f
+  WINDOW w AS (PARTITION BY f.ticker ORDER BY f.period_end)
 ),
 j AS (
   -- ASOF key is effective_eod_date, NEVER period_end: a trading day only sees a filing once
   -- it is formally available (period_end is the fiscal period, not an availability date).
   SELECT b.ticker, b.date, b.adj_close AS px,
          f.period_end, f.filed_date, f.effective_eod_date, f.revenue_ttm, f.shares, f.total_debt, f.cash,
-         f.ebitda_ttm, f.eps_ttm, f.growth, f.margin
+         f.ebitda_ttm, f.eps_ttm, f.growth, f.margin, f.split_adj
   FROM daily_bars b
   ASOF LEFT JOIN fe f
     ON b.ticker = f.ticker AND b.date >= f.effective_eod_date
 )
 SELECT ticker, date,
-  CASE WHEN eps_ttm > 0 THEN px / eps_ttm END AS pe,
-  CASE WHEN revenue_ttm > 0 AND shares > 0 THEN (shares * px) / revenue_ttm END AS ps,
+  -- split-alignment (PRD §10.5): eps (per-share) and shares (count) are lifted to the price's
+  -- split basis by split_adj; revenue/ebitda/debt/cash are absolute amounts and are split-INVARIANT
+  -- (untouched). split_adj=1 when no split lags the filing, so this is a no-op for most tickers.
+  CASE WHEN eps_ttm > 0 THEN px * split_adj / eps_ttm END AS pe,
+  CASE WHEN revenue_ttm > 0 AND shares > 0 THEN (shares * split_adj * px) / revenue_ttm END AS ps,
   CASE WHEN revenue_ttm > 0 AND shares > 0
-       THEN (shares * px + COALESCE(total_debt, 0) - COALESCE(cash, 0)) / revenue_ttm END AS evs,
+       THEN (shares * split_adj * px + COALESCE(total_debt, 0) - COALESCE(cash, 0)) / revenue_ttm END AS evs,
   CASE WHEN ebitda_ttm > 0 AND shares > 0
-       THEN (shares * px + COALESCE(total_debt, 0) - COALESCE(cash, 0)) / ebitda_ttm END AS ev_ebitda,
-  CASE WHEN eps_ttm > 0 AND growth > 0 THEN (px / eps_ttm) / (growth * 100) END AS peg,
+       THEN (shares * split_adj * px + COALESCE(total_debt, 0) - COALESCE(cash, 0)) / ebitda_ttm END AS ev_ebitda,
+  CASE WHEN eps_ttm > 0 AND growth > 0 THEN (px * split_adj / eps_ttm) / (growth * 100) END AS peg,
   growth, margin,
   CASE WHEN growth IS NOT NULL AND margin IS NOT NULL THEN growth * 100 + margin * 100 END AS rule40,
   period_end AS as_of_period_end, filed_date AS as_of_filed,

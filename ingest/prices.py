@@ -21,6 +21,13 @@ class PriceProvider(ABC):
     def get_bars(self, ticker: str, lookback_days: int = 760) -> list[tuple]:
         """Return daily bars for ticker over ~lookback_days calendar days (newest last)."""
 
+    def get_splits(self, ticker: str) -> list[tuple]:
+        """Return [(ex_date_iso, ratio)] forward/reverse splits, oldest first. OPTIONAL
+        capability (default: none) — split-alignment (PRD §10.5) degrades gracefully to a
+        factor of 1.0 when a provider can't supply splits. ratio = shares-out multiplier
+        on/after ex_date (forward 10-for-1 → 10.0; reverse 1-for-5 → 0.2)."""
+        return []
+
 
 def get_provider(name: str = "yfinance") -> PriceProvider:
     """Factory. Lazy-imports the concrete provider so its deps load only when used."""

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-17T01:03:38.647066+00:00",
+  "updated_at": "2026-06-17T12:59:36.026299+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -118,8 +118,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4)、valuation-c9 跑 check_valuation(AC-M5 C9 valuation/stock↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)",
-        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS"
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4)、valuation-c9 跑 check_valuation(AC-M5 C9 valuation/stock↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)；check 串 pit-check(AC-1 PIT 边界)+split-check(AC-SPLIT 拆股口径对齐 PRD §10.5)进 nightly",
+        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS；make check 跑 pit-check/split-check"
       }
     },
     {
@@ -159,6 +159,7 @@
       }
     },
     {
+      "notes": "",
       "path": "analysis/walkforward_breakout.py",
       "kind": "script",
       "module": "analysis",
@@ -167,8 +168,7 @@
         "purpose": "base→breakout OOS/walk-forward 校验(PRD §10.8):复用生产引擎 compute/breakout.py 在 754 池逐日因果算 brk_strength,横截面排名取 top-decile candidate,时间 holdout(TRAIN/TEST)测 forward(60d rel SPY)收益 lift(中位+尾部)",
         "invariants": "只读 analysis 缓存(_precision_cache.pkl,yfinance 现存票→幸存者偏差,LIFT=event−base 抵消)、不写产品 DB/web;复用 compute/breakout.compute_breakout(产品同源数学);candidate=brk_strength_pct≥90(==产品门);报中位 lift + 尾部(mean/P>25%/P>50% vs base),诚实呈现 regime 依赖;descriptor 无拟合参→holdout=时间 OOS",
         "verification": "运行打印 TRAIN/TEST 两段 lift;TEST 尾部 edge≈TRAIN 则 OOS 稳健,否则 regime-dependent(实测后者:2023-24 负/2025-26 正→佐证 recall-first、非买入信号)"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -237,9 +237,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1) + clear_bucket_bars 按 bucket_type 清(M4.2 theme index 重建)；formal-filing PIT 常量(SOURCE_FORMAL_FILING/SOURCE_FORM_UNKNOWN)+FUNDAMENTALS_COLS 列契约",
-        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、upsert/read_bucket_rrg 管周线 RS-Ratio 序列、clear_bucket_rrg 按 bucket_type 限域清(M4.3：sector/theme rrg 共表共存，重建只清自己那型；None=全清向后兼容))同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理；upsert_fundamentals 具名列写入(decouple 物理列序 CREATE vs ALTER-append)，含 effective_eod_date/source_type/source_form 三 formal-filing PIT provenance(v1 effective==filed、source_type=formal_filing)；ensure_breakout_columns 幂等 ALTER 既有 derived_daily 增 brk_* 列（base→breakout 迁移，§10.8）",
-        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；clear_bucket_bars('theme')/clear_bucket_rrg('theme') 只清 theme 行、sector 行保留；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确"
+        "purpose": "DuckDB 连接 + schema bootstrap + 幂等 upsert(含 bucket_bars/bucket_rrg) + compute/fundamentals/valuation/rotation 读写(M0–M3) + theme_membership point-in-time 读写(M4.1) + clear_bucket_bars 按 bucket_type 清(M4.2 theme index 重建)；formal-filing PIT 常量(SOURCE_FORMAL_FILING/SOURCE_FORM_UNKNOWN)+FUNDAMENTALS_COLS 列契约；splits 表读写(upsert_splits/clear_splits/read_splits)",
+        "invariants": "single-writer offline batch；DB 在 data/ gitignored；upsert 幂等(INSERT OR REPLACE/ON CONFLICT)；read_* 返回 pandas；clear_derived/clear_valuation 支持全重算；upsert_bucket_bars 写 bucket(sector ETF / theme index)价、与 daily_bars 隔离(bucket 价不入 universe 横截面)、close 取 adj_close 同 upsert_spx；clear_bucket_bars 只删指定 bucket_type 行(theme index 重建前清 theme、sector ETF 行不动)；rotation 读写(bucket_names/read_bucket_bars 读 RS 源、upsert/read_bucket_rrg 管周线 RS-Ratio 序列、clear_bucket_rrg 按 bucket_type 限域清(M4.3：sector/theme rrg 共表共存，重建只清自己那型；None=全清向后兼容))同隔离原则；theme_membership_asof 为 PIT membership 唯一真源(M4.2 index/M4.4 chips/board 共用,语义只在此处定不在 caller 翻案)——per(ticker,theme) 取 as_of≤t 的最新行后再筛 exposure>0(C3 反回溯:晚 as_of 行不动早快照),可按 theme=/ticker= 收窄;upsert/clear/theme_keys 幂等管理；upsert_fundamentals 具名列写入(decouple 物理列序 CREATE vs ALTER-append)，含 effective_eod_date/source_type/source_form 三 formal-filing PIT provenance(v1 effective==filed、source_type=formal_filing)；ensure_breakout_columns 幂等 ALTER 既有 derived_daily 增 brk_* 列（base→breakout 迁移，§10.8）；upsert_splits 幂等(ticker,ex_date)写拆股(ratio=拆股后股本乘数 forward>1/reverse<1)供 valuation split-alignment(PRD §10.5)、split 历史稳定无需先 clear；read_splits 返回 pandas(ex_date,ratio)升序",
+        "verification": "connect 建表幂等；upsert 不产生重复行；read_* 返回 DataFrame；upsert_bucket_bars 同 (bucket_type,bucket,date) 幂等更新不重复；clear_bucket_bars('theme')/clear_bucket_rrg('theme') 只清 theme 行、sector 行保留；read_bucket_rrg/bucket_names 返回正确、upsert_bucket_rrg 幂等；theme_membership_asof 在多 as_of fixture 上:早快照取改写前 exposure、晚快照见 restatement/drop(exposure=0→剔除)/late-join、未来 as_of 行不污染早快照(C3)、theme=/ticker= 过滤正确；upsert_splits 同(ticker,ex_date)幂等不重复；read_splits 升序返回"
       }
     },
     {
@@ -303,6 +303,18 @@
       }
     },
     {
+      "path": "compute/split_check.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "split-alignment 边界 AC（AC-SPLIT，PRD §10.5）：自洽小样本经生产写路径(db.upsert_*)跑真实 compute.valuation，断言拆股口径对齐",
+        "invariants": "无网络/无 fixture 自洽(tempdir + 生产写路径 + 真实 compute.valuation，确定性)；三态覆盖——SPLIT_LAG(split 晚于 filing→split_adj=ratio 修正 P/E·P/S)/NO_SPLIT(无 split→split_adj=1 向后兼容)/POST_FILING(filing 已是拆股后口径→split_adj=1 不重复调整)；只断言 split 维度(PIT 边界归 pit_check.py)；PASS/FAIL 非零退出 CI 友好",
+        "verification": "SPLIT_LAG P/E5 P/S10、NO_SPLIT P/E0.5 P/S1、POST_FILING P/E5 P/S10 全 PASS；末行 SPLIT_OK；任一失败非零退出"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "compute/theme_index.py",
       "kind": "script",
@@ -321,9 +333,9 @@
       "module": "compute",
       "stage": "implemented",
       "contract": {
-        "purpose": "M0.4 估值：daily_bars ASOF JOIN fundamentals_q → valuation_daily（日频倍数 + common-vintage）",
-        "invariants": "ASOF 键用 effective_eod_date(formal-filing PIT，v1==filed_date，绝非 period_end，anti-lookahead；PRD §10.5)；输出 as_of_effective_eod(==as_of_filed,v1)+valuation_basis='formal_filing_pit'；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除，升序故 0=最便宜(Ocean y 底=便宜)；common_vintage(con,metric,on_date,fresh_days) 为该百分位的单一定义、按交易日参数化，M2 Ocean(周度)与 M5 Valuation(横截面)复用同一函数、口径不分叉(C9)，latest_common_vintage 为其最新日 int 取整薄包装",
-        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_effective_eod≤date 且 as_of_filed≤as_of_effective_eod 无 lookahead、valuation_basis=formal_filing_pit；common-vintage fresh/stale 分离；common_vintage 任意 on_date 只对 fresh cohort 排名、metric 经白名单校验、百分位随 ps 升序(底=便宜)"
+        "purpose": "M0.4 估值：daily_bars ASOF JOIN fundamentals_q → valuation_daily（日频倍数 + common-vintage）；split-alignment：分子 eps/shares 按价格口径乘 split_adj 抬齐",
+        "invariants": "ASOF 键用 effective_eod_date(formal-filing PIT，v1==filed_date，绝非 period_end，anti-lookahead；PRD §10.5)；输出 as_of_effective_eod(==as_of_filed,v1)+valuation_basis='formal_filing_pit'；分子日频、分母按 filing 阶进；E≤0→n.m.(pe NULL 退 P/S)；EV=shares×close+debt−cash；common-vintage percentile 只在 fresh cohort(as-of≤~95d)内排名、stale 排除，升序故 0=最便宜(Ocean y 底=便宜)；common_vintage(con,metric,on_date,fresh_days) 为该百分位的单一定义、按交易日参数化，M2 Ocean(周度)与 M5 Valuation(横截面)复用同一函数、口径不分叉(C9)，latest_common_vintage 为其最新日 int 取整薄包装；split-alignment(PRD §10.5)：每 filing split_adj=∏ratio(splits 表中 ex_date∈(effective_eod,价格基准日=该票 max bar])，分子 eps(per-share)/shares(count)乘 split_adj 抬到价格(yfinance 拆股即时回溯调整)同口径，revenue/ebitda/debt/cash 绝对额拆股不变不动；无滞后拆股 split_adj=1→与旧行为逐字节一致(向后兼容)；修 just-split 票 P/E·P/S·EV/S·EV/EBITDA·PEG 塌缩拆股比(KLAC 10:1 致 67→6.7)",
+        "verification": "smoke 倍数量级合理(AAPL P/E~38 P/S~10、SNOW n.m.退P/S)；as_of_effective_eod≤date 且 as_of_filed≤as_of_effective_eod 无 lookahead、valuation_basis=formal_filing_pit；common-vintage fresh/stale 分离；common_vintage 任意 on_date 只对 fresh cohort 排名、metric 经白名单校验、百分位随 ps 升序(底=便宜)；split-alignment AC=compute/split_check.py 三态全 PASS；KLAC 真实端到端 PE 6.7→67.2、PS 2.4→23.9 对齐券商；pit_check 回归(split_adj=1)不变"
       }
     },
     {
@@ -717,9 +729,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "可插拔 price provider 接口 + 工厂（默认 yfinance，Stooq 待 apikey）",
-        "invariants": "provider 返回统一 bar 元组 (date,open,high,low,close,adj_close,volume)；具体 provider lazy import；换 provider 不动 run.py；换源是 provider 选择非脊柱改动",
-        "verification": "get_provider('yfinance'/'stooq') 返回实例；未知名 raise ValueError"
+        "purpose": "可插拔 price provider 接口 + 工厂（默认 yfinance，Stooq 待 apikey）；+ get_splits 可选能力接口",
+        "invariants": "provider 返回统一 bar 元组 (date,open,high,low,close,adj_close,volume)；具体 provider lazy import；换 provider 不动 run.py；换源是 provider 选择非脊柱改动；get_splits 为可选能力默认返回 [](split-alignment 在 provider 无 splits 时 degrade 到 factor 1.0)、ratio=拆股后股本乘数",
+        "verification": "get_provider('yfinance'/'stooq') 返回实例；未知名 raise ValueError；get_splits 默认返回 []"
       }
     },
     {
@@ -729,9 +741,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "M0 ingest 编排：universe(Nasdaq) → daily_bars(provider) → spx_daily",
-        "invariants": "全量存 universe 但 bars 只拉 top-N(mktcap) ∪ seed（M0 先窄，扩量是 M6）；provider 失败 skip 不崩；--provider/--limit/--lookback-days 可调",
-        "verification": "python3 ingest/run.py --limit N 端到端产出 DuckDB；打印 universe/bar_tickers/bars/spx 计数"
+        "purpose": "M0 ingest 编排：universe(Nasdaq) → daily_bars(provider) → spx_daily；+ splits(provider.get_splits → splits 表)",
+        "invariants": "全量存 universe 但 bars 只拉 top-N(mktcap) ∪ seed（M0 先窄，扩量是 M6）；provider 失败 skip 不崩；--provider/--limit/--lookback-days 可调；bars 入库成功后顺拉 splits 入 splits 表(供 valuation split-alignment，PRD §10.5)、splits fetch 失败不丢已存 bars(best-effort)",
+        "verification": "python3 ingest/run.py --limit N 端到端产出 DuckDB；打印 universe/bar_tickers/bars/spx 计数；summary 打印 splits 计数"
       }
     },
     {
@@ -741,9 +753,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) + theme_membership(多对多 ticker↔theme 连续 exposure,point-in-time) 建表 DDL",
-        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q formal-filing PIT(PRD §10.5)：filed_date=正式披露日、effective_eod_date=ASOF 可得键(v1==filed_date)、source_type='formal_filing'(v1 唯一值)、source_form('unknown')，period_end 仅业务归属期绝不作可得对齐；valuation_daily 暴露 as_of_period_end 供 common-vintage(freshness=date−period_end)、as_of_effective_eod=实际 ASOF 键(v1==as_of_filed)、valuation_basis='formal_filing_pit' 标口径；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)；derived_daily 增 brk_*（base→breakout 核心引擎，§10.8；composite/ignition 列转退役过渡保留）",
-        "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错；derived_daily 含 ig_*/ignition/ign_pct/ign_persist_days 列"
+        "purpose": "DuckDB schema：universe/daily_bars/spx_daily/derived_daily/fundamentals_q/segment_revenue/valuation_daily + bucket_bars(sector ETF / theme index 日 close) + bucket_rrg(周线 RS-Ratio 序列) + theme_membership(多对多 ticker↔theme 连续 exposure,point-in-time) 建表 DDL；+ splits(per-ticker 拆股事件，valuation split-alignment 源)",
+        "invariants": "幂等 CREATE IF NOT EXISTS；对齐 PRD §12；derived_daily 存 5 分量供 client 重配权；fundamentals_q formal-filing PIT(PRD §10.5)：filed_date=正式披露日、effective_eod_date=ASOF 可得键(v1==filed_date)、source_type='formal_filing'(v1 唯一值)、source_form('unknown')，period_end 仅业务归属期绝不作可得对齐；valuation_daily 暴露 as_of_period_end 供 common-vintage(freshness=date−period_end)、as_of_effective_eod=实际 ASOF 键(v1==as_of_filed)、valuation_basis='formal_filing_pit' 标口径；segment_revenue 建表但 M0 不填(归 M4)；bucket_bars 与 universe daily_bars 硬隔离 —— ETF/index 价绝不进横截面(rs_pct/rank)，bucket=GICS sector 名(==universe.sector)供 rotation league 按名 join、close 为 adj_close(total-return，与 spx_daily 一致)、bucket_type 区分 sector(M3)/theme(M4)；bucket_rrg 存周线 rs(原始 price relative 审计)+rs_ratio(JdK z-score recenter 100)，rs_mom(RS-Momentum 归一量)已砍(PRD §16，momentum=rs_ratio 斜率即时算不持久化)；theme_membership PK=(ticker,theme,as_of_date) 即 point-in-time(C3)——同 ticker-theme 多 as_of 行=历史,改写只追新行不改旧;成员@t=per(ticker,theme) argmax(as_of≤t) 取最新行后再筛 exposure>0(exposure=0 行=as-of 退出且不回溯改写历史);exposure∈[0,1] 连续(非二元),approved_by 必填(C6,'seed' 标 bootstrap),非市值加权 cap 在 index 构建(M4.2)非此；derived_daily M7.1 扩 ignition 列(ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 5 短窗分量 + ignition[0,100] + ign_pct[0,100] + ign_persist_days≥0,PRD §10.8)与 composite 同行(C9,两引擎共用 per-stock 行)；derived_daily 增 brk_*（base→breakout 核心引擎，§10.8；composite/ignition 列转退役过渡保留）；splits 表幂等 CREATE(随 connect 建为第十一表)，ratio=拆股后股本乘数(forward>1/reverse<1、never 0/负)、ex_date=拆股生效(ex)日，供 compute/valuation.py split-alignment 把 EDGAR per-share(filing 滞后)抬到 yfinance 价(拆股即时调整)同口径(PRD §10.5)",
+        "verification": "compute.db.connect 应用后十表存在(含 bucket_bars/bucket_rrg/theme_membership)；重复 connect 不报错；derived_daily 含 ig_*/ignition/ign_pct/ign_persist_days 列；connect 后 splits 表存在(第十一表)、重复 connect 不报错"
       }
     },
     {
@@ -801,9 +813,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "yfinance price provider —— M0 默认主干（BUILD-PLAN 的 fallback 因 Stooq 需 apikey 转主力）",
-        "invariants": "非官方脆弱、视中断为常态；展平单票 MultiIndex 列；NaN→None；**跳过未收盘 bar(close 为 NULL，如当天盘中行)** 保证 EOD 完整性",
-        "verification": "get_bars 返回 OHLCV 元组列表 newest last；无数据返回 []；不含 close=NULL 的行"
+        "purpose": "yfinance price provider —— M0 默认主干（BUILD-PLAN 的 fallback 因 Stooq 需 apikey 转主力）；+ get_splits 拉 Yahoo 拆股",
+        "invariants": "非官方脆弱、视中断为常态；展平单票 MultiIndex 列；NaN→None；**跳过未收盘 bar(close 为 NULL，如当天盘中行)** 保证 EOD 完整性；get_splits 返回(ex_date_iso,ratio)升序、ratio>0 且≠1(滤 0/NaN/no-op)、fetch 失败返回 [](脆弱源视中断常态)，供 split-alignment(PRD §10.5)",
+        "verification": "get_bars 返回 OHLCV 元组列表 newest last；无数据返回 []；不含 close=NULL 的行；get_splits 返回 [(ex_date,ratio)] 升序；无拆股/失败返回 []"
       }
     },
     {
@@ -1593,5 +1605,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "9ad57a2cd0569c45914c22f0bc26824479eb81fe17a35fb791a8af9674207aa2"
+  "last_structure_digest": "57f46973125991678ed6f79e71e684d0632bdce56fd8417afe9e715fe7ed970a"
 }
