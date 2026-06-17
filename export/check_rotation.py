@@ -11,12 +11,12 @@ the sector (rotation.json) and theme (rotation.theme.json) exports:
   - same as_of date (both export the latest snapshot);
   - members[] ⊆ board tickers (the client filters board.json by scope=sector for cards);
   - member_count == # board stocks in that sector;
-  - igniting == # board members above the sea level (ignition.ign_pct >= 90);
-  - candidates == # board members flagged ignition.candidate (the 持续点火 gate).
+  - igniting == # board members above the sea level (breakout.brk_strength_pct >= 90);
+  - candidates == # board members flagged breakout.candidate (the recall-first top-decile gate).
 
-M8: the league aggregates the discovery engine (ignition), not the composite median that
-is no longer user-visible — so this proves the league's ignition counts trace to the very
-candidate flags the Discovery cards show (C9). Run on the SAME DB's two exports (see
+2026-06-16 spine pivot: the league aggregates the base→breakout engine (ignition retired),
+not the composite median that is no longer user-visible — so this proves the league's counts
+trace to the very candidate flags the Breakouts cards show (C9). Run on the SAME DB's two exports (see
 `make rotation-c9`). Exits non-zero on any mismatch so it can gate. Names/counts only — no
 secrets. NOTE: this holds when board and rotation see the same member set; board.py's
 --min-bars filter (default 60) can prune a thin-history stock the rotation aggregate still

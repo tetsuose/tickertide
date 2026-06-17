@@ -3,7 +3,7 @@
 Usage:
     python3 compute/run.py [--k 0.5] [--db data/tickertide.duckdb] [--min-bars 60]
 
-Per-stock time-series metrics (pandas, compute/signals.py + compute/ignition.py) are
+Per-stock time-series metrics (pandas, compute/signals.py + compute/breakout.py) are
 concatenated, then the cross-sectional work runs in DuckDB:
   - rs_pct  = PERCENT_RANK() over each date (the IBD-style cross-sectional RS)
   - rs_accel = rs_pct[t] - rs_pct[t-21]
