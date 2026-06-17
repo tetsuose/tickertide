@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-16T15:41:30.212240+00:00",
+  "updated_at": "2026-06-17T01:03:38.647066+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -159,6 +159,18 @@
       }
     },
     {
+      "path": "analysis/walkforward_breakout.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "base→breakout OOS/walk-forward 校验(PRD §10.8):复用生产引擎 compute/breakout.py 在 754 池逐日因果算 brk_strength,横截面排名取 top-decile candidate,时间 holdout(TRAIN/TEST)测 forward(60d rel SPY)收益 lift(中位+尾部)",
+        "invariants": "只读 analysis 缓存(_precision_cache.pkl,yfinance 现存票→幸存者偏差,LIFT=event−base 抵消)、不写产品 DB/web;复用 compute/breakout.compute_breakout(产品同源数学);candidate=brk_strength_pct≥90(==产品门);报中位 lift + 尾部(mean/P>25%/P>50% vs base),诚实呈现 regime 依赖;descriptor 无拟合参→holdout=时间 OOS",
+        "verification": "运行打印 TRAIN/TEST 两段 lift;TEST 尾部 edge≈TRAIN 则 OOS 稳健,否则 regime-dependent(实测后者:2023-24 负/2025-26 正→佐证 recall-first、非买入信号)"
+      },
+      "notes": ""
+    },
+    {
       "notes": "",
       "path": "compute/README.md",
       "kind": "doc",
@@ -240,18 +252,6 @@
         "purpose": "合成 DuckDB fixture：确定性造 universe/daily_bars/spx_daily/fundamentals_q + bucket_bars(11 条合成 sector ETF 序列,离线验证 M3 rotation) + theme_membership(多 as_of point-in-time membership,离线验证 M4),供无网络环境(CI/sandbox,真实 ingest 依赖 api.nasdaq.com + Yahoo 常不可达)离线验证 compute/export/web —— 经 compute/db.py 真实 upsert 落库后喂真实引擎,验证生产读路径而非造数",
         "invariants": "写五张字节稳定源表(universe/daily_bars/spx_daily/fundamentals_q + bucket_bars) + theme_membership、绝不写 derived_daily/valuation_daily(那是引擎的活,须跑 make compute 物化)；经 compute/db.py 的 upsert_* 落库即与真实 ingest 同一写入路径、不自绕 schema；numpy 单一 seed 按固定顺序消费 + 固定 end-date 锚点(非 today) → 给定 (seed,tickers,days,end-date) 字节级可复现；合成 11 sector ETF 经 db.upsert_bucket_bars 落 bucket_bars(bucket=GICS 名)、绝不进 universe 横截面、且造数放在所有现有 rng 消费之后(尾部 draw)；theme_membership 由 THEME_PLAN 确定性生成(无 rng draw)、置于 bucket_bars 之后 → universe/daily_bars/spx_daily/bucket_bars 保字节不变(rng 流未变，M1/M2/M3 依赖此)，fundamentals_q 增 3 列 formal-filing PIT provenance(effective_eod_date/source_type/source_form，不抽 rng，内容按设计变、determinism 仍成立);theme 造数覆盖 AC-M4 全部 PIT 机制:≥4 theme、2 个 as_of、多对多(TT01∈AI+SEMI)、exposure restatement、late-join、drop-via-exposure=0,exposure∈[0,1] 连续、approved_by 必填(C6);内建边缘票 eps<0/ebitda<0/stale/overdue/无基本面,默认 30 票×320 日；属产品代码用 venv 依赖(numpy/duckdb,非 engine stdlib-only 范畴)；dev/CI 工具非 nightly pipeline 成员；默认 fresh-build data/tickertide.duckdb(gitignored 派生物)只含合成数据",
         "verification": "make fixture 产出五源表非空(bucket_bars=11 sector×days) + theme_membership(默认 13 行,4 theme,2 as_of)；make fixture-pipeline 后 compute/check.py 输出 CHECK_OK(AC-M0 八项 PASS)、export/board.py composite_recon_max_drift≈0(C9)；同 seed 两次重建五表 sha256 一致、且扩 theme_membership 前后五表(universe/daily_bars/spx/fundamentals/bucket_bars)sha256 不变(回归);PIT 断言:db.theme_membership_asof 早快照=改写前 exposure、晚快照见 restatement/drop/late-join、未来 as_of 不污染早快照(C3)、exposure∈[0,1]、approved_by 非空"
-      }
-    },
-    {
-      "notes": "",
-      "path": "compute/ignition.py",
-      "kind": "script",
-      "module": "compute",
-      "stage": "implemented",
-      "contract": {
-        "purpose": "per-stock ignition 信号数学（早期发现引擎，PRD §10.8.1，与 composite 并列的第二台）：5 个短窗口分量（动量加速 ret10/10-ret50/50 / 波动收缩-扩张 |Δp|10/60 / 放量 vol5/60 / 突破收复 close/max60·1[>MA50] / RS 拐点 slope10-slope30/3）",
-        "invariants": "pandas 算 per-stock 时序、分量皆 self-relative（横截面 percentile-rank 在 run.py 做）；与 signals.py 共用同一份 bars 与同一 benchmark 对齐口径（C9，spx.close=adj_close basis、ffill 到本票交易日）；用 adj_close 作价；early⟷reliable 旋钮不触 ignition（PRD §10.8/P7），精度靠 persistence 非权重；窗口短于 composite（10/50/60 vs 63/126/252）测加速度/拐点非水平",
-        "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
       }
     },
     {
@@ -1371,6 +1371,7 @@
       }
     },
     {
+      "notes": "",
       "path": "web/src/views/Breakouts.test.tsx",
       "kind": "code",
       "module": "web",
@@ -1379,10 +1380,10 @@
         "purpose": "Breakouts view + EvidenceCard 的 SSR 回归 gate(AC-M1/AC-M7,base→breakout):从真实 fixture board.sample.json 渲染并断言用户可见合同",
         "invariants": "用 react-dom/server SSR;board.sample.json 为 export 产物(breakout 块);断言排序键=candidate→brk_strength_pct、不露 composite/ignition、base/τ/breakout 证据、scope",
         "verification": "`make web-test` 全绿;与 export/board.py breakout 块同口径"
-      },
-      "notes": ""
+      }
     },
     {
+      "notes": "",
       "path": "web/src/views/Breakouts.tsx",
       "kind": "code",
       "module": "web",
@@ -1391,8 +1392,7 @@
         "purpose": "Breakouts（突破）surface（原 Discovery 改名，PRD §9.3 + §10.8，2026-06-16 spine pivot）：2 列 evidence-card 网格,按 base→breakout 强度排序(candidate→brk_strength_pct desc,recall-first),逐张检视入选候选价格走势 + base/τ/breakout 标注",
         "invariants": "按 base→breakout STRENGTH 排序(非 composite/ignition);scope filter 先于 sort(C10);candidate 置顶;无旋钮;读 board.json(loadBoard),前端不重算引擎(C9)",
         "verification": "Breakouts.test.tsx:≥18 卡、候选置顶、brk 强度序≠composite 序、scope 过滤、不露 composite/ignition;`make web-test`"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "ocean.sample.json 再生(v3，仅 bulk)：make fixture-pipeline FIXTURE_ARGS=\"--tickers 520 --seed 7\" && python export/ocean.py --days 4 --out web/src/lib/__fixtures__/ocean.sample.json && rm -rf web/src/lib/__fixtures__/ocean(删顺带写的 detail 目录)",
@@ -1541,6 +1541,19 @@
   ],
   "retired_entries": [
     {
+      "notes": "",
+      "path": "compute/ignition.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "per-stock ignition 信号数学（早期发现引擎，PRD §10.8.1，与 composite 并列的第二台）：5 个短窗口分量（动量加速 ret10/10-ret50/50 / 波动收缩-扩张 |Δp|10/60 / 放量 vol5/60 / 突破收复 close/max60·1[>MA50] / RS 拐点 slope10-slope30/3）",
+        "invariants": "pandas 算 per-stock 时序、分量皆 self-relative（横截面 percentile-rank 在 run.py 做）；与 signals.py 共用同一份 bars 与同一 benchmark 对齐口径（C9，spx.close=adj_close basis、ffill 到本票交易日）；用 adj_close 作价；early⟷reliable 旋钮不触 ignition（PRD §10.8/P7），精度靠 persistence 非权重；窗口短于 composite（10/50/60 vs 63/126/252）测加速度/拐点非水平",
+        "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
+      },
+      "removed_at": "2026-06-17T01:00:22.597339+00:00"
+    },
+    {
       "notes": "读单份 board.json(export/board.py 产物)做 ignition 块的同源自检；本任务以 30 票 fixture 验证 coverage=30/candidates=2(persist≥5)/vsurge_checked=30 全过；负向(翻 candidate 标记 / 改 vol_mult)可触发 GATE_FAIL",
       "path": "export/check_ignition.py",
       "kind": "script",
@@ -1580,5 +1593,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "223d98a6ba9c45f06db2eeb3df0658e899d7389f5264367e85e8e3dbf06f135d"
+  "last_structure_digest": "9ad57a2cd0569c45914c22f0bc26824479eb81fe17a35fb791a8af9674207aa2"
 }

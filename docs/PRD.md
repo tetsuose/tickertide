@@ -374,7 +374,7 @@ Client (canvas + duckdb-wasm): renders Ocean (thousands of points) + boards; scr
 
 **10.8.4 参考实现常数（离线定死、无旋钮；具体取值留 §17）：** lookback 窗 `H ≈ 504` bar（~2y）；`σ` = 窗内日 log-return 标准差；变点扫描 `MINSEG ≈ 40` bar；recency band = τ 落在最近 ~15–252 bar（≈3 周–1 年，太老不算「当前突破」）。综合强度参考式 `strength = fit_gain · max(0, drift_step) · exp(−1.5·|base_slope/σ|)`。退化护栏：`clearance ∈ (0, 2.5]`、`brk_slope/σ` 设上限、base 段中位价 `> $3`（剔仙股 / SPAC / 跳空）。这些常数离线定死、**非用户旋钮**（§17）。实证原型 `analysis/`（`base_breakout` / `live_screen` / `full_screen`）。
 
-> **诚实定调（同 §10「买 robustness 不买 alpha」）：** recall-first 取宽、容忍假阳，下游基本面才是 precision；不回测调参买 alpha。实证 caveat：yfinance 仅含现存票 → 幸存者偏差；2023–26 是 AI 牛市 → base 偏高。**ignition / composite 均已退役**：全宇宙实测 ignition forward edge ≈ 0（实证脚本 `analysis/verify_ignition.py` timing + `analysis/precision_ignition.py` precision，保留为退役依据），composite 系统性滞后。
+> **诚实定调（同 §10「买 robustness 不买 alpha」）：** recall-first 取宽、容忍假阳，下游基本面才是 precision；不回测调参买 alpha。实证 caveat：yfinance 仅含现存票 → 幸存者偏差；2023–26 是 AI 牛市 → base 偏高。**ignition / composite 均已退役**：全宇宙实测 ignition forward edge ≈ 0（实证脚本 `analysis/verify_ignition.py` timing + `analysis/precision_ignition.py` precision，保留为退役依据），composite 系统性滞后。**OOS 校验（`analysis/walkforward_breakout.py`，时间 holdout）**：base→breakout 自身的 forward 收益 edge **弱且 regime-dependent**（TRAIN 2023–24 尾部为负、TEST 2025–26 为正）——**这正是 recall-first 的依据：它是高召回的形状发现器、不是买入信号；precision 交给下游基本面/财务**（买 robustness/stability，不买 alpha）。
 
 ---
 
