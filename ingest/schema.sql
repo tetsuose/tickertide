@@ -28,6 +28,26 @@ CREATE TABLE IF NOT EXISTS daily_bars (
   PRIMARY KEY (ticker, date)
 );
 
+-- splits: forward/reverse stock-split events per ticker (M0.4 valuation split-alignment).
+-- WHY this table exists (PRD §10.5 split-alignment, fills a口径 gap): the price series
+-- (daily_bars, yfinance) is split-adjusted to the latest session the MOMENT a split takes
+-- effect on the exchange, but the per-share fundamentals (fundamentals_q, EDGAR) only
+-- re-state to the post-split basis at the NEXT formal filing — which can be months later
+-- (10-Q/10-K cadence). In that window `shares × adj_close ÷ revenue` mixes a POST-split price
+-- with a PRE-split share count, collapsing P/S, P/E, EV/S, EV/EBITDA, PEG by the split ratio
+-- (a 10-for-1 split makes them ~10× too small — see KLAC, ex-date 2026-06-11). compute/
+-- valuation.py lifts eps/shares to the price basis using the cumulative ratio of splits with
+-- ex_date AFTER a filing's effective_eod_date and on/before the ticker's latest bar. No matching
+-- rows → factor 1.0 → byte-identical to the pre-split behaviour (revenue/ebitda/debt/cash are
+-- absolute amounts and stay split-invariant). ratio = shares-out multiplier on/after ex_date:
+-- forward 10-for-1 → 10.0; reverse 1-for-5 → 0.2. Source: yfinance .splits (M0 backbone).
+CREATE TABLE IF NOT EXISTS splits (
+  ticker   VARCHAR,
+  ex_date  DATE,      -- split effective (ex-)date: prices on/after this trade split-adjusted
+  ratio    DOUBLE,    -- shares-out multiplier (forward >1, reverse <1); never 0/negative
+  PRIMARY KEY (ticker, ex_date)
+);
+
 CREATE TABLE IF NOT EXISTS spx_daily (
   date   DATE PRIMARY KEY,
   close  DOUBLE

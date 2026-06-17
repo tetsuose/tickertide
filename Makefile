@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 breakout-c9 ac-m7 ac-m7-e2e serve pipeline check check-theme check-land \
+        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 breakout-c9 ac-m7 ac-m7-e2e serve pipeline check check-theme check-land pit-check split-check \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -177,7 +177,7 @@ compute:
 	@python3 compute/rotation.py
 	@python3 compute/rotation.py --bucket-type theme
 
-check: check-theme pit-check
+check: check-theme pit-check split-check
 	@python3 compute/check.py
 
 # Formal-filing PIT boundary (AC-1/AC-3, PRD §10.5): P/S does not backfill to period_end.
@@ -185,6 +185,13 @@ check: check-theme pit-check
 # prepared pipeline DB and runs as part of every `make check` / nightly `make pipeline`.
 pit-check:
 	@python3 compute/pit_check.py
+
+# Split-alignment boundary (AC-SPLIT, PRD §10.5): per-share fundamentals (eps/shares) lifted
+# to the price's split basis, so a just-split ticker's P/E·P/S·EV/S·EV/EBITDA·PEG don't
+# collapse by the split ratio (KLAC 10-for-1 → 67→6.7 before the fix). Self-contained
+# (throwaway DB, three split regimes: lag / none / already-filed), runs in every check / nightly.
+split-check:
+	@python3 compute/split_check.py
 
 # AC-M4 (PRD §14): PIT membership shape + C3 no-retro + C4 cap-bound weights.
 # Skips cleanly (exit 0) when theme_membership is empty — `make compute` on a bare DB
