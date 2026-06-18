@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-17T12:59:36.026299+00:00",
+  "updated_at": "2026-06-18T00:29:14.217585+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -118,8 +118,8 @@
       "stage": "implemented",
       "contract": {
         "purpose": "项目命令入口：工作流路由/结构门禁/合同 + 数据管道(ingest→compute→export) + web 构建/测试 + 离线 fixture",
-        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4)、valuation-c9 跑 check_valuation(AC-M5 C9 valuation/stock↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)；check 串 pit-check(AC-1 PIT 边界)+split-check(AC-SPLIT 拆股口径对齐 PRD §10.5)进 nightly",
-        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS；make check 跑 pit-check/split-check"
+        "invariants": "工作流引擎 engine/index.py stdlib-only、产品代码走 venv、web/ 走 npm；export 产 board.json + ocean.json→web/public/data；ocean-c9=C9 跨 surface 校验(ocean 点位==board/Stock 数字 AC-M2)；web-build=export+vite 产 web/dist；web-test=vitest(C9 parity + AC-M1/M2)；fixture/fixture-pipeline 离线喂真实引擎；ingest 含 sector_etf(bucket_bars)、compute 含 rotation(bucket_rrg)+theme_index+theme rotation(M4)、export 含 rotation.json+rotation.theme.json+valuation.parquet(M5.1 screener 分片)+stock/<T>.json per-name bundle(M5.3 价格/营收/PS 时序)、rotation-c9/theme-c9 跑 check_rotation(AC-M3/AC-M4)、valuation-c9 跑 check_valuation(AC-M5 C9 valuation/stock↔board)；themes=seed 幂等重播 + land(themes/approved/*.json 人审 SoT，M4.5)、theme-extract=operator 抽取(EDGAR→claude CLI，非 CI)、check-land=land+PIT 优先级离线验收(M4.5)；pipeline=ingest→fundamentals→themes→compute→check(含 check-theme AC-M4)；export 末尾跑 manifest.py(新鲜度 manifest，D.4)；check 串 pit-check(AC-1 PIT 边界)+split-check(AC-SPLIT 拆股口径对齐 PRD §10.5)进 nightly；check 串 ebitda-check(AC-EBITDA：EBITDA/margin/rule40 经 YTD 差分+EBIT fallback 装配)进 nightly",
+        "verification": "make help 列全目标；make pipeline/fixture-pipeline/web-build/web-test/ocean-c9/rotation-c9/theme-c9/check-theme/check-land 端到端可跑；make verify GATE_PASS；make check 跑 pit-check/split-check；make check 跑 ebitda-check"
       }
     },
     {
@@ -243,6 +243,18 @@
       }
     },
     {
+      "path": "compute/ebitda_check.py",
+      "kind": "script",
+      "module": "compute",
+      "stage": "implemented",
+      "contract": {
+        "purpose": "EBITDA assembly 边界 AC（AC-EBITDA，PRD §10.5）：合成 companyfacts/units 经真实 ingest.edgar 验 YTD 差分 + EBIT fallback",
+        "invariants": "无网络自洽(合成 facts 喂真实 edgar._flow_ttm/extract，确定性)；四态锁定——YTD 差分(累计 YTD→季度 TTM=20)/ytd_diff=False(per-share eps 不合成单季)/EBIT fallback(opinc 缺→pretax+interest，EBITDA=108)/opinc 优先(present→用 opinc，EBITDA=120)；只断言 EBITDA 装配(不碰 PIT/split 边界)；PASS/FAIL 非零退出 CI 友好",
+        "verification": "四 PASS：YTD TTM(2025-09-30)=20、ytd_diff=False 无合成季、EBIT fallback=108、opinc 优先=120；末行 EBITDA_OK；任一失败非零退出"
+      },
+      "notes": ""
+    },
+    {
       "notes": "M1.2–M1.5 web 任务与 CI offline-pipeline job 的共用离线前置；非 nightly pipeline；data/ 与 web/public/data/board.json 走 gitignore 不入库。见 export/board.py 合同与 memory m1-web-export-verification。",
       "path": "compute/fixture.py",
       "kind": "script",
@@ -303,6 +315,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/split_check.py",
       "kind": "script",
       "module": "compute",
@@ -311,8 +324,7 @@
         "purpose": "split-alignment 边界 AC（AC-SPLIT，PRD §10.5）：自洽小样本经生产写路径(db.upsert_*)跑真实 compute.valuation，断言拆股口径对齐",
         "invariants": "无网络/无 fixture 自洽(tempdir + 生产写路径 + 真实 compute.valuation，确定性)；三态覆盖——SPLIT_LAG(split 晚于 filing→split_adj=ratio 修正 P/E·P/S)/NO_SPLIT(无 split→split_adj=1 向后兼容)/POST_FILING(filing 已是拆股后口径→split_adj=1 不重复调整)；只断言 split 维度(PIT 边界归 pit_check.py)；PASS/FAIL 非零退出 CI 友好",
         "verification": "SPLIT_LAG P/E5 P/S10、NO_SPLIT P/E0.5 P/S1、POST_FILING P/E5 P/S10 全 PASS；末行 SPLIT_OK；任一失败非零退出"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "",
@@ -705,9 +717,9 @@
       "module": "ingest",
       "stage": "implemented",
       "contract": {
-        "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，formal-filing point-in-time(PRD §10.5)",
-        "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）；formal-filing PIT：仅正式 SEC filing(source_type='formal_filing')，effective_eod_date=filed(v1——companyfacts 无 accepted-timestamp，不能区分盘前/盘后)、source_form='unknown'(companyfacts 不稳定带 form)",
-        "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季；每行带 effective_eod_date/source_type/source_form(db.FUNDAMENTALS_COLS 顺序)"
+        "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，formal-filing point-in-time(PRD §10.5)；EBITDA=EBIT+D&A(EBIT fallback opinc→pretax+interest)、_flow_ttm YTD 差分还原现金流类只报累计 YTD 概念(D&A)的季度单季",
+        "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）；formal-filing PIT：仅正式 SEC filing(source_type='formal_filing')，effective_eod_date=filed(v1——companyfacts 无 accepted-timestamp，不能区分盘前/盘后)、source_form='unknown'(companyfacts 不稳定带 form)；_flow_ttm 支持 YTD 差分(同 FY start 的累计 YTD 相邻差分出单季 Q2=H1−Q1/Q3=9M−H1/Q4=FY−9M，只填无直接~90d 单季的 end，直接单季优先)，per-share eps 关闭差分(ytd_diff=False，EPS 跨季不可加、保持 Σ-单季 TTM 字节稳定)；EBITDA=EBIT+D&A，EBIT 优先 OperatingIncomeLoss、缺则 pretax+interest(≈EBIT，best-effort，interest 也缺则 pretax+D&A 下界)；D&A 只 merge 合并 concept(DepreciationDepletionAndAmortization 系，跨年同义切换覆盖)、不掺 component Depreciation(漏无形摊销对收购密集股失真)，仅有 component tag 的票 EBITDA 留缺退 EV/S(缺优于错)",
+        "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季；每行带 effective_eod_date/source_type/source_form(db.FUNDAMENTALS_COLS 顺序)；ebitda_ttm 现代季度非缺(KLAC 6→65、AAPL 19→70、NVDA 48→67 period 覆盖)、revenue_ttm/eps_ttm 既有值零变(common period rev/eps diff=0；YTD 差分不动直接单季、eps 不差分)；AC=compute/ebitda_check.py 四态全 PASS"
       }
     },
     {
@@ -1605,5 +1617,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "57f46973125991678ed6f79e71e684d0632bdce56fd8417afe9e715fe7ed970a"
+  "last_structure_digest": "14f5638551fac0c07666a2d8edd413578c30e1ea834fab792eadd81b6b0c0493"
 }

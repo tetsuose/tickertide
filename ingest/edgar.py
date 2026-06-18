@@ -6,11 +6,15 @@ M0.2 probe.
 
 Trailing-4Q from companyfacts (which mixes single-quarter, YTD, and annual facts
 under one concept):
-  - single quarter  = fact whose (end-start) span ≈ 90d
+  - single quarter  = fact whose (end-start) span ≈ 90d, OR a YTD difference (Q2=H1−Q1,
+                      Q3=9M−H1, Q4=FY−9M) for concepts reported only cumulatively per
+                      quarter (typical of cash-flow items like D&A)
   - annual / FY     = span ≈ 365d, fp=FY (10-K)
   - derive Q4 single = annual − sum(Q1,Q2,Q3 singles) of the same fiscal year
   - ttm(period_end) = sum of the 4 trailing single quarters (span-checked ~1yr)
   - annual-only filers fall back to yearly ttm points at each FY end
+  - EBITDA = EBIT + D&A; EBIT = OperatingIncomeLoss, else pretax+interest (≈ EBIT) when a filer
+             dropped it (KLAC post-2015) — best-effort (interest may be absent → pretax+D&A bound)
 Balance-sheet items (shares/cash/debt) are instant — nearest value as-of period_end.
 
 EDGAR requires a descriptive User-Agent and rate-limits ~10 req/s. companyfacts
@@ -41,6 +45,13 @@ RATE_SLEEP = 0.13  # ~8 req/s, under EDGAR's ~10/s
 REVENUE = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]
 EPS = ["EarningsPerShareDiluted", "EarningsPerShareBasic"]
 OPINC = ["OperatingIncomeLoss"]
+# EBIT fallback when a filer drops OperatingIncomeLoss (KLAC stopped tagging it after 2015,
+# and GrossProfit/CostsAndExpenses too): pretax income + interest expense ≈ EBIT (operating
+# income). Best-effort — interest may also be absent, then EBITDA = pretax + D&A (a lower
+# bound, since interest isn't added back). See extract().
+PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+          "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"]
+INTEREST = ["InterestExpense", "InterestExpenseNonoperating", "InterestAndDebtExpense"]
 DDA = ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet",
        "DepreciationAndAmortization"]
 SHARES = ["CommonStockSharesOutstanding", "WeightedAverageNumberOfDilutedSharesOutstanding"]
@@ -90,30 +101,61 @@ def _span_days(f: dict) -> int | None:
     return (date.fromisoformat(f["end"]) - date.fromisoformat(f["start"])).days
 
 
-def _flow_ttm(units: list[dict]) -> dict[str, tuple[float, str]]:
+def _flow_ttm(units: list[dict], ytd_diff: bool = True) -> dict[str, tuple[float, str]]:
     """period_end -> (trailing-4Q value, filed_date) for a flow concept.
 
     Keyed by the (start,end) PERIOD, not fy/fp — EDGAR mislabels fy/fp on repeated
     comparatives (a prior quarter re-stated in a later filing keeps the new filing's
     fy/fp), which corrupts grouping. Earliest filed per period = original report
-    (PIT, anti-restatement). Q4 single is derived from annual − the 3 single
-    quarters that fall inside the fiscal year.
+    (PIT, anti-restatement).
+
+    Single quarters come from two sources: (a) DIRECT ~90d facts, and (b) YTD DIFFERENCING.
+    Many cash-flow-statement concepts (e.g. DepreciationDepletionAndAmortization) report ONLY
+    cumulative YTD per quarter — Q1=~91d, H1=~183d, 9M=~273d, FY=~365d — never a standalone
+    Q2/Q3/Q4. The single quarter is then the consecutive-YTD diff within one fiscal year
+    (same start): Q2 = H1−Q1, Q3 = 9M−H1, Q4 = FY−9M. Without (b) such concepts produce NO
+    quarterly TTM (only annual points), which is why EBITDA was n.m. for YTD-only D&A filers
+    (KLAC). A direct ~90d single always wins; differencing only fills ends with no direct single.
     """
+    # Earliest-filed dedup per (start,end) period = original report (PIT, anti-restatement).
+    raw: dict[tuple, tuple[float, str]] = {}  # (start,end) -> (val, filed)
+    for f in units:
+        if "val" not in f or not f.get("start") or not f.get("end"):
+            continue
+        k = (f["start"], f["end"])
+        filed = f.get("filed", "")
+        if k not in raw or filed < raw[k][1]:
+            raw[k] = (float(f["val"]), filed)
+
     singles: dict[str, tuple] = {}   # end -> (start, end, val, filed)
     annual: dict[str, tuple] = {}    # end -> (start, end, val, filed)
-    for f in units:
-        span = _span_days(f)
-        if span is None or "val" not in f or not f.get("end"):
-            continue
-        start, end, filed = f.get("start"), f["end"], f.get("filed", "")
+    for (start, end), (val, filed) in raw.items():
+        span = (date.fromisoformat(end) - date.fromisoformat(start)).days
         if 80 <= span <= 100:
             if end not in singles or filed < singles[end][3]:
-                singles[end] = (start, end, float(f["val"]), filed)
+                singles[end] = (start, end, val, filed)
         elif 340 <= span <= 380:
             if end not in annual or filed < annual[end][3]:
-                annual[end] = (start, end, float(f["val"]), filed)
+                annual[end] = (start, end, val, filed)
 
-    # Derive Q4 single = annual − sum(3 single quarters inside the fiscal year).
+    # YTD differencing: within one fiscal year (same start), consecutive-YTD ends differ by one
+    # single quarter. Only FILLS ends that have no direct ~90d single (direct always wins).
+    # OFF for per-share concepts (eps, ytd_diff=False): EPS is NOT additive across quarters, so
+    # synthesizing a quarter via YTD diff would perturb the existing Σ-of-direct-singles TTM —
+    # we keep eps_ttm byte-stable and only enable differencing for additive USD flows.
+    if ytd_diff:
+        by_start: dict[str, list] = {}
+        for (start, end), (val, filed) in raw.items():
+            by_start.setdefault(start, []).append((end, val, filed))
+        for lst in by_start.values():
+            lst.sort()  # by end
+            for (pend, pval, _), (end, val, filed) in zip(lst, lst[1:]):
+                seg = (date.fromisoformat(end) - date.fromisoformat(pend)).days
+                if 80 <= seg <= 100 and end not in singles:
+                    singles[end] = (pend, end, val - pval, filed)
+
+    # Derive Q4 single = annual − 3 single quarters inside the fiscal year — fallback for filers
+    # that give annual + 3 singles but no 9M YTD to diff Q4 from (YTD differencing covers the rest).
     for aend, (astart, _, aval, afiled) in annual.items():
         if aend in singles or not astart:
             continue
@@ -167,8 +209,16 @@ def extract(cf: dict) -> list[tuple]:
     if not gaap:
         return []
     rev = _flow_ttm(_units(gaap, REVENUE, "USD"))
-    eps = _flow_ttm(_units(gaap, EPS, "USD/shares"))
+    eps = _flow_ttm(_units(gaap, EPS, "USD/shares"), ytd_diff=False)  # EPS not additive — keep Σ-singles TTM stable
     opinc = _flow_ttm(_units(gaap, OPINC, "USD"))
+    pretax = _flow_ttm(_units(gaap, PRETAX, "USD"))
+    interest = _flow_ttm(_units(gaap, INTEREST, "USD"))
+    # D&A merges the synonymous / over-time-switched COMBINED concepts in DDA (a filer may tag
+    # DepreciationDepletionAndAmortization some years, DepreciationAndAmortization others — AAPL/
+    # NVDA do; merging covers both). DDA deliberately excludes the bare component Depreciation, so
+    # no double-count. A filer tagging ONLY Depreciation (MSFT, no combined D&A) gets no EBITDA →
+    # EV/EBITDA falls back to EV/S — better than a Depreciation-only EBITDA that drops intangible
+    # amortization (large for acquirers like MSFT). EBITDA stays best-effort (PRD §10.5).
     dda = _flow_ttm(_units(gaap, DDA, "USD"))
     shares_i = _instant(_units(gaap, SHARES, "shares"))
     cash_i = _instant(_units(gaap, CASH, "USD"))
@@ -179,7 +229,16 @@ def extract(cf: dict) -> list[tuple]:
     for pe in sorted(rev):
         rev_v, filed = rev[pe]
         op, dd = opinc.get(pe), dda.get(pe)
-        ebitda = (op[0] + dd[0]) if (op and dd) else None
+        # EBIT = operating income; fall back to pretax + interest (≈ EBIT) when the filer
+        # dropped OperatingIncomeLoss (KLAC post-2015). EBITDA = EBIT + D&A; the D&A single
+        # quarters may be YTD-differenced (_flow_ttm). If interest is also absent, EBITDA is the
+        # pretax+D&A lower bound (interest not added back) — best-effort, EV/EBITDA falls back to EV/S.
+        if op:
+            ebit = op[0]
+        else:
+            pt, ie = pretax.get(pe), interest.get(pe)
+            ebit = (pt[0] + (ie[0] if ie else 0.0)) if pt else None
+        ebitda = (ebit + dd[0]) if (ebit is not None and dd) else None
         lt = _nearest(debt_lt_i, pe)
         cur = _nearest(debt_cur_i, pe)
         total_debt = (lt + (cur or 0.0)) if lt is not None else None

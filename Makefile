@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 breakout-c9 ac-m7 ac-m7-e2e serve pipeline check check-theme check-land pit-check split-check \
+        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 breakout-c9 ac-m7 ac-m7-e2e serve pipeline check check-theme check-land pit-check split-check ebitda-check \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -177,7 +177,7 @@ compute:
 	@python3 compute/rotation.py
 	@python3 compute/rotation.py --bucket-type theme
 
-check: check-theme pit-check split-check
+check: check-theme pit-check split-check ebitda-check
 	@python3 compute/check.py
 
 # Formal-filing PIT boundary (AC-1/AC-3, PRD §10.5): P/S does not backfill to period_end.
@@ -192,6 +192,12 @@ pit-check:
 # (throwaway DB, three split regimes: lag / none / already-filed), runs in every check / nightly.
 split-check:
 	@python3 compute/split_check.py
+
+# EBITDA assembly (AC-EBITDA, PRD §10.5): YTD-differenced D&A single quarters + EBIT fallback
+# (OperatingIncomeLoss, else pretax+interest) make EBITDA / margin / rule40 computable for filers
+# where they were永远 n.m. (KLAC). Self-contained (synthetic companyfacts), runs in every check.
+ebitda-check:
+	@python3 compute/ebitda_check.py
 
 # AC-M4 (PRD §14): PIT membership shape + C3 no-retro + C4 cap-bound weights.
 # Skips cleanly (exit 0) when theme_membership is empty — `make compute` on a bare DB
