@@ -86,6 +86,19 @@ def run_checks() -> list[tuple[str, bool, str]]:
     eb2 = _ebitda_at(edgar.extract(_cf({"OperatingIncomeLoss": {"units": {"USD": _singles([25] * 7)}}})), "2025-09-30")
     checks.append(("opinc present wins: EBITDA=120", eb2 is not None and abs(eb2 - 120) < 1e-6, f"{eb2}"))
 
+    # (3) Component-sum D&A: no combined concept (MSFT) → D&A = Depreciation + intangible amortization.
+    # opinc(100) + [Depreciation YTD-diff TTM 20 + Amortization TTM 8] = 128.
+    cf_c = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": _singles([100] * 7)}},
+        "OperatingIncomeLoss": {"units": {"USD": _singles([25] * 7)}},
+        "Depreciation": {"units": {"USD": _DDA_YTD}},                          # YTD-only depreciation
+        "AmortizationOfIntangibleAssets": {"units": {"USD": _singles([2] * 7)}},
+        "CommonStockSharesOutstanding": {"units": {"shares": _SHARES}},
+        # NO DepreciationDepletionAndAmortization → component-sum path
+    }}}
+    eb3 = _ebitda_at(edgar.extract(cf_c), "2025-09-30")
+    checks.append(("component-sum D&A (no combined): EBITDA=128", eb3 is not None and abs(eb3 - 128) < 1e-6, f"{eb3}"))
+
     return checks
 
 
