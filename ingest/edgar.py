@@ -54,6 +54,14 @@ PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItems
 INTEREST = ["InterestExpense", "InterestExpenseNonoperating", "InterestAndDebtExpense"]
 DDA = ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet",
        "DepreciationAndAmortization"]
+# D&A component fallback for filers that tag depreciation and amortization SEPARATELY with no
+# combined concept (MSFT: Depreciation $15.2B + AmortizationOfIntangibleAssets $4.8B, no
+# DepreciationDepletionAndAmortization). D&A ≈ Depreciation + intangible amortization; misses the
+# cash-flow "& other" line (operating/finance-lease etc., ~$2.3B for MSFT) → slight undercount,
+# best-effort (PRD §10.5). Used ONLY when the combined concepts above yield nothing, so combined-
+# tag filers (KLAC/AAPL/NVDA) never touch this path (no double-count).
+DEPREC = ["Depreciation"]
+AMORT = ["AmortizationOfIntangibleAssets", "FiniteLivedIntangibleAssetsAmortizationExpense"]
 SHARES = ["CommonStockSharesOutstanding", "WeightedAverageNumberOfDilutedSharesOutstanding"]
 CASH = ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"]
 DEBT_LT = ["LongTermDebtNoncurrent", "LongTermDebt"]
@@ -213,13 +221,20 @@ def extract(cf: dict) -> list[tuple]:
     opinc = _flow_ttm(_units(gaap, OPINC, "USD"))
     pretax = _flow_ttm(_units(gaap, PRETAX, "USD"))
     interest = _flow_ttm(_units(gaap, INTEREST, "USD"))
-    # D&A merges the synonymous / over-time-switched COMBINED concepts in DDA (a filer may tag
-    # DepreciationDepletionAndAmortization some years, DepreciationAndAmortization others — AAPL/
-    # NVDA do; merging covers both). DDA deliberately excludes the bare component Depreciation, so
-    # no double-count. A filer tagging ONLY Depreciation (MSFT, no combined D&A) gets no EBITDA →
-    # EV/EBITDA falls back to EV/S — better than a Depreciation-only EBITDA that drops intangible
-    # amortization (large for acquirers like MSFT). EBITDA stays best-effort (PRD §10.5).
+    # D&A: prefer a COMBINED concept (DDA merges synonymous / over-time-switched tags — a filer may
+    # use DepreciationDepletionAndAmortization some years, DepreciationAndAmortization others; AAPL/
+    # NVDA do — merging covers both). DDA excludes the bare component Depreciation, so no double-count.
+    # If NO combined concept is present (MSFT tags depreciation + amortization separately), sum the
+    # components: D&A ≈ Depreciation + intangible amortization (per period; amortization 0 if absent,
+    # filed = later of the two for PIT). Misses cash-flow "& other" → slight undercount, best-effort.
     dda = _flow_ttm(_units(gaap, DDA, "USD"))
+    if not dda:
+        dep = _flow_ttm(_units(gaap, DEPREC, "USD"))
+        amort = _flow_ttm(_units(gaap, AMORT, "USD"))
+        dda = {}
+        for pe, (dv, df) in dep.items():
+            av, af = amort.get(pe, (0.0, df))
+            dda[pe] = (dv + av, max(df, af))
     shares_i = _instant(_units(gaap, SHARES, "shares"))
     cash_i = _instant(_units(gaap, CASH, "USD"))
     debt_lt_i = _instant(_units(gaap, DEBT_LT, "USD"))
