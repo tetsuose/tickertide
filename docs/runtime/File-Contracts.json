@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-18T00:29:14.217585+00:00",
+  "updated_at": "2026-06-19T04:51:18.344037+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -135,6 +135,18 @@
       }
     },
     {
+      "path": "analysis/method3_regime.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "Method 3(LightGBM 市场 risk-regime,输出 p_bad_20/p_bad_60)的 Tier A、$0、决定性首测:用 ETF(SPY/QQQ/IWM/RSP + 9 核心 SPDR 行业,幸存者免疫)+ 免 key FRED 日频(VIX、BAA10Y 信用利差、国债曲线;市场报价非修正=PIT 干净)建特征,SPY forward realized-vol / max-drawdown(20/60d)作 leak-free 标签,只回答一个决策问题:LightGBM 相对 trivial VIX-percentile / HAR-RV baseline 有无 OOS 增量。一次性研究脚本,非 nightly 管线,不触 ingest/compute/export/web",
+        "invariants": "幸存者免疫(信号全来自 ETF + SPY-derived,不碰成分股 universe);特征只用<=t、标签只用严格前向窗(t,t+H]、vol 标签阈值用 expanding 分位(leak-free);walk-forward 必须 purge+embargo(消 20/60d 标签重叠泄漏)并配 leave-one-crisis-out(测未见 regime 迁移);headline 是 ΔAUC over BEST trivial baseline 而非绝对 AUC(后者多为免费 vol persistence);只读 yfinance + FRED 免 key CSV,产出仅落 gitignore 的 data/(缓存/JSON/PNG);危机episode少→报 per-fold/per-crisis spread,不靠单点估计;ML 依赖(lightgbm/sklearn/statsmodels/scipy/matplotlib)隔离在研究环境,绝不进 repo requirements.txt 或被 engine/compute/export import",
+        "verification": "运行 `.venv/bin/python analysis/method3_regime.py` 打印 4 配置(vol/drawdown × 20/60d)OOS AUC 表 + ΔAUC + LOCO + 特征重要性,写 data/method3_regime_summary.json 与 overlay.png。实测(2003-05..2026-06,5800 行,6 危机):全部裁决『无可靠增量 over trivial VIX/HAR』(wf ΔAUC −0.07~0.00、胜率≤0.67、per-fold 摆动 ±0.2-0.4);2020-COVID held-out LightGBM AUC≈0.05(劣于随机)而 VIX-pct 0.45-0.58→novel regime 不迁移;LightGBM headline AUC(如 vol20=0.79)≈VIX-pct(0.77)→增量≈0 ⇒ STOP,不买 Tier B 数据"
+      },
+      "notes": "Tier A 决定性首测;实测裁决=无可靠增量 over trivial VIX/HAR baseline、2020-COVID 迁移失败→不买 Tier B 数据"
+    },
+    {
       "notes": "negative-then-refined 结果:钉出 Discovery 应为『持续点火』榜而非瞬时;下一步落地 compute/ignition.py + persistence",
       "path": "analysis/precision_ignition.py",
       "kind": "script",
@@ -243,6 +255,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/ebitda_check.py",
       "kind": "script",
       "module": "compute",
@@ -251,8 +264,7 @@
         "purpose": "EBITDA assembly 边界 AC（AC-EBITDA，PRD §10.5）：合成 companyfacts/units 经真实 ingest.edgar 验 YTD 差分 + EBIT fallback",
         "invariants": "无网络自洽(合成 facts 喂真实 edgar._flow_ttm/extract，确定性)；四态锁定——YTD 差分(累计 YTD→季度 TTM=20)/ytd_diff=False(per-share eps 不合成单季)/EBIT fallback(opinc 缺→pretax+interest，EBITDA=108)/opinc 优先(present→用 opinc，EBITDA=120)；只断言 EBITDA 装配(不碰 PIT/split 边界)；PASS/FAIL 非零退出 CI 友好",
         "verification": "四 PASS：YTD TTM(2025-09-30)=20、ytd_diff=False 无合成季、EBIT fallback=108、opinc 优先=120；末行 EBITDA_OK；任一失败非零退出"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "M1.2–M1.5 web 任务与 CI offline-pipeline job 的共用离线前置；非 nightly pipeline；data/ 与 web/public/data/board.json 走 gitignore 不入库。见 export/board.py 合同与 memory m1-web-export-verification。",
@@ -1617,5 +1629,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "14f5638551fac0c07666a2d8edd413578c30e1ea834fab792eadd81b6b0c0493"
+  "last_structure_digest": "cccd8e36cc074a9d37b9d29e81d37686cfdc0e308fec2f4db5fd21913a19df06"
 }
