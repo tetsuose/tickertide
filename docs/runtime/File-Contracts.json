@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-18T00:29:14.217585+00:00",
+  "updated_at": "2026-06-19T14:47:59.343429+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -135,6 +135,30 @@
       }
     },
     {
+      "notes": "Tier A 决定性首测;实测裁决=无可靠增量 over trivial VIX/HAR baseline、2020-COVID 迁移失败→不买 Tier B 数据",
+      "path": "analysis/method3_regime.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "Method 3(LightGBM 市场 risk-regime,输出 p_bad_20/p_bad_60)的 Tier A、$0、决定性首测:用 ETF(SPY/QQQ/IWM/RSP + 9 核心 SPDR 行业,幸存者免疫)+ 免 key FRED 日频(VIX、BAA10Y 信用利差、国债曲线;市场报价非修正=PIT 干净)建特征,SPY forward realized-vol / max-drawdown(20/60d)作 leak-free 标签,只回答一个决策问题:LightGBM 相对 trivial VIX-percentile / HAR-RV baseline 有无 OOS 增量。一次性研究脚本,非 nightly 管线,不触 ingest/compute/export/web",
+        "invariants": "幸存者免疫(信号全来自 ETF + SPY-derived,不碰成分股 universe);特征只用<=t、标签只用严格前向窗(t,t+H]、vol 标签阈值用 expanding 分位(leak-free);walk-forward 必须 purge+embargo(消 20/60d 标签重叠泄漏)并配 leave-one-crisis-out(测未见 regime 迁移);headline 是 ΔAUC over BEST trivial baseline 而非绝对 AUC(后者多为免费 vol persistence);只读 yfinance + FRED 免 key CSV,产出仅落 gitignore 的 data/(缓存/JSON/PNG);危机episode少→报 per-fold/per-crisis spread,不靠单点估计;ML 依赖(lightgbm/sklearn/statsmodels/scipy/matplotlib)隔离在研究环境,绝不进 repo requirements.txt 或被 engine/compute/export import",
+        "verification": "运行 `.venv/bin/python analysis/method3_regime.py` 打印 4 配置(vol/drawdown × 20/60d)OOS AUC 表 + ΔAUC + LOCO + 特征重要性,写 data/method3_regime_summary.json 与 overlay.png。实测(2003-05..2026-06,5800 行,6 危机):全部裁决『无可靠增量 over trivial VIX/HAR』(wf ΔAUC −0.07~0.00、胜率≤0.67、per-fold 摆动 ±0.2-0.4);2020-COVID held-out LightGBM AUC≈0.05(劣于随机)而 VIX-pct 0.45-0.58→novel regime 不迁移;LightGBM headline AUC(如 vol20=0.79)≈VIX-pct(0.77)→增量≈0 ⇒ STOP,不买 Tier B 数据"
+      }
+    },
+    {
+      "notes": "头对头(v2 fair,经对抗审查修正):公平比下 stable-momentum 相对现有 base→breakout 引擎=冗余(同池条件IC≈0、gap CI 跨0);裁决=不补充不替换,现有引擎已体现『更动量更稳定』",
+      "path": "analysis/momentum_vs_breakout.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "把验证过的『稳定动量』排序轴(slope×R²/KER/vol-adj Sharpe 合成)与生产 base→breakout 引擎(compute/breakout)在同一 universe/日期/前向口径上头对头,判定补充(条件加价值)/替换(同等选择度下压制)/冗余。v2 经 4 视角对抗审查重写,修掉 v1 致命的不公平(breakout 只在 ~20% 合格池选=自带低波动 buff+选择深度不对称)",
+        "invariants": "决定性检验=在 breakout 合格池(brk_strength>0)内部、同等 top-decile-of-eligible 比 stable_mom/breakout/z+z 合成,问 stable_mom 排名能否在 breakout 已筛过的票里加价值=同池条件 IC(同总体故可比);全口径参照用真生产规则 brk_strength_pct≥90(run.py:72)且 N 浮动、并报 Jaccard 对 chance-null 的比值(>1=比随机更重叠=偏冗余);block-bootstrap CI(连续日期块,len≈h/STEP)处理重叠窗自相关,h21 干净/h63 overlap-aware;regime 拆分;幸存者偏差非对称→信条件IC+池内超额非绝对水平;参数无拟合;只读 yfinance+缓存 brk 矩阵,产出落 gitignore data/",
+        "verification": "运行打印 PRIMARY(池内同选择度表)+条件IC[CI]+gap(stable−breakout)[CI]+overlap ratio+regime+全口径参照+verdict。实测(721票,2005-2026,202 dates):**裁决=REDUNDANT**——同池条件 IC stable≈+0.002/−0.000(CI 跨0)、breakout≈−0.005(CI 跨0),gap trough/ret-vol/ret 全≈0 CI 跨0,两引擎池内各项几乎相同;Jaccard 0.16=随机的 3.4x(偏冗余非互补);全口径里 ret_5 涨幅榜仍最差(trough −15.6%)。结论:stable-momentum 不补充不替换现有 base→breakout(后者已体现『更动量更稳定』);momentum 的价值在门槛/eligibility(剔除涨幅榜垃圾)非细排名(同池 edge≈0,合教义)"
+      }
+    },
+    {
       "notes": "negative-then-refined 结果:钉出 Discovery 应为『持续点火』榜而非瞬时;下一步落地 compute/ignition.py + persistence",
       "path": "analysis/precision_ignition.py",
       "kind": "script",
@@ -147,6 +171,66 @@
       }
     },
     {
+      "notes": "用户10个火箭模板的起涨形态提取+lift检验:朴素2x lift 经 vol-matched 控制后塌成0.97x=纯波动率选择,washout+turn 真增量≈0(转向那步还负)+幸存者偏差;火箭=高波动票方差,非可预测;当前screen=高方差watchlist非edge",
+      "path": "analysis/rocket_launch_signature.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "把用户认可的10个火箭模板(MU/CRDO/COHR/SITM/LRCX/MTSI/KLAC/TSM/AVGO/NVMI)的起涨点共同形态提取出来(因果,只用≤launch),做成可筛信号,并诚实测其 lift(信号后真成火箭=forward 252d max-drawup≥+100% 的概率 vs 基准),全市场当前筛候选。一次性研究脚本,非 nightly,不触产品层",
+        "invariants": "起涨签名特征只用≤launch(无前视);label用严格前向窗;**关键控制=vol-matched 基准**(P(rocket|高波动) 而非全体,拆掉波动率选择 confound)+ washout/reclaim 分层增量;signal 按 ticker dedup≥126d;block-bootstrap CI;by-decade;幸存者偏差(721 still-listed,深跌归零的缺席→signal组被抬更狠)显式提示。只读 yfinance,产出落 gitignore data/",
+        "verification": "运行打印模板签名(高波动~60%+深washout~−40%+站回50日线近200日线)+ lift 分解 + 当前screen + verdict。实测裁决:**朴素 lift 1.97x 全是波动率选择**——P(rocket|全体)9.1% vs P(rocket|高波动)18.4%(信号只是选了高波动票,高波动票一年内摸到+100%本就更易=纯方差);**信号 vs vol-matched 同侪=0.97x≈0**,washout 之上微弱(1.08x)、+reclaim 转向反而负(0.94x);叠加幸存者偏差。结论:模板签名=『挑波动大的暴跌票』非火箭预测器;当前screen(NNE/biotech 等9只)是高方差watchlist非edge。与 theme-washout(~0)、per-stock early-catch(~0)一致"
+      }
+    },
+    {
+      "notes": "各板块『VIX』=realized-vol板块指数(真隐含VIX需期权历史无免费源);11 SPDR板块的年化rv21/63+自身历史分位+对SPY比+对VIX相关;当前 XLK 40%/91分位最颠;用法=sizing/context非方向(承 vix_riskoff)",
+      "path": "analysis/sector_vol.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "算各 GICS 板块的『VIX』——因真隐含VIX需期权链历史(无免费源),用 REALIZED volatility 板块指数作诚实可算代理(VIX≈未来已实现波动+风险溢价),对既定用法(仓位sizing/高波动regime context)正是对的输入。11 SPDR板块ETF(仓库已ingest)+SPY+市场VIX。一次性研究/产出脚本",
+        "invariants": "realized vol(对数收益滚动std×√252,21/63d);分位用 causal expanding(min252,无前视);对SPY vol 比值=相对湍流;corr 对市场VIX做 sanity(应高正);survivorship-immune(ETF重构);只读 yfinance+FRED,产出落 gitignore data/。**明确非隐含VIX、用作湍流/sizing/context 非方向(承 [vix_riskoff])**",
+        "verification": "运行打印各板块 rv21(年化)/自身历史分位/rv63/对SPY比/1y range/corrVIX + 当前快照JSON。实测(asof 2026-06-17,SPY rv21 16%/VIX18.4):**XLK 科技 40%、自身91分位、2.47xSPY** 最颠(AI-semi波动);多数板块15-25%/60-77分位;XLF金融/XLC通讯最静(15%/38-40分位);corrVIX 0.73-0.84(板块realized vol 确实跟随市场VIX,代理成立)。用法:读作湍流/仓位刻度,高vol=该板块预期摆幅大该减小仓,非'卖该板块'(高vol→前向收益flat-to-higher);同法可用于 theme 篮子"
+      }
+    },
+    {
+      "notes": "新思路 step1+2:反推『半年平滑大涨赢家』+采样起涨点 K 线供人工检视;全历史仅 51 个达标(平滑大涨是小概率)→预告起涨形态精度这关难过",
+      "path": "analysis/smooth_winners.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "『learn-the-winner-shape』管线 step1+2:在真实美股全历史里找『6个月连续高增长+低回撤+平滑、从平台起步』的赢家起涨样本(winner=forward126 ret≥+40% & 窗内 maxDD≥−20% & KER≥0.55 & trailing60≤+15%,episodes≥126d 去重),输出 base rate 与跨年代多样化采样的归一化走势供人工 K 线检视认可;一次性研究脚本,非 nightly,不触产品层",
+        "invariants": "赢家定义用 forward 窗(lookahead 仅用于打标签、step5 筛选信号只能用 t0 前数据);只读 yfinance 长历史缓存(_stablemom_cache,still-listed→幸存者偏差抬高赢家数,用 base rate/lift 框架抗);采样跨 decade+distinct ticker 可复现(seeded);产出仅落 gitignore data/(JSON 供 gallery);末端 adj-close 毛刺会混进赢家(SYM/LZM)→正是人工检视价值",
+        "verification": "运行打印达标数/base rate/per-decade/中位 episode + 采样 12 票元数据,写 data/smooth_winners_sample.json。实测(721票,1962-2026):仅 51 个达标(0.0014%/stock-day)→『平滑大涨』极稀有;中位 ret126 +58%/maxDD −6%/KER 0.62。下一步(用户认可后):提取起涨点 t0 前共同形态→测其对『成为平滑赢家』的 lift vs 基准、并与 base→breakout 公平对比(防与现有引擎冗余,守前视/幸存者纪律)"
+      }
+    },
+    {
+      "notes": "正结果(对比方法3的零):盯涨跌榜=负IC(reversal)、stable-momentum=正IC且前向更稳;真实但温和、regime-dependent;映射 derived_daily trend_quality/vol_ratio",
+      "path": "analysis/stable_momentum.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "正面回答项目初衷(『比盯每日涨跌榜,发现更动量更稳定的上涨』)的横截面排序实验:每个 formation date 按多信号给真实美股池排名取 top-decile,测其未来 H 天(21/63)的收益与稳定性。naive baseline=trailing return(ret_5 周涨幅榜/21/63);candidate『stable momentum』=Clenow slope×R² / Kaufman 效率比 KER / vol-adjusted Sharpe / 三者横截面 rank 合成。参数无拟合(非 backtest-optimize)。一次性研究脚本,非 nightly 管线,不触 ingest/compute/export/web",
+        "invariants": "信号只用<=t、forward 收益/vol/drawdown 只用(t,t+H];IC=Spearman(信号,fwd_ret)逐日横截面;评判两轴=forward RETURN(IC/top-bot spread)+forward STABILITY(top-decile fwd vol、worst drawdown-from-entry、ret/vol);参照=等权 universe;只读 yfinance(universe 取自 _precision_cache.pkl 的 753 票,full history),产出仅落 gitignore 的 data/;幸存者偏差(still-listed)抬高所有动量绝对收益→靠 rank-based IC+top-bot+per-year 抗偏;momentum regime-dependent 故必报 per-year",
+        "verification": "运行打印 2 horizon 的信号表(IC/IC_t/topRet/spread/topVol/topTrough/ret-vol)+ per-year + verdict,写 data/stable_momentum_summary.json + riskreturn.png。实测(1962-2026,721 票,552 dates):**盯涨跌榜负 edge**——ret_5 IC=−0.036/−0.021(t≈−7/−4 显著负,short-term reversal);**stable-momentum 正且更稳**——mom_12_1 IC+0.028/+0.030、ker_63+0.017/+0.018(t≈4+ 显著),top-decile 前向 vol 38-42% vs 涨幅榜 53-54%、worst drawdown −6.1%/−10.9% vs −8.3%/−14.3%。结论=初衷成立但温和:稳定动量主要买『更稳的上涨』(更低波动/回撤)非超额收益;最有效=12-1 momentum + KER 平滑 + 低波动(对应 derived_daily trend_quality/vol_ratio)"
+      }
+    },
+    {
+      "notes": "archetype B(主题+washout择时)严格检验:跨世纪 FF49 行业,washout+turn 的前向 lift CI 跨0=无可靠edge、强 regime 依赖(2020s 最好/1930s-2000s 死)、46%接飞刀;2025 半导体反弹=百年最旺 regime 的一次抽样,非可泛化信号",
+      "path": "analysis/theme_washout.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "严格检验 archetype B 前提『买深度 washout 的主题/行业、在转向时入场』是否有真实前向 edge,还是 2025 半导体反弹只是 n=1 的运气。底料=Ken French 49 行业 VW 日频(1926-2026,幸存者免疫,免费),上百个跨 regime 的行业 washout episode。一次性研究脚本,非 nightly,不触产品层",
+        "invariants": "信号因果(washout=过去一季≥DD 回撤 + 今日重新站上50日线;dedup≥H天非重叠);lift=事件前向H日收益 − 该行业无条件均值前向(行业内基准,控行业漂移);报 pooled + by-decade(regime)+ block-bootstrap CI + 接飞刀诊断(信号后 forward-trough、>15%续跌占比)+ 有无 turn 确认的 ablation;只读 FF 免费数据,产出落 gitignore data/",
+        "verification": "运行打印 headline(washout+turn vs catch-the-knife 的 fwd/lift/CI/knife)+ by-decade + tech行业事件 + verdict。实测(49行业,1926-2026,n=1015):**裁决 NO 可靠 edge**——washout+turn LIFT +0.9% [CI −0.9%,+2.7%](跨0);强 regime 依赖(1930s −5.4%/2000s−0.4%/2010s−0.6% vs 1980s+8%/1990s+11%/**2020s+15.1% 百年最旺**),仅45%decade为正;46%信号后仍续跌>15%(接飞刀);turn 确认反而比纯 washout 更差(买更高)。tech行业2015+仅3个深washout事件=掷硬币(Softw 2022 lift−24%接刀 vs 2023+25%)。结论:2025半导体反弹=最旺regime的一次抽样,非可泛化择时信号;archetype B 与 per-stock 一样无robust前向edge"
+      }
+    },
+    {
       "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进",
       "path": "analysis/verify_ignition.py",
       "kind": "script",
@@ -156,6 +240,18 @@
         "purpose": "ignition vs composite 早期点亮时机的历史回看验证:用真实 yfinance 数据量化短窗口 ignition 引擎是否比现有长窗口 composite 更早把已知大牛股(ARM/MRVL/AAOI/SNDK)送进 universe 前 10%(双引擎方向的实证,PRD §1 脊柱);一次性分析脚本,非 nightly 管线",
         "invariants": "composite 复用 compute/signals.py 产品口径(横截面 rs_pct/composite 镜像 compute/run.py),绝不另起一套数学;ignition 仅由短窗口/拐点/突破分量构成;两引擎用同一『横截面 top-decile 点亮』口径以保证时机对比公平;只读 yfinance 价格,产出仅落 gitignore 的 data/,不写产品 DuckDB 或 web 数据",
         "verification": "跑 .venv/bin/python analysis/verify_ignition.py 输出每只目标的 t0 与 ignition/composite 点亮周数+点亮时涨幅对照表;4 只目标上 ignition 点亮均不晚于 composite"
+      }
+    },
+    {
+      "notes": "实证『VIX高→risk-off是否领先』:不是——VIX 同步/滞后(与trailing 21d 收益 corr−0.42)、高VIX后前向收益反而更高(contrarian,>40桶 +33%);唯一可靠预测=前向波动更高;唯一合法用法=vol-targeting调仓(Sharpe 0.46→0.57)+evidence/context,非方向择时",
+      "path": "analysis/vix_riskoff.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "诚实回答『VIX高→risk-off 是不是领先指标、怎么用』:在 VIX(FRED VIXCLS 1990+)vs ^GSPC 上测 (1)高VIX是否预示更低前向收益 (2)是否预示更高前向波动/回撤 (3)VIX领先还是同步(trailing vs forward 相关) (4)唯一合法用法 vol-targeting 是否改善 Sharpe/回撤。一次性研究脚本,非 nightly,不触产品层",
+        "invariants": "VIX_t 在 t 收盘已知,前向窗严格在 t 之后(因果);vol-target 用昨日波动估计(无前视);按 VIX level 分桶;报前向年化收益/波动/maxDD + 领先滞后相关 + vol-target vs buy&hold 的 Sharpe/maxDD。只读 FRED+yfinance,产出落 gitignore data/",
+        "verification": "运行打印分桶表/相关/vol-target/verdict。实测(1990-2026,n=9182):**VIX高→risk-off 不是领先信号**——corr(VIX,trailing21d)=−0.42(同步/滞后,VIX 随跌而起)、corr(VIX,forward21d)=+0.10(高VIX后前向收益反而略高);分桶 VIX<13 前向+8% vs >40 前向+33%(contrarian,卖高VIX=卖在底);高VIX唯一可靠预测=**前向波动更高**(9%→45%单调);唯一合法用法=vol-targeting(size down when vol high,Sharpe 0.46→0.57、max log-dd −0.84→−0.70)+ evidence/context + 极值 contrarian tilt,**非方向择时**。澄清 method 3 的『VIX→risk-off』指的是同步风险态非领先卖信号"
       }
     },
     {
@@ -243,6 +339,7 @@
       }
     },
     {
+      "notes": "",
       "path": "compute/ebitda_check.py",
       "kind": "script",
       "module": "compute",
@@ -251,8 +348,7 @@
         "purpose": "EBITDA assembly 边界 AC（AC-EBITDA，PRD §10.5）：合成 companyfacts/units 经真实 ingest.edgar 验 YTD 差分 + EBIT fallback",
         "invariants": "无网络自洽(合成 facts 喂真实 edgar._flow_ttm/extract，确定性)；四态锁定——YTD 差分(累计 YTD→季度 TTM=20)/ytd_diff=False(per-share eps 不合成单季)/EBIT fallback(opinc 缺→pretax+interest，EBITDA=108)/opinc 优先(present→用 opinc，EBITDA=120)；只断言 EBITDA 装配(不碰 PIT/split 边界)；PASS/FAIL 非零退出 CI 友好",
         "verification": "四 PASS：YTD TTM(2025-09-30)=20、ytd_diff=False 无合成季、EBIT fallback=108、opinc 优先=120；末行 EBITDA_OK；任一失败非零退出"
-      },
-      "notes": ""
+      }
     },
     {
       "notes": "M1.2–M1.5 web 任务与 CI offline-pipeline job 的共用离线前置；非 nightly pipeline；data/ 与 web/public/data/board.json 走 gitignore 不入库。见 export/board.py 合同与 memory m1-web-export-verification。",
@@ -433,6 +529,18 @@
         "invariants": "是视觉契约非实现；用合成数据；code 不得照抄其造数逻辑；冲突以 PRD §16 为准",
         "verification": "PRD §9 与附录 C 的布局/字段/配色与本文件一致"
       }
+    },
+    {
+      "path": "docs/research/2026-06-edge-research.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "2026-06 edge research 收口决策文档(渐进式披露):L0一屏裁决表+元结论+产品决策,L1每个 analysis 实验一节(Q/法/数/裁决),L2复现+方法学纪律。供后续翻横向方案/改脊柱时引用,避免重复已证伪的预测/择时路线",
+        "invariants": "只承载结论与导航(薄文档),细节指向 analysis/*.py docstring 与对应 commit;裁决与脚本/记忆一致;声明全部实验参数无拟合、防前视、对正确 baseline 比增量、幸存者偏差用 rank/lift/episode-CI 抗;不写产品代码、不改脊柱(仅记录反向验证)",
+        "verification": "人读:8 行裁决表 commit 与 git log 对得上(6c8d1a5/3a6ad2a/e3e219e/28209cf/47efa60/886647a/4a6337f/908ac7a);元结论=前向预测/择时无 robust edge、唯一落地产出=sector_vol 湍流层;每节数字与对应脚本输出/[[memory]]一致;L2 复现命令可跑"
+      },
+      "notes": "本轮8个edge实验的渐进式披露决策文档:元结论=美股EOD前向预测/择时无robust edge(个股/主题/市场三层),唯一稳健=evidence-first+板块realized-vol湍流层;反向验证脊柱"
     },
     {
       "notes": "",
@@ -1617,5 +1725,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "14f5638551fac0c07666a2d8edd413578c30e1ea834fab792eadd81b6b0c0493"
+  "last_structure_digest": "71da7d71a03cb670eda541f13bb13f22a2a38a214cd348173985e65e288e265a"
 }
