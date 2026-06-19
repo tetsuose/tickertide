@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-19T14:03:40.291989+00:00",
+  "updated_at": "2026-06-19T14:21:11.161851+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -171,6 +171,18 @@
       }
     },
     {
+      "path": "analysis/rocket_launch_signature.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "把用户认可的10个火箭模板(MU/CRDO/COHR/SITM/LRCX/MTSI/KLAC/TSM/AVGO/NVMI)的起涨点共同形态提取出来(因果,只用≤launch),做成可筛信号,并诚实测其 lift(信号后真成火箭=forward 252d max-drawup≥+100% 的概率 vs 基准),全市场当前筛候选。一次性研究脚本,非 nightly,不触产品层",
+        "invariants": "起涨签名特征只用≤launch(无前视);label用严格前向窗;**关键控制=vol-matched 基准**(P(rocket|高波动) 而非全体,拆掉波动率选择 confound)+ washout/reclaim 分层增量;signal 按 ticker dedup≥126d;block-bootstrap CI;by-decade;幸存者偏差(721 still-listed,深跌归零的缺席→signal组被抬更狠)显式提示。只读 yfinance,产出落 gitignore data/",
+        "verification": "运行打印模板签名(高波动~60%+深washout~−40%+站回50日线近200日线)+ lift 分解 + 当前screen + verdict。实测裁决:**朴素 lift 1.97x 全是波动率选择**——P(rocket|全体)9.1% vs P(rocket|高波动)18.4%(信号只是选了高波动票,高波动票一年内摸到+100%本就更易=纯方差);**信号 vs vol-matched 同侪=0.97x≈0**,washout 之上微弱(1.08x)、+reclaim 转向反而负(0.94x);叠加幸存者偏差。结论:模板签名=『挑波动大的暴跌票』非火箭预测器;当前screen(NNE/biotech 等9只)是高方差watchlist非edge。与 theme-washout(~0)、per-stock early-catch(~0)一致"
+      },
+      "notes": "用户10个火箭模板的起涨形态提取+lift检验:朴素2x lift 经 vol-matched 控制后塌成0.97x=纯波动率选择,washout+turn 真增量≈0(转向那步还负)+幸存者偏差;火箭=高波动票方差,非可预测;当前screen=高方差watchlist非edge"
+    },
+    {
       "notes": "新思路 step1+2:反推『半年平滑大涨赢家』+采样起涨点 K 线供人工检视;全历史仅 51 个达标(平滑大涨是小概率)→预告起涨形态精度这关难过",
       "path": "analysis/smooth_winners.py",
       "kind": "script",
@@ -195,6 +207,7 @@
       }
     },
     {
+      "notes": "archetype B(主题+washout择时)严格检验:跨世纪 FF49 行业,washout+turn 的前向 lift CI 跨0=无可靠edge、强 regime 依赖(2020s 最好/1930s-2000s 死)、46%接飞刀;2025 半导体反弹=百年最旺 regime 的一次抽样,非可泛化信号",
       "path": "analysis/theme_washout.py",
       "kind": "script",
       "module": "analysis",
@@ -203,8 +216,7 @@
         "purpose": "严格检验 archetype B 前提『买深度 washout 的主题/行业、在转向时入场』是否有真实前向 edge,还是 2025 半导体反弹只是 n=1 的运气。底料=Ken French 49 行业 VW 日频(1926-2026,幸存者免疫,免费),上百个跨 regime 的行业 washout episode。一次性研究脚本,非 nightly,不触产品层",
         "invariants": "信号因果(washout=过去一季≥DD 回撤 + 今日重新站上50日线;dedup≥H天非重叠);lift=事件前向H日收益 − 该行业无条件均值前向(行业内基准,控行业漂移);报 pooled + by-decade(regime)+ block-bootstrap CI + 接飞刀诊断(信号后 forward-trough、>15%续跌占比)+ 有无 turn 确认的 ablation;只读 FF 免费数据,产出落 gitignore data/",
         "verification": "运行打印 headline(washout+turn vs catch-the-knife 的 fwd/lift/CI/knife)+ by-decade + tech行业事件 + verdict。实测(49行业,1926-2026,n=1015):**裁决 NO 可靠 edge**——washout+turn LIFT +0.9% [CI −0.9%,+2.7%](跨0);强 regime 依赖(1930s −5.4%/2000s−0.4%/2010s−0.6% vs 1980s+8%/1990s+11%/**2020s+15.1% 百年最旺**),仅45%decade为正;46%信号后仍续跌>15%(接飞刀);turn 确认反而比纯 washout 更差(买更高)。tech行业2015+仅3个深washout事件=掷硬币(Softw 2022 lift−24%接刀 vs 2023+25%)。结论:2025半导体反弹=最旺regime的一次抽样,非可泛化择时信号;archetype B 与 per-stock 一样无robust前向edge"
-      },
-      "notes": "archetype B(主题+washout择时)严格检验:跨世纪 FF49 行业,washout+turn 的前向 lift CI 跨0=无可靠edge、强 regime 依赖(2020s 最好/1930s-2000s 死)、46%接飞刀;2025 半导体反弹=百年最旺 regime 的一次抽样,非可泛化信号"
+      }
     },
     {
       "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进",
@@ -1677,5 +1689,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "2b7df5386aaaeee9acd2c50091c833458623c9ae773e466775fea8eb45315402"
+  "last_structure_digest": "6a17739aeeccb1bf6a4b4bce6faaa3435d2a554e03737f1a5c7bae47fa2d60da"
 }
