@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-19T14:21:11.161851+00:00",
+  "updated_at": "2026-06-19T14:34:59.843992+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -171,6 +171,7 @@
       }
     },
     {
+      "notes": "用户10个火箭模板的起涨形态提取+lift检验:朴素2x lift 经 vol-matched 控制后塌成0.97x=纯波动率选择,washout+turn 真增量≈0(转向那步还负)+幸存者偏差;火箭=高波动票方差,非可预测;当前screen=高方差watchlist非edge",
       "path": "analysis/rocket_launch_signature.py",
       "kind": "script",
       "module": "analysis",
@@ -179,8 +180,7 @@
         "purpose": "把用户认可的10个火箭模板(MU/CRDO/COHR/SITM/LRCX/MTSI/KLAC/TSM/AVGO/NVMI)的起涨点共同形态提取出来(因果,只用≤launch),做成可筛信号,并诚实测其 lift(信号后真成火箭=forward 252d max-drawup≥+100% 的概率 vs 基准),全市场当前筛候选。一次性研究脚本,非 nightly,不触产品层",
         "invariants": "起涨签名特征只用≤launch(无前视);label用严格前向窗;**关键控制=vol-matched 基准**(P(rocket|高波动) 而非全体,拆掉波动率选择 confound)+ washout/reclaim 分层增量;signal 按 ticker dedup≥126d;block-bootstrap CI;by-decade;幸存者偏差(721 still-listed,深跌归零的缺席→signal组被抬更狠)显式提示。只读 yfinance,产出落 gitignore data/",
         "verification": "运行打印模板签名(高波动~60%+深washout~−40%+站回50日线近200日线)+ lift 分解 + 当前screen + verdict。实测裁决:**朴素 lift 1.97x 全是波动率选择**——P(rocket|全体)9.1% vs P(rocket|高波动)18.4%(信号只是选了高波动票,高波动票一年内摸到+100%本就更易=纯方差);**信号 vs vol-matched 同侪=0.97x≈0**,washout 之上微弱(1.08x)、+reclaim 转向反而负(0.94x);叠加幸存者偏差。结论:模板签名=『挑波动大的暴跌票』非火箭预测器;当前screen(NNE/biotech 等9只)是高方差watchlist非edge。与 theme-washout(~0)、per-stock early-catch(~0)一致"
-      },
-      "notes": "用户10个火箭模板的起涨形态提取+lift检验:朴素2x lift 经 vol-matched 控制后塌成0.97x=纯波动率选择,washout+turn 真增量≈0(转向那步还负)+幸存者偏差;火箭=高波动票方差,非可预测;当前screen=高方差watchlist非edge"
+      }
     },
     {
       "notes": "新思路 step1+2:反推『半年平滑大涨赢家』+采样起涨点 K 线供人工检视;全历史仅 51 个达标(平滑大涨是小概率)→预告起涨形态精度这关难过",
@@ -229,6 +229,18 @@
         "invariants": "composite 复用 compute/signals.py 产品口径(横截面 rs_pct/composite 镜像 compute/run.py),绝不另起一套数学;ignition 仅由短窗口/拐点/突破分量构成;两引擎用同一『横截面 top-decile 点亮』口径以保证时机对比公平;只读 yfinance 价格,产出仅落 gitignore 的 data/,不写产品 DuckDB 或 web 数据",
         "verification": "跑 .venv/bin/python analysis/verify_ignition.py 输出每只目标的 t0 与 ignition/composite 点亮周数+点亮时涨幅对照表;4 只目标上 ignition 点亮均不晚于 composite"
       }
+    },
+    {
+      "path": "analysis/vix_riskoff.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "诚实回答『VIX高→risk-off 是不是领先指标、怎么用』:在 VIX(FRED VIXCLS 1990+)vs ^GSPC 上测 (1)高VIX是否预示更低前向收益 (2)是否预示更高前向波动/回撤 (3)VIX领先还是同步(trailing vs forward 相关) (4)唯一合法用法 vol-targeting 是否改善 Sharpe/回撤。一次性研究脚本,非 nightly,不触产品层",
+        "invariants": "VIX_t 在 t 收盘已知,前向窗严格在 t 之后(因果);vol-target 用昨日波动估计(无前视);按 VIX level 分桶;报前向年化收益/波动/maxDD + 领先滞后相关 + vol-target vs buy&hold 的 Sharpe/maxDD。只读 FRED+yfinance,产出落 gitignore data/",
+        "verification": "运行打印分桶表/相关/vol-target/verdict。实测(1990-2026,n=9182):**VIX高→risk-off 不是领先信号**——corr(VIX,trailing21d)=−0.42(同步/滞后,VIX 随跌而起)、corr(VIX,forward21d)=+0.10(高VIX后前向收益反而略高);分桶 VIX<13 前向+8% vs >40 前向+33%(contrarian,卖高VIX=卖在底);高VIX唯一可靠预测=**前向波动更高**(9%→45%单调);唯一合法用法=vol-targeting(size down when vol high,Sharpe 0.46→0.57、max log-dd −0.84→−0.70)+ evidence/context + 极值 contrarian tilt,**非方向择时**。澄清 method 3 的『VIX→risk-off』指的是同步风险态非领先卖信号"
+      },
+      "notes": "实证『VIX高→risk-off是否领先』:不是——VIX 同步/滞后(与trailing 21d 收益 corr−0.42)、高VIX后前向收益反而更高(contrarian,>40桶 +33%);唯一可靠预测=前向波动更高;唯一合法用法=vol-targeting调仓(Sharpe 0.46→0.57)+evidence/context,非方向择时"
     },
     {
       "notes": "",
@@ -1689,5 +1701,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "6a17739aeeccb1bf6a4b4bce6faaa3435d2a554e03737f1a5c7bae47fa2d60da"
+  "last_structure_digest": "2b5b30e93c6223e0a64b23896ef2b42c9cc2b1719acb9844473b6172d15abb2d"
 }
