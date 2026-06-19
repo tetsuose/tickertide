@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-19T05:28:52.814633+00:00",
+  "updated_at": "2026-06-19T08:29:01.571051+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -147,6 +147,18 @@
       }
     },
     {
+      "path": "analysis/momentum_vs_breakout.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "把验证过的『稳定动量』排序轴(slope×R²/KER/vol-adj Sharpe 合成)与生产 base→breakout 引擎(compute/breakout)在同一 universe/日期/前向口径上头对头,判定补充(条件加价值)/替换(同等选择度下压制)/冗余。v2 经 4 视角对抗审查重写,修掉 v1 致命的不公平(breakout 只在 ~20% 合格池选=自带低波动 buff+选择深度不对称)",
+        "invariants": "决定性检验=在 breakout 合格池(brk_strength>0)内部、同等 top-decile-of-eligible 比 stable_mom/breakout/z+z 合成,问 stable_mom 排名能否在 breakout 已筛过的票里加价值=同池条件 IC(同总体故可比);全口径参照用真生产规则 brk_strength_pct≥90(run.py:72)且 N 浮动、并报 Jaccard 对 chance-null 的比值(>1=比随机更重叠=偏冗余);block-bootstrap CI(连续日期块,len≈h/STEP)处理重叠窗自相关,h21 干净/h63 overlap-aware;regime 拆分;幸存者偏差非对称→信条件IC+池内超额非绝对水平;参数无拟合;只读 yfinance+缓存 brk 矩阵,产出落 gitignore data/",
+        "verification": "运行打印 PRIMARY(池内同选择度表)+条件IC[CI]+gap(stable−breakout)[CI]+overlap ratio+regime+全口径参照+verdict。实测(721票,2005-2026,202 dates):**裁决=REDUNDANT**——同池条件 IC stable≈+0.002/−0.000(CI 跨0)、breakout≈−0.005(CI 跨0),gap trough/ret-vol/ret 全≈0 CI 跨0,两引擎池内各项几乎相同;Jaccard 0.16=随机的 3.4x(偏冗余非互补);全口径里 ret_5 涨幅榜仍最差(trough −15.6%)。结论:stable-momentum 不补充不替换现有 base→breakout(后者已体现『更动量更稳定』);momentum 的价值在门槛/eligibility(剔除涨幅榜垃圾)非细排名(同池 edge≈0,合教义)"
+      },
+      "notes": "头对头(v2 fair,经对抗审查修正):公平比下 stable-momentum 相对现有 base→breakout 引擎=冗余(同池条件IC≈0、gap CI 跨0);裁决=不补充不替换,现有引擎已体现『更动量更稳定』"
+    },
+    {
       "notes": "negative-then-refined 结果:钉出 Discovery 应为『持续点火』榜而非瞬时;下一步落地 compute/ignition.py + persistence",
       "path": "analysis/precision_ignition.py",
       "kind": "script",
@@ -159,6 +171,7 @@
       }
     },
     {
+      "notes": "正结果(对比方法3的零):盯涨跌榜=负IC(reversal)、stable-momentum=正IC且前向更稳;真实但温和、regime-dependent;映射 derived_daily trend_quality/vol_ratio",
       "path": "analysis/stable_momentum.py",
       "kind": "script",
       "module": "analysis",
@@ -167,8 +180,7 @@
         "purpose": "正面回答项目初衷(『比盯每日涨跌榜,发现更动量更稳定的上涨』)的横截面排序实验:每个 formation date 按多信号给真实美股池排名取 top-decile,测其未来 H 天(21/63)的收益与稳定性。naive baseline=trailing return(ret_5 周涨幅榜/21/63);candidate『stable momentum』=Clenow slope×R² / Kaufman 效率比 KER / vol-adjusted Sharpe / 三者横截面 rank 合成。参数无拟合(非 backtest-optimize)。一次性研究脚本,非 nightly 管线,不触 ingest/compute/export/web",
         "invariants": "信号只用<=t、forward 收益/vol/drawdown 只用(t,t+H];IC=Spearman(信号,fwd_ret)逐日横截面;评判两轴=forward RETURN(IC/top-bot spread)+forward STABILITY(top-decile fwd vol、worst drawdown-from-entry、ret/vol);参照=等权 universe;只读 yfinance(universe 取自 _precision_cache.pkl 的 753 票,full history),产出仅落 gitignore 的 data/;幸存者偏差(still-listed)抬高所有动量绝对收益→靠 rank-based IC+top-bot+per-year 抗偏;momentum regime-dependent 故必报 per-year",
         "verification": "运行打印 2 horizon 的信号表(IC/IC_t/topRet/spread/topVol/topTrough/ret-vol)+ per-year + verdict,写 data/stable_momentum_summary.json + riskreturn.png。实测(1962-2026,721 票,552 dates):**盯涨跌榜负 edge**——ret_5 IC=−0.036/−0.021(t≈−7/−4 显著负,short-term reversal);**stable-momentum 正且更稳**——mom_12_1 IC+0.028/+0.030、ker_63+0.017/+0.018(t≈4+ 显著),top-decile 前向 vol 38-42% vs 涨幅榜 53-54%、worst drawdown −6.1%/−10.9% vs −8.3%/−14.3%。结论=初衷成立但温和:稳定动量主要买『更稳的上涨』(更低波动/回撤)非超额收益;最有效=12-1 momentum + KER 平滑 + 低波动(对应 derived_daily trend_quality/vol_ratio)"
-      },
-      "notes": "正结果(对比方法3的零):盯涨跌榜=负IC(reversal)、stable-momentum=正IC且前向更稳;真实但温和、regime-dependent;映射 derived_daily trend_quality/vol_ratio"
+      }
     },
     {
       "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进",
@@ -1641,5 +1653,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "c75307352acf45438696be2a494c94019e20d6f8930bc6e6d8c326d161d2ae43"
+  "last_structure_digest": "8f89e8df1edf87805d7bdc83735caa95959367d982eb8ccd68fe816d3f187959"
 }
