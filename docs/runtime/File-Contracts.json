@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-19T14:39:28.326385+00:00",
+  "updated_at": "2026-06-19T14:47:59.343429+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -183,6 +183,7 @@
       }
     },
     {
+      "notes": "各板块『VIX』=realized-vol板块指数(真隐含VIX需期权历史无免费源);11 SPDR板块的年化rv21/63+自身历史分位+对SPY比+对VIX相关;当前 XLK 40%/91分位最颠;用法=sizing/context非方向(承 vix_riskoff)",
       "path": "analysis/sector_vol.py",
       "kind": "script",
       "module": "analysis",
@@ -191,8 +192,7 @@
         "purpose": "算各 GICS 板块的『VIX』——因真隐含VIX需期权链历史(无免费源),用 REALIZED volatility 板块指数作诚实可算代理(VIX≈未来已实现波动+风险溢价),对既定用法(仓位sizing/高波动regime context)正是对的输入。11 SPDR板块ETF(仓库已ingest)+SPY+市场VIX。一次性研究/产出脚本",
         "invariants": "realized vol(对数收益滚动std×√252,21/63d);分位用 causal expanding(min252,无前视);对SPY vol 比值=相对湍流;corr 对市场VIX做 sanity(应高正);survivorship-immune(ETF重构);只读 yfinance+FRED,产出落 gitignore data/。**明确非隐含VIX、用作湍流/sizing/context 非方向(承 [vix_riskoff])**",
         "verification": "运行打印各板块 rv21(年化)/自身历史分位/rv63/对SPY比/1y range/corrVIX + 当前快照JSON。实测(asof 2026-06-17,SPY rv21 16%/VIX18.4):**XLK 科技 40%、自身91分位、2.47xSPY** 最颠(AI-semi波动);多数板块15-25%/60-77分位;XLF金融/XLC通讯最静(15%/38-40分位);corrVIX 0.73-0.84(板块realized vol 确实跟随市场VIX,代理成立)。用法:读作湍流/仓位刻度,高vol=该板块预期摆幅大该减小仓,非'卖该板块'(高vol→前向收益flat-to-higher);同法可用于 theme 篮子"
-      },
-      "notes": "各板块『VIX』=realized-vol板块指数(真隐含VIX需期权历史无免费源);11 SPDR板块的年化rv21/63+自身历史分位+对SPY比+对VIX相关;当前 XLK 40%/91分位最颠;用法=sizing/context非方向(承 vix_riskoff)"
+      }
     },
     {
       "notes": "新思路 step1+2:反推『半年平滑大涨赢家』+采样起涨点 K 线供人工检视;全历史仅 51 个达标(平滑大涨是小概率)→预告起涨形态精度这关难过",
@@ -529,6 +529,18 @@
         "invariants": "是视觉契约非实现；用合成数据；code 不得照抄其造数逻辑；冲突以 PRD §16 为准",
         "verification": "PRD §9 与附录 C 的布局/字段/配色与本文件一致"
       }
+    },
+    {
+      "path": "docs/research/2026-06-edge-research.md",
+      "kind": "doc",
+      "module": "docs",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "2026-06 edge research 收口决策文档(渐进式披露):L0一屏裁决表+元结论+产品决策,L1每个 analysis 实验一节(Q/法/数/裁决),L2复现+方法学纪律。供后续翻横向方案/改脊柱时引用,避免重复已证伪的预测/择时路线",
+        "invariants": "只承载结论与导航(薄文档),细节指向 analysis/*.py docstring 与对应 commit;裁决与脚本/记忆一致;声明全部实验参数无拟合、防前视、对正确 baseline 比增量、幸存者偏差用 rank/lift/episode-CI 抗;不写产品代码、不改脊柱(仅记录反向验证)",
+        "verification": "人读:8 行裁决表 commit 与 git log 对得上(6c8d1a5/3a6ad2a/e3e219e/28209cf/47efa60/886647a/4a6337f/908ac7a);元结论=前向预测/择时无 robust edge、唯一落地产出=sector_vol 湍流层;每节数字与对应脚本输出/[[memory]]一致;L2 复现命令可跑"
+      },
+      "notes": "本轮8个edge实验的渐进式披露决策文档:元结论=美股EOD前向预测/择时无robust edge(个股/主题/市场三层),唯一稳健=evidence-first+板块realized-vol湍流层;反向验证脊柱"
     },
     {
       "notes": "",
@@ -1713,5 +1725,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "3aef0a7443d03a65e8c1cb76c2b2abdd0d201c4c4abb4197a0f2fe3d570d75d9"
+  "last_structure_digest": "71da7d71a03cb670eda541f13bb13f22a2a38a214cd348173985e65e288e265a"
 }
