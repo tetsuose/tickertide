@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-19T14:47:59.343429+00:00",
+  "updated_at": "2026-06-20T00:17:04.461172+00:00",
   "policy": {
     "stage_values": [
       "scaffolded",
@@ -229,6 +229,18 @@
         "invariants": "信号因果(washout=过去一季≥DD 回撤 + 今日重新站上50日线;dedup≥H天非重叠);lift=事件前向H日收益 − 该行业无条件均值前向(行业内基准,控行业漂移);报 pooled + by-decade(regime)+ block-bootstrap CI + 接飞刀诊断(信号后 forward-trough、>15%续跌占比)+ 有无 turn 确认的 ablation;只读 FF 免费数据,产出落 gitignore data/",
         "verification": "运行打印 headline(washout+turn vs catch-the-knife 的 fwd/lift/CI/knife)+ by-decade + tech行业事件 + verdict。实测(49行业,1926-2026,n=1015):**裁决 NO 可靠 edge**——washout+turn LIFT +0.9% [CI −0.9%,+2.7%](跨0);强 regime 依赖(1930s −5.4%/2000s−0.4%/2010s−0.6% vs 1980s+8%/1990s+11%/**2020s+15.1% 百年最旺**),仅45%decade为正;46%信号后仍续跌>15%(接飞刀);turn 确认反而比纯 washout 更差(买更高)。tech行业2015+仅3个深washout事件=掷硬币(Softw 2022 lift−24%接刀 vs 2023+25%)。结论:2025半导体反弹=最旺regime的一次抽样,非可泛化择时信号;archetype B 与 per-stock 一样无robust前向edge"
       }
+    },
+    {
+      "path": "analysis/turnaround_watchlist.py",
+      "kind": "script",
+      "module": "analysis",
+      "stage": "baseline",
+      "contract": {
+        "purpose": "诚实 evidence-first『周转 watchlist』recall funnel(声明无 edge):从更广真实美股 universe(Nasdaq screener,mktcap≥$500M 地板 + dollar-volume 地板,**非 top-N-by-mktcap**——后者封顶大盘会滤掉点火前 ~$1-4B 的 CRDO/SITM 类小盘 turnaround)捞『仍深跌+高波动+转向』的高方差候选,露可排序原始证据列(刻意不给单一合成分数,以免暗示 edge),把真实 base rate 大声标注;precision 靠用户基本面判断非筛子。三层湍流 context(市场 VIX level+**期限结构 VIX/VIX3M**、板块 realized-vol 分位、个股 vol 分位)作 sizing/预期刻度非方向。一次性研究脚本,非 nightly,不触产品层(承 rocket_launch_signature/sector_vol/vix_riskoff,docs/research/2026-06-edge-research.md)",
+        "invariants": "所有特征因果(dd252/min_dd_126/rvol126/dist_ma50·200/reclaim50 只用≤t);**washout gate 用 dd252(当前仍距52周高≥wo)非 min_dd_126**——剔除『深跌已收复』的瞬时回撤票;recall gate=washout∧highvol∧turn(turn=above50∨近20d reclaim50dMA);sector→ETF 读权威 ingest/sector_etf_map.txt(SoT,与 rotation 一致),universe.sector 已由 nasdaq._gics_sector 归一;VIX/VIX3M 取 FRED VIXCLS/VXVCLS(无 key),term_ratio=VIX/VIX3M>1=backwardation;**VIX 用作 regime/sizing/context 非方向**(高vol→前向 flat-to-higher,承 [vix_riskoff])且显式标注 SPX-framed 框不住小盘;分位用 causal expanding;诚实 base rate(naive 1.97x 经 vol-matched 塌成 0.97x=纯波动率选择、~46%接飞刀、幸存者偏差)随 JSON+banner 露出;只读 yfinance+FRED+Nasdaq screener,产出仅落 gitignore data/(turnaround_watchlist.json + _turnaround_cache.pkl),不写产品 DuckDB/web;engine/index.py stdlib-only 不受影响、研究依赖不进 repo requirements;价格缓存按 ticker 交集过滤→全量跑须 --refresh(交集缺失大声告警);**输出 JSON strict-valid**(所有 float 经 _num 把 NaN/inf→None + json allow_nan=False,先序列化后写→近上市票 rvol_pct=null 仍保召回、永不写裸 NaN token);sector_context 按 GICS sector 名键化+带 etf(== candidates.sector,web 可 join);三层 context 失败 try/except 降级(永不拖垮 recall 输出);expand_pct 剔 warmup-NaN 防分位下偏",
+        "verification": "跑 .venv/bin/python analysis/turnaround_watchlist.py [--sample N] [--probe-vix] 打印 funnel(universe→liquid→fired)+市场/期限结构 context+诚实 base-rate banner+证据排序表,写 data/turnaround_watchlist.json。实证(asof 2026-06-18):universe 3327 名(mktcap≥$500M);**dd252 gate 正确剔除已收复票**(HUM dd252−5%/AVNS 等 out),只留『仍≥40%深跌+高vol+转向』(SMR−78%/KD−74%/TMC−52%/LWLG−46%);sector ctx 正确 join(KD Information Technology→XLK 94分位,修了 SECTOR_ETF 硬编码键名与 GICS 串对不上的 nan bug)。**part-B VIX 期限结构前向探针**(FRED VIX/VIX3M vs ^GSPC,n=4663,2007+):前向收益随期限比上升(深contango fwd21d年化8.2%→backwardation1.00-1.05 26.0%)但深度倒挂>1.05塌回7.1%(急性崩盘尾)、corr(term_ratio,fwd21d)=+0.01≈**零线性前向含量**→裁决=regime/sizing 刻度非方向信号(同 VIX level 的 contrarian tilt,承 vix_riskoff)。全量真实 universe(3327名,沙箱禁用联网)funnel=3327→history 3161→liquid 2789(dollar-vol≥$3M)→**fired 230 候选**(~7% of liquid,recall funnel 合理可用),artifact 落 data/turnaround_watchlist.json。经对抗式多-agent review(22 raw→15 confirmed+7 critic)硬化:修 rvol_pct 裸 NaN token 致 JSON 非法(全量 230 中实有 2 个近上市票命中→现 null 仍保召回)、expand_pct warmup-NaN 分位下偏、引用 base-rate 加 form_caveat(测于 min_dd_126+严格 reclaim 更严形态、本 gate 是 dd252+松 turn 召回网)、'near a bottom'→contrarian/sizing 非择底、sector_context 改 GICS 名键化可 join、context 层降级不拖垮输出"
+      },
+      "notes": "周转 watchlist=诚实 recall funnel 非 edge:深washout+高vol+转向当高方差候选、用户上基本面做precision;washout gate 用 dd252(仍深跌)非 min_dd_126(已收复噪声);VIX 期限结构(VIX/VIX3M,FRED无key)作 regime/sizing context、实测 corr+0.01 零前向含量非方向;承本session edge-research(三层无robust前向edge)"
     },
     {
       "notes": "in-sample 时机验证,非 precision/胜率证明;下一步 precision pass 会在此基础上演进",
@@ -531,6 +543,7 @@
       }
     },
     {
+      "notes": "本轮8个edge实验的渐进式披露决策文档:元结论=美股EOD前向预测/择时无robust edge(个股/主题/市场三层),唯一稳健=evidence-first+板块realized-vol湍流层;反向验证脊柱",
       "path": "docs/research/2026-06-edge-research.md",
       "kind": "doc",
       "module": "docs",
@@ -539,8 +552,7 @@
         "purpose": "2026-06 edge research 收口决策文档(渐进式披露):L0一屏裁决表+元结论+产品决策,L1每个 analysis 实验一节(Q/法/数/裁决),L2复现+方法学纪律。供后续翻横向方案/改脊柱时引用,避免重复已证伪的预测/择时路线",
         "invariants": "只承载结论与导航(薄文档),细节指向 analysis/*.py docstring 与对应 commit;裁决与脚本/记忆一致;声明全部实验参数无拟合、防前视、对正确 baseline 比增量、幸存者偏差用 rank/lift/episode-CI 抗;不写产品代码、不改脊柱(仅记录反向验证)",
         "verification": "人读:8 行裁决表 commit 与 git log 对得上(6c8d1a5/3a6ad2a/e3e219e/28209cf/47efa60/886647a/4a6337f/908ac7a);元结论=前向预测/择时无 robust edge、唯一落地产出=sector_vol 湍流层;每节数字与对应脚本输出/[[memory]]一致;L2 复现命令可跑"
-      },
-      "notes": "本轮8个edge实验的渐进式披露决策文档:元结论=美股EOD前向预测/择时无robust edge(个股/主题/市场三层),唯一稳健=evidence-first+板块realized-vol湍流层;反向验证脊柱"
+      }
     },
     {
       "notes": "",
@@ -1725,5 +1737,5 @@
       "removed_at": "2026-06-16T15:41:30.212229+00:00"
     }
   ],
-  "last_structure_digest": "71da7d71a03cb670eda541f13bb13f22a2a38a214cd348173985e65e288e265a"
+  "last_structure_digest": "9b3e0f578dc761402895ebd186d0d0d28889f6d03d3b634ab8ec655804e846d2"
 }
