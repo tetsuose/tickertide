@@ -69,6 +69,11 @@ def main() -> int:
     ap.add_argument("--skip-splits", action="store_true",
                     help="skip per-ticker splits fetch (faster scale-out; split-alignment "
                          "degrades to factor 1.0 — fine for price-only Breakouts detection)")
+    ap.add_argument("--splits-top", type=int, default=None,
+                    help="fetch splits only for the top-N bar'd names by mktcap (∪ seed). Lets "
+                         "bars go wide (Breakouts, full floor) while splits stay scoped to the "
+                         "valuation universe (Ocean, EDGAR top-N) — split-alignment needs splits "
+                         "only where fundamentals exist (PRD §10.5). Ignored under --skip-splits.")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
     args = ap.parse_args()
 
@@ -84,6 +89,9 @@ def main() -> int:
     tickers = pick_bars_tickers(uni, args.limit, seed, args.min_mktcap)
     sel = f"mktcap>=${args.min_mktcap:,.0f}" if args.min_mktcap else f"top {args.limit}"
     print(f"[bars] provider={args.provider} targets={len(tickers)} (seed={len(seed)} + {sel})")
+    # splits scope: when --splits-top N is set, fetch splits only for the top-N by mktcap (∪ seed),
+    # matching the EDGAR/valuation universe — bars stay wide, splits stay where fundamentals live.
+    splits_targets = set(pick_bars_tickers(uni, args.splits_top, seed)) if args.splits_top else None
 
     provider = prices.get_provider(args.provider)
     use_batch = (not args.no_batch) and hasattr(provider, "get_bars_batch")
@@ -94,6 +102,14 @@ def main() -> int:
         print(f"[bars] batch mode ({args.provider}.get_bars_batch) ...", flush=True)
         bars_by = provider.get_bars_batch(tickers, args.lookback_days)
         present = {t: bars_by[t] for t in tickers if bars_by.get(t)}
+        # Yahoo throttles bulk requests unevenly — a chunk can come back empty on one run and
+        # full on the next (observed 4–117 transient misses at the 3.3k scale). One retry pass
+        # over just the missing names (a fresh set of smaller HTTP batches) recovers most of them.
+        missing = [t for t in tickers if t not in present]
+        if missing:
+            print(f"[bars] retry {len(missing)} transient misses ...", flush=True)
+            retry = provider.get_bars_batch(missing, args.lookback_days)
+            present.update({t: retry[t] for t in missing if retry.get(t)})
         db.upsert_bars_batch(con, present)   # ONE vectorized write for all names (~1.4ms/ticker)
         ok, skipped = len(present), len(tickers) - len(present)
         print(f"[bars] batch fetched ok={ok} skipped={skipped} (bulk-upserted)", flush=True)
@@ -102,7 +118,8 @@ def main() -> int:
             # (split-adjusted) bars (PRD §10.5). Still per-ticker (Yahoo has no batch
             # splits); only for names we actually stored bars for. Skippable for a fast
             # price-only first cut (degrades to factor 1.0).
-            for i, t in enumerate(t for t in tickers if bars_by.get(t)):
+            split_names = [t for t in tickers if t in present and (splits_targets is None or t in splits_targets)]
+            for i, t in enumerate(split_names):
                 try:
                     sp = provider.get_splits(t)
                     if sp:
@@ -119,7 +136,7 @@ def main() -> int:
                 if bars:
                     db.upsert_bars(con, t, bars)
                     ok += 1
-                    if not args.skip_splits:
+                    if not args.skip_splits and (splits_targets is None or t in splits_targets):
                         try:
                             sp = provider.get_splits(t)
                             if sp:

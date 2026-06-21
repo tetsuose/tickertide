@@ -142,13 +142,20 @@ task-close:
 # Pass runner flags via PIPELINE_ARGS, e.g. make ingest PIPELINE_ARGS="--limit 500".
 
 PIPELINE_ARGS ?=
+# Price bars (Breakouts) and EDGAR fundamentals (Ocean valuation) can scale independently:
+# Breakouts is price-only and cheap to widen to the full $500M floor (~3.3k names), while
+# EDGAR-at-scale is the slow second stage. Both default to PIPELINE_ARGS (backward compatible),
+# but a nightly can widen only price by passing e.g.
+#   make pipeline INGEST_ARGS="--min-mktcap 5e8 --skip-splits" FUND_ARGS="--limit 500"
+INGEST_ARGS ?= $(PIPELINE_ARGS)
+FUND_ARGS ?= $(PIPELINE_ARGS)
 
 ingest:
-	@python3 ingest/run.py $(PIPELINE_ARGS)
+	@python3 ingest/run.py $(INGEST_ARGS)
 	@python3 ingest/sector_etf.py
 
 fundamentals:
-	@python3 ingest/edgar.py $(PIPELINE_ARGS)
+	@python3 ingest/edgar.py $(FUND_ARGS)
 
 # M4.1 seed bootstrap + M4.5 approved landing (both idempotent). The nightly DB is
 # rebuilt from scratch, so membership must be re-landed every pipeline run: seed clears
