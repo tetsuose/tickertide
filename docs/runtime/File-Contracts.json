@@ -849,7 +849,7 @@
    "module": "ingest",
    "stage": "implemented",
    "contract": {
-    "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，formal-filing point-in-time(PRD §10.5)；EBITDA=EBIT+D&A(EBIT fallback opinc→pretax+interest)、_flow_ttm YTD 差分还原现金流类只报累计 YTD 概念(D&A)的季度单季",
+    "purpose": "SEC EDGAR companyfacts → fundamentals_q：trailing-4Q 财务，formal-filing point-in-time(PRD §10.5)；EBITDA=EBIT+D&A(EBIT fallback opinc→pretax+interest)、_flow_ttm YTD 差分还原现金流类只报累计 YTD 概念(D&A)的季度单季 M6: --min-mktcap floor 选择(WHERE mktcap>=下限)替代 top-N;EDGAR ~10req/s 是慢步,Ocean 的 P/S 轴需要它、Breakouts 侦测不需要。",
     "invariants": "取每期最早 filed（原始首报）防 restated（anti-lookahead，PRD §10.5）；按 (start,end) 期间去重不信脏的 fy/fp；概念用 fallback 列表合并覆盖；限速 ~10 req/s 需 descriptive UA；Q4 由 annual−3 单季推导；segment 不在此（companyfacts 无 XBRL segment 维度，归 M4）；formal-filing PIT：仅正式 SEC filing(source_type='formal_filing')，effective_eod_date=filed(v1——companyfacts 无 accepted-timestamp，不能区分盘前/盘后)、source_form='unknown'(companyfacts 不稳定带 form)；_flow_ttm 支持 YTD 差分(同 FY start 的累计 YTD 相邻差分出单季 Q2=H1−Q1/Q3=9M−H1/Q4=FY−9M，只填无直接~90d 单季的 end，直接单季优先)，per-share eps 关闭差分(ytd_diff=False，EPS 跨季不可加、保持 Σ-单季 TTM 字节稳定)；EBITDA=EBIT+D&A，EBIT 优先 OperatingIncomeLoss、缺则 pretax+interest(≈EBIT，best-effort，interest 也缺则 pretax+D&A 下界)；D&A 优先 merge 合并 concept(DepreciationDepletionAndAmortization 系跨年同义切换)、合并标签缺则 component-sum(Depreciation+AmortizationOfIntangibleAssets，如 MSFT 折旧/摊销分项报)漏现金流 'and other'(~3%)略偏小 best-effort、绝不单用 component Depreciation(漏摊销失真)",
     "verification": "smoke(AAPL/NVDA/MSFT)：rev_ttm 量级正确(416/216/282B)；filed−period_end gap 中位~30d；无 lookahead；覆盖到最新季；每行带 effective_eod_date/source_type/source_form(db.FUNDAMENTALS_COLS 顺序)；ebitda_ttm 现代季度非缺(KLAC 6→65、AAPL 19→70、NVDA 48→67 period 覆盖)、revenue_ttm/eps_ttm 既有值零变(common period rev/eps diff=0；YTD 差分不动直接单季、eps 不差分)；AC=compute/ebitda_check.py 四态全 PASS；MSFT(折旧/摊销分项、无合并 D&A 标签)经 component-sum EBITDA 非缺(margin~58%)，合并标签票 KLAC/AAPL/NVDA 不进 fallback、值不变"
    }
@@ -885,7 +885,7 @@
    "module": "ingest",
    "stage": "implemented",
    "contract": {
-    "purpose": "M0 ingest 编排：universe(Nasdaq) → daily_bars(provider) → spx_daily；+ splits(provider.get_splits → splits 表)",
+    "purpose": "M0 ingest 编排：universe(Nasdaq) → daily_bars(provider) → spx_daily；+ splits(provider.get_splits → splits 表) M6: --min-mktcap 启用 floor 选择(取所有 mktcap>=下限,不封顶 top-N,纳入小/中盘),并走 provider.get_bars_batch 批量拉取(分块 threaded yf.download)做规模化;--skip-splits 跳过逐票拆股拉取(价格-only Breakouts 侦测够用)。",
     "invariants": "全量存 universe 但 bars 只拉 top-N(mktcap) ∪ seed（M0 先窄，扩量是 M6）；provider 失败 skip 不崩；--provider/--limit/--lookback-days 可调；bars 入库成功后顺拉 splits 入 splits 表(供 valuation split-alignment，PRD §10.5)、splits fetch 失败不丢已存 bars(best-effort)",
     "verification": "python3 ingest/run.py --limit N 端到端产出 DuckDB；打印 universe/bar_tickers/bars/spx 计数；summary 打印 splits 计数"
    }
@@ -957,7 +957,7 @@
    "module": "ingest",
    "stage": "implemented",
    "contract": {
-    "purpose": "yfinance price provider —— M0 默认主干（BUILD-PLAN 的 fallback 因 Stooq 需 apikey 转主力）；+ get_splits 拉 Yahoo 拆股",
+    "purpose": "yfinance price provider —— M0 默认主干（BUILD-PLAN 的 fallback 因 Stooq 需 apikey 转主力）；+ get_splits 拉 Yahoo 拆股 M6: get_bars_batch(分块 threaded yf.download)批量拉多票=规模化骨干(Stooq 现需 apikey);单票 get_bars 保留;返回 {ticker:bars},缺数据者缺席(best-effort)。",
     "invariants": "非官方脆弱、视中断为常态；展平单票 MultiIndex 列；NaN→None；**跳过未收盘 bar(close 为 NULL，如当天盘中行)** 保证 EOD 完整性；get_splits 返回(ex_date_iso,ratio)升序、ratio>0 且≠1(滤 0/NaN/no-op)、fetch 失败返回 [](脆弱源视中断常态)，供 split-alignment(PRD §10.5)",
     "verification": "get_bars 返回 OHLCV 元组列表 newest last；无数据返回 []；不含 close=NULL 的行；get_splits 返回 [(ex_date,ratio)] 升序；无拆股/失败返回 []"
    }
