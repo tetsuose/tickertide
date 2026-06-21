@@ -742,7 +742,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "C9 跨 surface 校验(AC-M3/AC-M4)：rotation league 与 board.json 成员聚合一致；按 rotation 文件 bucket_type 分组 board 成员(sector→universe.sector / theme→board theme chips)，gate sector(rotation.json)与 theme(rotation.theme.json)两导出",
-    "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 bucket 成员数、igniting==board 同 bucket ign_pct≥90 数、candidates==board 同 bucket candidate 数(M8：ignition 聚合替代 composite 中位)；theme 分组按 board 每票 themes chips(多对多：一票计入其每个 PIT theme)、故 theme league PIT 成员须与 board PIT theme chips 一致(闭环 theme C9)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐，已注释标注)",
+    "invariants": "同一 DB 两 export 比对最新快照：as_of 一致、rotation.members[]⊆board.tickers(成员卡可 scope filter 追溯)、member_count==board 同 bucket 成员数、igniting==board 同 bucket ign_pct≥90 数、candidates==board 同 bucket candidate 数(M8：ignition 聚合替代 composite 中位)；theme 分组按 board 每票 themes chips(多对多：一票计入其每个 PIT theme)、故 theme league PIT 成员须与 board PIT theme chips 一致(闭环 theme C9)；退出码 gate(GATE_PASS/FAIL)；names/counts only 无 secrets；board.py --min-bars 可能裁剪薄历史票致 member_count 差(真实数据前需对齐，已注释标注) ；igniting/candidates 计数走 board.breakout.candidate FLAG(raw brk_pct>=90),不走 board.json 的 brk_strength_pct(1dp rounded)阈值——否则边界股 raw 89.95→rounded 90.0 over-count 1(full-universe rotation-c9 desync)",
     "verification": "make rotation-c9(sector)：GATE_PASS、member_count/igniting/candidates 11 sector 逐一致；theme：python3 export/check_rotation.py --rotation web/public/data/rotation.theme.json GATE_PASS(4 theme member_count/igniting/candidates 逐一致、members⊆board)；mismatch 退非 0"
    }
   },
