@@ -55,9 +55,6 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
         elif s.get("sector"):
             by_bucket[s["sector"]].append(s)
 
-    def _brk_pct(s):
-        return (s.get("breakout") or {}).get("brk_strength_pct")
-
     mem_checked = brk_checked = 0
     for b in rotation.get("buckets", []):
         bk = b["bucket"]
@@ -71,9 +68,14 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
                 problems.append(f"{bk}: member_count rotation={b['member_count']} vs board={len(members)}")
         # igniting / candidates trace to the board's base→breakout block (the SAME recall-first
         # gate, brk_strength_pct>=90 == board.breakout.candidate). 2026-06-16 spine pivot.
+        # Count via the `candidate` FLAG, not board.json's brk_strength_pct >= SEA_LEVEL: the flag
+        # is computed on the RAW percentile (board.py), while board.json stores brk_strength_pct
+        # ROUNDED to 1dp — so a boundary stock at raw 89.95 (candidate=False) rounds to 90.0 and a
+        # brk_pct>=90 count would over-count it by 1 vs the league's raw sum(cand) (the rotation-c9
+        # desync seen at full-universe scale; igniting == candidates, so both use the flag).
         if b.get("igniting") is not None:
             brk_checked += 1
-            lit = sum(1 for s in members if _brk_pct(s) is not None and _brk_pct(s) >= SEA_LEVEL)
+            lit = sum(1 for s in members if (s.get("breakout") or {}).get("candidate"))
             if b["igniting"] != lit:
                 problems.append(f"{bk}: igniting rotation={b['igniting']} vs board={lit}")
         if b.get("candidates") is not None:
