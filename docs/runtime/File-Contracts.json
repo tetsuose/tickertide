@@ -418,7 +418,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "M0.3+M7.1 compute 编排：daily_bars + spx_daily → derived_daily（横截面 rs_pct + composite + ignition）",
-    "invariants": "pandas 算 per-stock（signals 长窗 + ignition 短窗，共用同一份 bars，C9）、DuckDB 算横截面 PERCENT_RANK/rank；composite 分量 c_* 存原始供 client 按任意 k 重配权、composite 仅默认 k 快照；ignition=100·mean(5 分量各自横截面 percentile-rank)、ign_pct=ignition 的横截面 percentile、ign_persist_days=连续(含当日)ign_pct≥90 的天数(islands 技法,非 lit 行=0)；clear+重算幂等；**base→breakout（核心，§10.8，2026-06-16 pivot）**：第三台 per-stock 引擎 compute_breakout 合并入 allm，db.ensure_breakout_columns 迁移后横截面 PERCENT_RANK(brk_strength)→brk_strength_pct 写 derived_daily.brk_*；composite/ignition 退役过渡期仍算（expand-then-contract，待 export/web 停读后移除）",
+    "invariants": "pandas 算 per-stock（signals 长窗 + ignition 短窗，共用同一份 bars，C9）、DuckDB 算横截面 PERCENT_RANK/rank；composite 分量 c_* 存原始供 client 按任意 k 重配权、composite 仅默认 k 快照；ignition=100·mean(5 分量各自横截面 percentile-rank)、ign_pct=ignition 的横截面 percentile、ign_persist_days=连续(含当日)ign_pct≥90 的天数(islands 技法,非 lit 行=0)；clear+重算幂等；**base→breakout（核心，§10.8，2026-06-16 pivot）**：第三台 per-stock 引擎 compute_breakout 合并入 allm，db.ensure_breakout_columns 迁移后横截面 PERCENT_RANK(brk_strength)→brk_strength_pct 写 derived_daily.brk_*；composite/ignition 退役过渡期仍算（expand-then-contract，待 export/web 停读后移除） ；brk_strength_pct 存为 ROUND(percentile,1)=单一真源:所有消费方(board/ocean/rotation)既显示又 gate(candidate=pct>=90)同一 1dp 值,杜绝 raw-vs-rounded 边界股(89.95 显示 90.0 却 candidate=False)在 breakout/rotation C9 desync",
     "verification": "compute_all 后 derived_daily 非空；composite 5 分量∈[0,1]、composite∈[0,100]；ignition∈[0,100]、ign_pct∈[0,100]、ign_persist_days≥0；smoke 打印 top-by-composite 与 top-by-ignition 方向合理"
    }
   },
