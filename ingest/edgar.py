@@ -269,15 +269,25 @@ def extract(cf: dict) -> list[tuple]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="TickerTide M0.2 EDGAR fundamentals ingest.")
-    ap.add_argument("--limit", type=int, default=500, help="top-N universe by mktcap to pull")
+    ap.add_argument("--limit", type=int, default=500, help="top-N universe by mktcap (when --min-mktcap unset)")
+    ap.add_argument("--min-mktcap", type=float, default=None,
+                    help="M6 floor mode: pull fundamentals for ALL names with mktcap >= this "
+                         "(USD); overrides --limit. EDGAR is rate-limited (~10 req/s) so this is "
+                         "the slow step — Ocean's P/S axis needs it, Breakouts detection does not.")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
     args = ap.parse_args(argv)
 
     con = db.connect(args.db)
-    universe = con.execute(
-        "SELECT ticker FROM universe WHERE mktcap IS NOT NULL ORDER BY mktcap DESC LIMIT ?",
-        [args.limit],
-    ).fetchall()
+    if args.min_mktcap is not None:
+        universe = con.execute(
+            "SELECT ticker FROM universe WHERE mktcap >= ? ORDER BY mktcap DESC",
+            [args.min_mktcap],
+        ).fetchall()
+    else:
+        universe = con.execute(
+            "SELECT ticker FROM universe WHERE mktcap IS NOT NULL ORDER BY mktcap DESC LIMIT ?",
+            [args.limit],
+        ).fetchall()
     tickers = [r[0] for r in universe]
     if not tickers:
         print("[edgar] universe empty — run ingest (M0.1) first.")
