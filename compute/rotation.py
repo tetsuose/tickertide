@@ -147,29 +147,40 @@ def _bucket_members(con, bucket_type: str, as_of) -> pd.DataFrame:
     ).df()
 
 
-def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
-    """Per-bucket member breadth / #at-52w-high / ignition aggregates on `latest_date`, over
+def _member_aggregates(con, latest_date, bucket_type: str, min_bars: int = 60) -> pd.DataFrame:
+    """Per-bucket member breadth / #at-52w-high / candidate aggregates on `latest_date`, over
     the bucket's MEMBERS (sector: universe.sector; theme: theme_membership PIT). The member
     numbers come from derived_daily / daily_bars — the SAME per-stock source as Discovery /
     Ocean / Stock, so the league traces back (C9). 2026-06-16 spine pivot: composite median +
     ignition are gone; the league aggregates the base→breakout engine instead —
     `candidates` (members at base→breakout top decile, brk_strength_pct>=90, the SAME
     recall-first gate Breakouts sorts by). `igniting` == `candidates` (no separate lit tier —
-    base→breakout has one recall-first gate, no persistence)."""
+    base→breakout has one recall-first gate, no persistence).
+
+    COUNT ALIGNMENT (C9): the population is restricted to members with >= `min_bars` bars on/before
+    snap — EXACTLY export/board.py's inclusion rule (it skips thin-history stocks it can't chart).
+    Without this, a recent-IPO boundary stock that the board prunes but the league still counts
+    desyncs `candidates` from the board's per-sector candidate count at full-universe scale (the
+    failure check_rotation.py's NOTE warns about). daily_bars is LEFT-joined so the breadth (vs
+    ma50/ma200) degrades to 0 for the rare on-snap-bar-missing member rather than dropping it from
+    the count — the candidate count itself reads brk_strength_pct from derived_daily only."""
     mem = _bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
         return con.execute(
             """
-            WITH m AS (
+            WITH bc AS (
+              SELECT ticker, count(*) AS nb FROM daily_bars WHERE date <= ? GROUP BY ticker
+            ), m AS (
               SELECT mr.bucket AS bucket,
                      CASE WHEN d.brk_strength_pct >= ? THEN 1 ELSE 0 END AS cand,
                      CASE WHEN b.close > d.ma50  THEN 1.0 ELSE 0.0 END AS gt50,
                      CASE WHEN b.close > d.ma200 THEN 1.0 ELSE 0.0 END AS gt200,
                      CASE WHEN d.high_prox >= ? THEN 1 ELSE 0 END      AS athigh
               FROM derived_daily d
-              JOIN mem_rel mr   ON mr.ticker = d.ticker
-              JOIN daily_bars b ON b.ticker = d.ticker AND b.date = d.date
+              JOIN mem_rel mr ON mr.ticker = d.ticker
+              JOIN bc ON bc.ticker = d.ticker AND bc.nb >= ?            -- board.py min_bars inclusion
+              LEFT JOIN daily_bars b ON b.ticker = d.ticker AND b.date = d.date
               WHERE d.date = ?
             )
             SELECT bucket, count(*) AS member_count,
@@ -180,7 +191,7 @@ def _member_aggregates(con, latest_date, bucket_type: str) -> pd.DataFrame:
                    sum(cand)        AS candidates
             FROM m GROUP BY bucket
             """,
-            [BRK_SEA_LEVEL, AT_HIGH_PROX, latest_date],
+            [latest_date, BRK_SEA_LEVEL, AT_HIGH_PROX, min_bars, latest_date],
         ).df()
     finally:
         con.unregister("mem_rel")
@@ -227,7 +238,7 @@ def _rel_returns(con, bucket_type: str) -> pd.DataFrame:
     return pd.DataFrame(recs)
 
 
-def league_table(con, bucket_type: str = BUCKET_TYPE) -> pd.DataFrame:
+def league_table(con, bucket_type: str = BUCKET_TYPE, min_bars: int = 60) -> pd.DataFrame:
     """Enriched per-bucket league for Rotation (PRD §9.4), sorted by RS-Ratio. One row per
     bucket: RS-Ratio level + Δ4w + state (from bucket_rrg) PLUS member aggregates (breadth /
     #at-52w-high / # igniting / # candidates / agg EV-S) from the bucket's members — sector:
@@ -249,7 +260,7 @@ def league_table(con, bucket_type: str = BUCKET_TYPE) -> pd.DataFrame:
 
     latest = con.execute("SELECT max(date) FROM derived_daily").fetchone()[0]
     if latest is not None:
-        league = league.merge(_member_aggregates(con, latest, bucket_type), on="bucket", how="left")
+        league = league.merge(_member_aggregates(con, latest, bucket_type, min_bars), on="bucket", how="left")
     if con.execute("SELECT count(*) FROM valuation_daily").fetchone()[0] > 0:
         league = league.merge(_agg_valuation(con, bucket_type, latest), on="bucket", how="left")
     league = league.merge(_rel_returns(con, bucket_type), on="bucket", how="left")
