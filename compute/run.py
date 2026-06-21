@@ -69,7 +69,13 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
             PERCENT_RANK() OVER (PARTITION BY date ORDER BY rs_raw) * 100 AS rs_pct,
             -- base→breakout (core, PRD §10.8): cross-sectional percentile of the per-stock
             -- raw strength → brk_strength_pct (drives Ocean y-axis / Breakouts ranking).
-            PERCENT_RANK() OVER (PARTITION BY date ORDER BY brk_strength) * 100 AS brk_strength_pct
+            -- ROUND to 1dp = the SINGLE source of truth: every consumer (board/ocean/rotation)
+            -- both DISPLAYS this value (already rounded to 1dp) AND gates `candidate` on it
+            -- (>=90). Rounding here, before any gate, means the stored/displayed percentile and
+            -- the candidate flag can never disagree at the boundary — a stock at raw 89.95 would
+            -- otherwise display 90.0 (rounded) yet be candidate=False (raw<90), desyncing the
+            -- breakout/rotation C9 checks at full-universe scale.
+            ROUND(PERCENT_RANK() OVER (PARTITION BY date ORDER BY brk_strength) * 100, 1) AS brk_strength_pct
           FROM allm WHERE rs_raw IS NOT NULL
         ),
         y AS (
