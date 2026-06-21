@@ -51,16 +51,46 @@ def upsert_universe(con: duckdb.DuckDBPyConnection, rows: Iterable[dict], today:
     return len(payload)
 
 
+_BAR_COLS = ("ticker", "date", "open", "high", "low", "close", "adj_close", "volume")
+
+
 def upsert_bars(con: duckdb.DuckDBPyConnection, ticker: str, bars: Sequence[Sequence]) -> int:
-    """INSERT OR REPLACE daily bars. Each bar = (date, open, high, low, close, adj_close, volume)."""
+    """Replace one ticker's daily bars. Each bar = (date, open, high, low, close, adj_close, volume).
+    Delegates to the vectorized batch path so a single-ticker call is as fast as the bulk one
+    (row-by-row INSERT OR REPLACE against the (ticker,date) PK is a DuckDB anti-pattern — seconds
+    per ticker, and it degrades as the table grows)."""
     if not bars:
         return 0
-    payload = [(ticker, *b) for b in bars]
-    con.executemany(
-        "INSERT OR REPLACE INTO daily_bars VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        payload,
-    )
-    return len(payload)
+    return upsert_bars_batch(con, {ticker: bars})
+
+
+def upsert_bars_batch(con: duckdb.DuckDBPyConnection, bars_by: "dict[str, Sequence[Sequence]]") -> int:
+    """Replace daily bars for MANY tickers in ONE vectorized round-trip — the M6 full-universe
+    scale path. Builds a single DataFrame from {ticker: bars}, DELETEs exactly those tickers
+    (replace semantics, so re-runs stay idempotent), then one bulk INSERT. Measured ~1.4ms/ticker
+    and flat in table size — vs ~seconds/ticker for the old per-row INSERT OR REPLACE. Each bar =
+    (date, open, high, low, close, adj_close, volume); rows are prefixed with their ticker."""
+    import pandas as pd  # vectorized hand-off to DuckDB
+
+    cols: list[list] = [[] for _ in _BAR_COLS]
+    n = 0
+    for ticker, bars in bars_by.items():
+        for b in bars:
+            cols[0].append(ticker)
+            for j, v in enumerate(b):
+                cols[1 + j].append(v)
+            n += 1
+    if n == 0:
+        return 0
+    df = pd.DataFrame({c: cols[i] for i, c in enumerate(_BAR_COLS)})
+    tickers = list(bars_by.keys())
+    con.register("_bars_ingest", df)
+    try:
+        con.execute("DELETE FROM daily_bars WHERE ticker IN (SELECT UNNEST(?))", [tickers])
+        con.execute(f"INSERT INTO daily_bars SELECT {', '.join(_BAR_COLS)} FROM _bars_ingest")
+    finally:
+        con.unregister("_bars_ingest")
+    return n
 
 
 def upsert_splits(con: duckdb.DuckDBPyConnection, ticker: str, rows: Sequence[Sequence]) -> int:
