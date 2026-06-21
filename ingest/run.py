@@ -93,14 +93,10 @@ def main() -> int:
         # Scale path (M6): one threaded HTTP batch per chunk instead of one per ticker.
         print(f"[bars] batch mode ({args.provider}.get_bars_batch) ...", flush=True)
         bars_by = provider.get_bars_batch(tickers, args.lookback_days)
-        for t in tickers:
-            bars = bars_by.get(t)
-            if bars:
-                db.upsert_bars(con, t, bars)
-                ok += 1
-            else:
-                skipped += 1
-        print(f"[bars] batch fetched ok={ok} skipped={skipped}")
+        present = {t: bars_by[t] for t in tickers if bars_by.get(t)}
+        db.upsert_bars_batch(con, present)   # ONE vectorized write for all names (~1.4ms/ticker)
+        ok, skipped = len(present), len(tickers) - len(present)
+        print(f"[bars] batch fetched ok={ok} skipped={skipped} (bulk-upserted)", flush=True)
         if not args.skip_splits:
             # Splits keep EDGAR per-share fundamentals in the SAME split basis as the
             # (split-adjusted) bars (PRD §10.5). Still per-ticker (Yahoo has no batch
