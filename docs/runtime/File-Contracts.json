@@ -886,7 +886,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "M0 ingest 编排：universe(Nasdaq) → daily_bars(provider) → spx_daily；+ splits(provider.get_splits → splits 表) M6: --min-mktcap 启用 floor 选择(取所有 mktcap>=下限,不封顶 top-N,纳入小/中盘),并走 provider.get_bars_batch 批量拉取(分块 threaded yf.download)做规模化;--skip-splits 跳过逐票拆股拉取(价格-only Breakouts 侦测够用)。",
-    "invariants": "全量存 universe 但 bars 只拉 top-N(mktcap) ∪ seed（M0 先窄，扩量是 M6）；provider 失败 skip 不崩；--provider/--limit/--lookback-days 可调；bars 入库成功后顺拉 splits 入 splits 表(供 valuation split-alignment，PRD §10.5)、splits fetch 失败不丢已存 bars(best-effort) ；M6 batch 路径(get_bars_batch 分块拉 → db.upsert_bars_batch 一次向量化写入全部 present 名)取代 per-ticker upsert 慢路径,~3.3k 票端到端可完成(旧 per-row 卡在数百票);--skip-splits 价格-only 快路径",
+    "invariants": "全量存 universe 但 bars 只拉 top-N(mktcap) ∪ seed（M0 先窄，扩量是 M6）；provider 失败 skip 不崩；--provider/--limit/--lookback-days 可调；bars 入库成功后顺拉 splits 入 splits 表(供 valuation split-alignment，PRD §10.5)、splits fetch 失败不丢已存 bars(best-effort) ；M6 batch 路径(get_bars_batch 分块拉 → db.upsert_bars_batch 一次向量化写入全部 present 名)取代 per-ticker upsert 慢路径,~3.3k 票端到端可完成(旧 per-row 卡在数百票);--skip-splits 价格-only 快路径 ；--splits-top N=bars 走 floor 宽量(Breakouts)但 splits 只取 top-N∪seed(=valuation/EDGAR 宇宙,split-alignment 只需 fundamentals 处);batch 路径对 transient miss 做一轮 retry(Yahoo 限流 4-117 不定→重拉缺失名)",
     "verification": "python3 ingest/run.py --limit N 端到端产出 DuckDB；打印 universe/bar_tickers/bars/spx 计数；summary 打印 splits 计数"
    }
   },

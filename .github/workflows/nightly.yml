@@ -22,8 +22,12 @@ on:
     - cron: "0 7 * * 2-6"
   workflow_dispatch:
     inputs:
+      ingest_args:
+        description: "price-bars (Breakouts) ingest args — default = full $500M floor; override e.g. '--limit 50' for a narrow smoke"
+        default: "--min-mktcap 5e8 --splits-top 500"
+        required: false
       limit:
-        description: "top-N by mktcap for bars (D.1 AC ≥500; pass a small value for a quick smoke)"
+        description: "top-N by mktcap for EDGAR fundamentals (Ocean/Valuation); default 500"
         default: "500"
         required: false
 
@@ -37,7 +41,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    # Headroom for the M6 wide price ingest: bars now span the full $500M floor (~3.3k names,
+    # ~14min download + ~4min compute) vs the old top-500. EDGAR fundamentals stay at 500.
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v6
 
@@ -54,7 +60,13 @@ jobs:
         run: cd web && npm ci
 
       - name: real pipeline (ingest+sector_etf -> fundamentals -> themes -> compute -> check)
-        run: make pipeline PIPELINE_ARGS="--limit ${{ github.event.inputs.limit || '500' }}"
+        # M6: Breakouts (price-only) scans the FULL $500M floor (~3.3k names); EDGAR fundamentals
+        # (Ocean/Valuation P/S, the slow stage) stays at top-500 until EDGAR is scaled out. Splits
+        # are scoped to the same 500 (split-alignment is only needed where fundamentals exist).
+        run: |
+          make pipeline \
+            INGEST_ARGS="${{ github.event.inputs.ingest_args || '--min-mktcap 5e8 --splits-top 500' }}" \
+            FUND_ARGS="--limit ${{ github.event.inputs.limit || '500' }}"
 
       - name: export (board + ocean + rotation + theme)
         run: make export
