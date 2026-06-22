@@ -23,12 +23,12 @@ on:
   workflow_dispatch:
     inputs:
       ingest_args:
-        description: "price-bars (Breakouts) ingest args — default = full $500M floor; override e.g. '--limit 50' for a narrow smoke"
-        default: "--min-mktcap 5e8 --splits-top 500"
+        description: "price-bars+splits (Breakouts) ingest args — default = full $500M floor; override e.g. '--limit 50' for a narrow smoke"
+        default: "--min-mktcap 5e8"
         required: false
-      limit:
-        description: "top-N by mktcap for EDGAR fundamentals (Ocean/Valuation); default 500"
-        default: "500"
+      fund_args:
+        description: "EDGAR fundamentals (Ocean/Valuation P/S) args — default = full $500M floor; override e.g. '--limit 50' for a narrow smoke"
+        default: "--min-mktcap 5e8"
         required: false
 
 permissions:
@@ -41,9 +41,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Headroom for the M6 wide price ingest: bars now span the full $500M floor (~3.3k names,
-    # ~14min download + ~4min compute) vs the old top-500. EDGAR fundamentals stay at 500.
-    timeout-minutes: 70
+    # Headroom for the M6 full-floor pipeline: bars+splits span the full $500M floor (~3.3k names,
+    # ~14min download + ~4min compute) AND EDGAR fundamentals now scan the same floor (Ocean's P/S
+    # universe — concurrent + gzip companyfacts, ~7min vs ~55min serial). 90min leaves slack for
+    # the cold full-fetch; a timeout only skips deploy (artifact still uploads), it never ships
+    # stale data. Public repo → Actions minutes are free, so headroom is cheap.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
 
@@ -60,13 +63,14 @@ jobs:
         run: cd web && npm ci
 
       - name: real pipeline (ingest+sector_etf -> fundamentals -> themes -> compute -> check)
-        # M6: Breakouts (price-only) scans the FULL $500M floor (~3.3k names); EDGAR fundamentals
-        # (Ocean/Valuation P/S, the slow stage) stays at top-500 until EDGAR is scaled out. Splits
-        # are scoped to the same 500 (split-alignment is only needed where fundamentals exist).
+        # M6 stage 2: BOTH Breakouts (price+splits) AND Ocean/Valuation (EDGAR fundamentals) now
+        # scan the FULL $500M floor (~3.3k names). EDGAR fetches companyfacts concurrently with a
+        # rate limiter under EDGAR's ~10 req/s (ingest/edgar.py); splits ride the bars batch
+        # (actions=True), so split-alignment covers the whole floor with no extra requests.
         run: |
           make pipeline \
-            INGEST_ARGS="${{ github.event.inputs.ingest_args || '--min-mktcap 5e8 --splits-top 500' }}" \
-            FUND_ARGS="--limit ${{ github.event.inputs.limit || '500' }}"
+            INGEST_ARGS="${{ github.event.inputs.ingest_args || '--min-mktcap 5e8' }}" \
+            FUND_ARGS="${{ github.event.inputs.fund_args || '--min-mktcap 5e8' }}"
 
       - name: export (board + ocean + rotation + theme)
         run: make export

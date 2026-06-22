@@ -24,10 +24,14 @@ is NOT populated here (companyfacts has no XBRL segment dimension — that is M4
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import sys
+import threading
 import time
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 
@@ -39,7 +43,32 @@ from compute import db  # noqa: E402
 UA = {"User-Agent": "tickertide/0.1 (personal research; ai@cyberbrid.com)"}
 CIK_URL = "https://www.sec.gov/files/company_tickers.json"
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
-RATE_SLEEP = 0.13  # ~8 req/s, under EDGAR's ~10/s
+# M6 EDGAR full-floor scale-out (Ocean's P/S universe, ~3.3k names): the serial ~8 req/s loop
+# would take ~55min at the floor. companyfacts sends NO Last-Modified/ETag, so conditional-GET
+# (304) is impossible — instead fetch CONCURRENTLY with a shared token-bucket rate limiter
+# capped under EDGAR's ~10 req/s, and request gzip (companyfacts is ~10× smaller on the wire).
+# That makes the floor ~7min on a datacenter runner. Tunable via --workers / --rate.
+DEFAULT_WORKERS = 8
+DEFAULT_RATE = 8.0   # requests/sec ceiling, shared across workers (under EDGAR's ~10/s)
+
+
+class _RateLimiter:
+    """Shared token bucket: caps TOTAL requests/sec across all worker threads so the pool
+    stays under EDGAR's ~10 req/s fair-access limit while overlapping per-request latency
+    (the floor fetch is latency-bound, not server-throttled — concurrency is the win)."""
+
+    def __init__(self, rps: float) -> None:
+        self._interval = 1.0 / rps if rps > 0 else 0.0
+        self._next = time.monotonic()
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            wait = max(0.0, self._next - now)
+            self._next = max(now, self._next) + self._interval
+        if wait > 0:
+            time.sleep(wait)
 
 # Concept fallback lists (first present wins).
 REVENUE = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"]
@@ -69,8 +98,14 @@ DEBT_CUR = ["LongTermDebtCurrent", "DebtCurrent"]
 
 
 def _get(url: str) -> dict:
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=45) as resp:
-        return json.load(resp)
+    # Request gzip: companyfacts is ~10× smaller on the wire compressed (AAPL 3.6MB→262KB).
+    # urllib does not auto-decode, so decompress when the server honored Accept-Encoding.
+    req = urllib.request.Request(url, headers={**UA, "Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        raw = resp.read()
+        if resp.headers.get("Content-Encoding", "").lower() == "gzip":
+            raw = gzip.decompress(raw)
+    return json.loads(raw)
 
 
 def fetch_cik_map() -> dict[str, str]:
@@ -267,13 +302,44 @@ def extract(cf: dict) -> list[tuple]:
     return rows
 
 
+def _fetch_rows(ticker: str, cik: str, rate: _RateLimiter) -> tuple[str, str, list[tuple] | None]:
+    """Worker: rate-limited companyfacts fetch + extract for one ticker. Returns
+    (ticker, status, rows). Status classifies the outcome so the caller can retry ONLY
+    transient failures (mirrors ingest/run.py's bars retry over flaky names):
+      - "ok"        : rows extracted (non-empty) — upsert these.
+      - "empty"     : 200 but no us-gaap facts / no trailing-4Q rows — a real miss, no retry.
+      - "miss"      : HTTP 404 — CIK has no companyfacts (funds/SPACs/no XBRL), no retry.
+      - "bad"       : extract() raised (malformed facts) — deterministic, no retry.
+      - "transient" : timeout / 5xx / network — RETRY once.
+    The fetch+parse run in the worker thread so network latency overlaps across the pool."""
+    rate.wait()
+    try:
+        cf = _get(FACTS_URL.format(cik=cik))
+    except urllib.error.HTTPError as e:
+        return (ticker, "miss" if e.code == 404 else "transient", None)
+    except Exception:
+        return (ticker, "transient", None)
+    try:
+        rows = extract(cf)
+    except Exception:
+        return (ticker, "bad", None)
+    return (ticker, "ok" if rows else "empty", rows or None)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="TickerTide M0.2 EDGAR fundamentals ingest.")
     ap.add_argument("--limit", type=int, default=500, help="top-N universe by mktcap (when --min-mktcap unset)")
     ap.add_argument("--min-mktcap", type=float, default=None,
                     help="M6 floor mode: pull fundamentals for ALL names with mktcap >= this "
                          "(USD); overrides --limit. EDGAR is rate-limited (~10 req/s) so this is "
-                         "the slow step — Ocean's P/S axis needs it, Breakouts detection does not.")
+                         "the slow step — Ocean's P/S axis needs it, Breakouts detection does not. "
+                         "Fetched concurrently (--workers/--rate) so the full $500M floor fits the "
+                         "nightly budget (~7min vs ~55min serial).")
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help=f"concurrent companyfacts fetchers (default {DEFAULT_WORKERS})")
+    ap.add_argument("--rate", type=float, default=DEFAULT_RATE,
+                    help=f"max companyfacts requests/sec, shared across workers (default "
+                         f"{DEFAULT_RATE}; keep under EDGAR's ~10/s)")
     ap.add_argument("--db", default=str(db.DB_PATH), help="DuckDB file path")
     args = ap.parse_args(argv)
 
@@ -293,34 +359,57 @@ def main(argv: list[str] | None = None) -> int:
         print("[edgar] universe empty — run ingest (M0.1) first.")
         return 1
 
-    print(f"[edgar] fetching CIK map ...")
+    print("[edgar] fetching CIK map ...")
     cik_map = fetch_cik_map()
-    print(f"[edgar] cik map={len(cik_map)}; targets={len(tickers)}")
+    targets = [(t, cik_map[t]) for t in tickers if cik_map.get(t)]
+    no_cik = len(tickers) - len(targets)
+    print(f"[edgar] cik map={len(cik_map)}; targets={len(targets)} (no_cik={no_cik}); "
+          f"workers={args.workers} rate={args.rate}/s", flush=True)
 
-    ok = no_cik = no_facts = 0
-    for i, t in enumerate(tickers, 1):
-        cik = cik_map.get(t)
-        if not cik:
-            no_cik += 1
-            continue
-        cf = fetch_companyfacts(cik)
-        time.sleep(RATE_SLEEP)
-        if not cf:
-            no_facts += 1
-            continue
-        try:
-            rows = extract(cf)
-        except Exception as e:
-            print(f"  [skip] {t}: {type(e).__name__}: {str(e)[:70]}")
-            no_facts += 1
-            continue
-        if rows:
-            db.upsert_fundamentals(con, t, rows)
-            ok += 1
-        if i % 50 == 0:
-            print(f"  ... {i}/{len(tickers)} (ok={ok} no_cik={no_cik} no_facts={no_facts})")
+    rate = _RateLimiter(args.rate)
+    rows_by: dict[str, list[tuple]] = {}
+    transient: list[tuple[str, str]] = []
+    empty = miss = bad = 0
+    done = 0
 
-    print(f"[edgar] done ok={ok} no_cik={no_cik} no_facts={no_facts}")
+    def _drain(pairs: list[tuple[str, str]], pool: ThreadPoolExecutor) -> list[tuple[str, str]]:
+        """Submit one fetch per (ticker,cik), collect ok rows, return the transient retries."""
+        nonlocal empty, miss, bad, done
+        retry: list[tuple[str, str]] = []
+        futs = {pool.submit(_fetch_rows, t, c, rate): t for t, c in pairs}
+        for fut in as_completed(futs):
+            t, status, rows = fut.result()
+            if status == "ok":
+                rows_by[t] = rows
+            elif status == "empty":
+                empty += 1
+            elif status == "miss":
+                miss += 1
+            elif status == "bad":
+                bad += 1
+            else:  # transient
+                retry.append((t, cik_map[t]))
+            done += 1
+            if done % 250 == 0:
+                print(f"  ... {done} fetched (ok={len(rows_by)} empty={empty} miss={miss} "
+                      f"bad={bad} transient={len(retry)})", flush=True)
+        return retry
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        transient = _drain(targets, pool)
+        # One retry pass over transient misses (timeouts/5xx) — EDGAR is flaky at scale, a
+        # fresh request usually succeeds (same pattern as ingest/run.py's bars retry).
+        if transient:
+            print(f"[edgar] retry {len(transient)} transient misses ...", flush=True)
+            still = _drain(transient, pool)
+            transient = still
+
+    # ONE vectorized write for every name (mirrors db.upsert_bars_batch; avoids 3.3k per-ticker
+    # INSERT OR REPLACE round-trips against the (ticker,period_end) PK).
+    n_rows = db.upsert_fundamentals_batch(con, rows_by)
+    no_facts = empty + miss + bad + len(transient)
+    print(f"[edgar] done ok={len(rows_by)} no_cik={no_cik} no_facts={no_facts} "
+          f"(empty={empty} miss404={miss} bad={bad} transient={len(transient)}) rows={n_rows}")
     print(f"[summary] fundamentals_q rows={db.count(con,'fundamentals_q')} "
           f"tickers={con.execute('SELECT count(DISTINCT ticker) FROM fundamentals_q').fetchone()[0]}")
     con.close()
