@@ -278,6 +278,14 @@ def extract(cf: dict) -> list[tuple]:
     rows: list[tuple] = []
     for pe in sorted(rev):
         rev_v, filed = rev[pe]
+        # Drop rows whose filing date predates the period they report. A real SEC filing is
+        # always filed AFTER the period closes (you report results once the quarter ends), so
+        # filed < period_end is impossible/corrupt companyfacts data — and because
+        # effective_eod_date = filed (formal-filing PIT, PRD §10.5), such a row would make the
+        # quarter "available" before it even ended (lookahead). A long-tail anomaly invisible at
+        # top-500 (clean large-caps) that surfaces across the full $500M floor — missing > wrong.
+        if not filed or filed < pe:
+            continue
         op, dd = opinc.get(pe), dda.get(pe)
         # EBIT = operating income; fall back to pretax + interest (≈ EBIT) when the filer
         # dropped OperatingIncomeLoss (KLAC post-2015). EBITDA = EBIT + D&A; the D&A single
