@@ -35,6 +35,26 @@ def _frame_to_bars(df) -> list[tuple]:
     return out
 
 
+def _frame_to_splits(df) -> list[tuple]:
+    """One ticker's (flat-column) frame -> [(ex_date_iso, ratio)] split events, oldest first.
+    Reads the 'Stock Splits' column that yf.download(actions=True) carries: the split ratio sits
+    on the ex-date row (10-for-1 → 10.0; reverse 1-for-8 → 0.125), 0.0 elsewhere. Same shape as
+    get_splits(.splits) but FREE — it rides the bars batch, so split-alignment scales to the full
+    floor with zero extra requests (PRD §10.5). Empty when the frame lacks the actions column."""
+    if df is None or len(df) == 0 or "Stock Splits" not in getattr(df, "columns", []):
+        return []
+    out: list[tuple] = []
+    for idx, val in df["Stock Splits"].items():
+        try:
+            r = float(val)
+        except (TypeError, ValueError):
+            continue
+        if r > 0 and r != 1.0:  # 0/NaN = no split; 1.0 = no-op
+            out.append((idx.date().isoformat(), r))
+    out.sort()
+    return out
+
+
 class YFinanceProvider:
     name = "yfinance"
 
@@ -55,21 +75,24 @@ class YFinanceProvider:
         return _frame_to_bars(df)
 
     def get_bars_batch(self, tickers: list[str], lookback_days: int = 760,
-                       chunk: int = 120) -> dict[str, list[tuple]]:
-        """Bars for MANY tickers via chunked threaded yf.download — the M6 scale path
+                       chunk: int = 120) -> tuple[dict[str, list[tuple]], dict[str, list[tuple]]]:
+        """Bars AND splits for MANY tickers via chunked threaded yf.download — the M6 scale path
         (one HTTP batch per `chunk` tickers instead of one per ticker). Returns
-        {ticker: bars}; tickers with no data are simply absent (best-effort, a chunk
-        failure skips only that chunk). Multi-ticker downloads come back with a
+        ({ticker: bars}, {ticker: splits}); tickers with no data are simply absent (best-effort,
+        a chunk failure skips only that chunk). actions=True makes the SAME download carry the
+        'Stock Splits' column, so split-alignment (PRD §10.5) scales to the full floor for FREE —
+        no separate per-ticker .splits round-trip. Multi-ticker downloads come back with a
         (field, ticker) column MultiIndex; we slice each ticker out to a flat frame."""
         import yfinance as yf  # lazy: heavy import
 
         start = (date.today() - timedelta(days=lookback_days)).isoformat()
-        out: dict[str, list[tuple]] = {}
+        bars_out: dict[str, list[tuple]] = {}
+        splits_out: dict[str, list[tuple]] = {}
         for i in range(0, len(tickers), chunk):
             part = tickers[i:i + chunk]
             try:
                 df = yf.download(part, start=start, auto_adjust=False, progress=False,
-                                 threads=True, group_by="column")
+                                 threads=True, group_by="column", actions=True)
             except Exception:
                 continue  # whole-chunk network failure: skip, caller logs coverage
             if df is None or len(df) == 0:
@@ -82,12 +105,18 @@ class YFinanceProvider:
                         continue
                     bars = _frame_to_bars(sub)
                     if bars:
-                        out[t] = bars
+                        bars_out[t] = bars
+                    sp = _frame_to_splits(sub)
+                    if sp:
+                        splits_out[t] = sp
             else:  # a 1-ticker chunk comes back flat
                 bars = _frame_to_bars(df)
                 if bars:
-                    out[part[0]] = bars
-        return out
+                    bars_out[part[0]] = bars
+                sp = _frame_to_splits(df)
+                if sp:
+                    splits_out[part[0]] = sp
+        return bars_out, splits_out
 
     def get_splits(self, ticker: str) -> list[tuple]:
         """Return [(ex_date_iso, ratio)] forward/reverse splits from Yahoo, oldest first.

@@ -232,18 +232,50 @@ FUNDAMENTALS_COLS = (
 
 
 def upsert_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str, rows: Sequence[Sequence]) -> int:
-    """INSERT OR REPLACE fundamentals_q. Each row carries FUNDAMENTALS_COLS in order:
+    """Replace one ticker's fundamentals_q rows. Each row carries FUNDAMENTALS_COLS in order:
     (period_end, filed_date, effective_eod_date, source_type, source_form,
      revenue_ttm, shares, total_debt, cash, ebitda_ttm, eps_ttm).
     effective_eod_date/source_type/source_form are the formal-filing PIT provenance (PRD §10.5)
-    — in v1 effective_eod_date == filed_date and source_type == SOURCE_FORMAL_FILING."""
+    — in v1 effective_eod_date == filed_date and source_type == SOURCE_FORMAL_FILING.
+    Delegates to the vectorized batch path so a single-ticker call shares the same fast,
+    table-size-invariant write (per-row INSERT OR REPLACE against the (ticker,period_end) PK is
+    the same DuckDB anti-pattern PR #90 fixed for bars)."""
     if not rows:
         return 0
-    cols = ", ".join(("ticker", *FUNDAMENTALS_COLS))
-    qs = ", ".join(["?"] * (1 + len(FUNDAMENTALS_COLS)))
-    payload = [(ticker, *r) for r in rows]
-    con.executemany(f"INSERT OR REPLACE INTO fundamentals_q ({cols}) VALUES ({qs})", payload)
-    return len(payload)
+    return upsert_fundamentals_batch(con, {ticker: rows})
+
+
+def upsert_fundamentals_batch(con: duckdb.DuckDBPyConnection, rows_by: "dict[str, Sequence[Sequence]]") -> int:
+    """Replace fundamentals_q for MANY tickers in ONE vectorized round-trip — the M6 EDGAR
+    full-floor scale path (Ocean's P/S universe, ~3.3k names). Builds a single DataFrame from
+    {ticker: rows} (each row = FUNDAMENTALS_COLS in order), DELETEs exactly those tickers
+    (replace semantics → re-runs stay idempotent), then one bulk INSERT naming the columns so
+    physical column order (CREATE vs the effective_eod_date/source_* ALTER-appended migration)
+    can't desync. Mirrors upsert_bars_batch — vs ~ms/ticker per-ticker executemany × 3.3k it is
+    one DELETE + one INSERT regardless of ticker count."""
+    import pandas as pd  # vectorized hand-off to DuckDB
+
+    all_cols = ("ticker", *FUNDAMENTALS_COLS)
+    cols: list[list] = [[] for _ in all_cols]
+    n = 0
+    for ticker, rows in rows_by.items():
+        for r in rows:
+            cols[0].append(ticker)
+            for j, v in enumerate(r):
+                cols[1 + j].append(v)
+            n += 1
+    if n == 0:
+        return 0
+    df = pd.DataFrame({c: cols[i] for i, c in enumerate(all_cols)})
+    tickers = list(rows_by.keys())
+    con.register("_fund_ingest", df)
+    try:
+        con.execute("DELETE FROM fundamentals_q WHERE ticker IN (SELECT UNNEST(?))", [tickers])
+        con.execute(f"INSERT INTO fundamentals_q ({', '.join(all_cols)}) "
+                    f"SELECT {', '.join(all_cols)} FROM _fund_ingest")
+    finally:
+        con.unregister("_fund_ingest")
+    return n
 
 
 def read_fundamentals(con: duckdb.DuckDBPyConnection, ticker: str):

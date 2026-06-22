@@ -98,9 +98,11 @@ def main() -> int:
     ok = skipped = n_splits = 0
 
     if use_batch:
-        # Scale path (M6): one threaded HTTP batch per chunk instead of one per ticker.
+        # Scale path (M6): one threaded HTTP batch per chunk instead of one per ticker. The
+        # batch carries bars AND splits (actions=True) in ONE download, so split-alignment
+        # scales to the full floor for free (no per-ticker .splits round-trip).
         print(f"[bars] batch mode ({args.provider}.get_bars_batch) ...", flush=True)
-        bars_by = provider.get_bars_batch(tickers, args.lookback_days)
+        bars_by, splits_by = provider.get_bars_batch(tickers, args.lookback_days)
         present = {t: bars_by[t] for t in tickers if bars_by.get(t)}
         # Yahoo throttles bulk requests unevenly — a chunk can come back empty on one run and
         # full on the next (observed 4–117 transient misses at the 3.3k scale). One retry pass
@@ -108,27 +110,21 @@ def main() -> int:
         missing = [t for t in tickers if t not in present]
         if missing:
             print(f"[bars] retry {len(missing)} transient misses ...", flush=True)
-            retry = provider.get_bars_batch(missing, args.lookback_days)
-            present.update({t: retry[t] for t in missing if retry.get(t)})
+            retry_bars, retry_splits = provider.get_bars_batch(missing, args.lookback_days)
+            present.update({t: retry_bars[t] for t in missing if retry_bars.get(t)})
+            splits_by.update(retry_splits)
         db.upsert_bars_batch(con, present)   # ONE vectorized write for all names (~1.4ms/ticker)
         ok, skipped = len(present), len(tickers) - len(present)
         print(f"[bars] batch fetched ok={ok} skipped={skipped} (bulk-upserted)", flush=True)
         if not args.skip_splits:
             # Splits keep EDGAR per-share fundamentals in the SAME split basis as the
-            # (split-adjusted) bars (PRD §10.5). Still per-ticker (Yahoo has no batch
-            # splits); only for names we actually stored bars for. Skippable for a fast
-            # price-only first cut (degrades to factor 1.0).
-            split_names = [t for t in tickers if t in present and (splits_targets is None or t in splits_targets)]
-            for i, t in enumerate(split_names):
-                try:
-                    sp = provider.get_splits(t)
-                    if sp:
-                        n_splits += db.upsert_splits(con, t, sp)
-                except Exception as e:
-                    print(f"  [splits skip] {t}: {type(e).__name__}: {str(e)[:60]}")
-                if (i + 1) % 200 == 0:
-                    print(f"  ... splits {i+1} (n_splits={n_splits})", flush=True)
-            print(f"[splits] done n_splits={n_splits}")
+            # (split-adjusted) bars (PRD §10.5). They ride the SAME bars batch (actions=True),
+            # so there is no per-ticker fetch — write them for names we actually stored bars for,
+            # optionally scoped by --splits-top (splits_targets); default (None) = all present.
+            for t, sp in splits_by.items():
+                if sp and t in present and (splits_targets is None or t in splits_targets):
+                    n_splits += db.upsert_splits(con, t, sp)
+            print(f"[splits] done n_splits={n_splits} (from bars batch actions)")
     else:
         for i, t in enumerate(tickers, 1):
             try:
