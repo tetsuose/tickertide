@@ -17,7 +17,16 @@ const PRICE_H = 104
 const GAP = 8
 const VOL_H = 30
 
-export default function MiniChart({ chart }: { chart: ChartSeries }) {
+export default function MiniChart({
+  chart,
+  hlLastN,
+}: {
+  chart: ChartSeries
+  /** Optional STATIC backdrop tint over the last N trading days (the steady-riser W=10
+   *  window, PRD §10.8) so the card's riser numbers are countable in the band. Static
+   *  (renders under SSR too) — unlike the cursor, which must stay hover-only. */
+  hlLastN?: number
+}) {
   const [hi, setHi] = useState<number | null>(null)
   const n = chart.close.length
   if (n === 0) return <svg viewBox={`0 0 ${W} ${H}`} width="100%" />
@@ -88,6 +97,19 @@ export default function MiniChart({ chart }: { chart: ChartSeries }) {
     >
       {/* transparent catcher so the whole plot area emits onMouseMove, not just drawn marks */}
       <rect x={PL} y={PT} width={W - PL - PR} height={volBase - PT} fill="transparent" />
+
+      {/* static last-N-days window tint (steady-riser W=10) — behind candles/MAs/volume */}
+      {hlLastN != null && hlLastN > 0 && n > 1 && (
+        <rect
+          className="mc-hlwin"
+          x={X(Math.max(0, n - hlLastN)) - bw / 2}
+          y={PT}
+          width={W - PR - (X(Math.max(0, n - hlLastN)) - bw / 2)}
+          height={volBase - PT}
+          fill="var(--grn)"
+          fillOpacity="0.055"
+        />
+      )}
 
       {yh != null && (
         <line x1={PL} y1={yh} x2={W - PR} y2={yh} stroke="var(--dim2)" strokeDasharray="3 3" strokeWidth="1" />

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { SurfaceId, Scope, ManifestData } from './types'
-import Breakouts from './views/Breakouts'
+import Risers from './views/Risers'
 import Ocean from './views/Ocean'
 import Rotation from './views/Rotation'
 import Valuation from './views/Valuation'
@@ -8,36 +8,35 @@ import Stock from './views/Stock'
 import { loadManifest } from './lib/data'
 import { dataAgeDays, freshness, ageLabel } from './lib/freshness'
 
-// The five lenses in the contract's fixed order (PRD §9.0). Discovery is the
-// M1 surface and the default tab; the others are scaffolded stubs that land in
-// later milestones.
+// The five lenses in the contract's fixed order (PRD §9.0). Risers（连续上涨）is the
+// default tab (2026-07-02 spine pivot II — Breakouts renamed + re-cored to steady-riser).
 const SURFACES: { id: SurfaceId; label: string }[] = [
   { id: 'ocean', label: 'Ocean' },
-  { id: 'breakouts', label: 'Breakouts' },
+  { id: 'risers', label: 'Risers' },
   { id: 'rotation', label: 'Rotation' },
   { id: 'valuation', label: 'Valuation' },
   { id: 'stock', label: 'Stock' },
 ]
 
-// Breakouts proper shows the top-N base→breakout candidates (PRD §9.3 bounded/decide) — the
+// Risers proper shows the top of the steady-riser board (PRD §9.3 bounded/decide) — the
 // board stays a bounded shortlist, not the full universe dump.
-const BREAKOUTS_LIMIT = 20
+const RISERS_LIMIT = 20
 
 const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb: string }> = {
   ocean: {
     scale: 'wide · explore',
     milestone: 'M8',
-    blurb: 'base→breakout 强度 × Valuation 二维相图：y = brk_pct（海平面 = 90，上方 = 已突破），x = 原始 P/S（log 轴）。日期滑杆 + Play 在相邻真实 EOD 快照间平滑插值。',
+    blurb: '连续上涨强度 × Valuation 二维相图：y = rise_pct（10 日净涨幅横截面百分位；海平面 = 90，仅视觉参考线），x = 原始 P/S（log 轴）。candidate 只读 compute 层 flag。日期滑杆 + Play 在相邻真实 EOD 快照间平滑插值。',
   },
-  breakouts: {
+  risers: {
     scale: 'bounded · decide',
-    milestone: 'M7（base→breakout）',
-    blurb: 'evidence-first 卡流：按 base→breakout 强度排序（PRD §10.8，核心引擎，recall-first）；逐张检视入选候选价格走势 + base/τ/breakout 标注，假阳交基本面 precision，永不给 buy/target。数据来自 export/board.py 的 board.json。',
+    milestone: 'M7（steady-riser）',
+    blurb: 'evidence-first 卡流（连续上涨）：gate = 10 天里 ≥6 天上涨且 net10>0，按 10 日净涨幅排序（PRD §10.8，核心筛法，recall-first）；逐张检视入选候选价格走势（近 10 日窗口高亮），每个数字图上可数，假阳交基本面 precision，永不给 buy/target。数据来自 export/board.py 的 board.json。',
   },
   rotation: {
     scale: 'narrow · decide',
     milestone: 'M3',
-    blurb: 'sector / theme 的 RS-Ratio 多线图（非散点）+ enriched league 表（含 # breakout candidates）；点 bucket → N=1 单线 + 成员卡。',
+    blurb: 'sector / theme 的 RS-Ratio 多线图（非散点）+ enriched league 表（含 # riser candidates）；点 bucket → N=1 单线 + 成员卡。',
   },
   valuation: {
     scale: 'wide · explore',
@@ -47,12 +46,12 @@ const SURFACE_INFO: Record<SurfaceId, { scale: string; milestone: string; blurb:
   stock: {
     scale: 'narrow · detail',
     milestone: 'M5 · 预览',
-    blurb: 'per-name 面板：头部 brk_pct + 价格/MA/成交量图 + 6 估值倍数 + base/τ/breakout 诊断（board.json 同源）。price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
+    blurb: 'per-name 面板：头部 10 日净涨幅 + 价格/MA/成交量图 + 6 估值倍数 + riser 诊断（board.json 同源）。price↔fundamentals 时间轴 stack（季度营收 + P/S over time）+ filing 摘要。',
   },
 }
 
 export default function App() {
-  const [tab, setTab] = useState<SurfaceId>('breakouts')
+  const [tab, setTab] = useState<SurfaceId>('risers')
   // global scope filter — single source, sticky across tabs (PRD §9.1.2, C8/C10).
   // Two writers: Ocean's lasso (M2.4) sets scope='pinned'; Rotation's league row/line
   // click (M3.4) sets scope='sector'. Discovery/Ocean/Rotation all respect it (filter /
@@ -121,8 +120,8 @@ export default function App() {
           </nav>
 
           <div className="enginenote">
-            <span className="enginelead">BASE→BREAKOUT</span>
-            <span className="enginehint">base→breakout = 发现核心引擎（长平台→陡突破，τ 估计，无可调参） · 证据优先：raw evidence + valuation，永不给 buy/target</span>
+            <span className="enginelead">STEADY-RISER</span>
+            <span className="enginehint">steady-riser = 核心筛法（连续上涨：10 天里 ≥6 天上涨且 net10&gt;0，按 net10 排序，无可调参） · 证据优先：raw evidence + valuation，永不给 buy/target</span>
           </div>
         </div>
 
@@ -134,7 +133,7 @@ export default function App() {
                 ✕
               </button>
             </span>
-            <span className="scopehint">filtering Breakouts · Valuation · Rotation · Ocean</span>
+            <span className="scopehint">filtering Risers · Valuation · Rotation · Ocean</span>
           </div>
         )}
 
@@ -145,8 +144,8 @@ export default function App() {
             </span>
             <span className="khint">{info.milestone}</span>
           </div>
-          {tab === 'breakouts' ? (
-            <Breakouts scope={scope} pinned={pinned} limit={BREAKOUTS_LIMIT} onOpen={openStock} />
+          {tab === 'risers' ? (
+            <Risers scope={scope} pinned={pinned} limit={RISERS_LIMIT} onOpen={openStock} />
           ) : tab === 'ocean' ? (
             <Ocean scope={scope} setScope={setScope} pinned={pinned} setPinned={setPinned} onOpen={openStock} />
           ) : tab === 'rotation' ? (

@@ -7,14 +7,15 @@ import {
   OCEAN_GEOM, type ColorMode, type DrawnPoint, type Rect, type Palette,
 } from '../lib/ocean-draw'
 
-// Ocean (PRD §9.2, M8): the wide-explore canvas as an Ignition × Valuation SEA-LEVEL map.
-// y = ign_pct (0-100) with a fixed sea level at ign_pct = 90 — above the line = lit (the
-// SAME 持续点火 population Discovery surfaces, C9); x = raw trailing P/S TTM on a LOG axis
-// (NOT a valuation percentile). A date slider scrubs EOD snapshots; Play tweens positions
-// smoothly between adjacent REAL snapshots (interpolation is visual only — tooltip/state
-// read the real snapshot). Dragging the slider pauses + resets the tween (phase=0); the
-// surface opens on the latest EOD. Click→pin, lasso→set global scope (Ocean is the first
-// scope writer — C10). Composite is gone from this surface.
+// Ocean (PRD §9.2, 2026-07-02 spine pivot II): the wide-explore canvas as a steady-riser ×
+// Valuation SEA-LEVEL map. y = rise_net10_pct (0-100, 10 日净涨幅横截面百分位) with a fixed
+// sea level at 90 — a VISUAL reference line only (candidate ≠ y>=90: the gate has an up10
+// condition + top-N cut; the flag is read from the export's `cand` column, C9); x = raw
+// trailing P/S TTM on a LOG axis (NOT a valuation percentile). A date slider scrubs EOD
+// snapshots; Play tweens positions smoothly between adjacent REAL snapshots (interpolation
+// is visual only — tooltip/state read the real snapshot). Dragging the slider pauses +
+// resets the tween (phase=0); the surface opens on the latest EOD. Click→pin, lasso→set
+// global scope (Ocean is the first scope writer — C10).
 const MODES: ColorMode[] = ['sector', 'theme']
 const CLICK_SLOP2 = 16   // (4px)^2 — drags shorter than this count as a click (pin)
 const STEP_MS = 1000     // ms per EOD transition during play (PRD §9.2: 900–1200ms)
@@ -26,25 +27,26 @@ function fmtCap(v: number | null): string {
   return '$' + (v / 1e6).toFixed(0) + 'M'
 }
 
-/** Hover tip (PRD §9.2): ticker / sector / ignition (pct, persistence, candidate) /
- *  valuation evidence (P/S, EV/S, P/E, EV/EBITDA, freshness) / returns / volume surge.
- *  The three DRAW fields (ign_pct / P/S / candidate) come from the bulk and show instantly;
- *  the nine evidence fields live in the lazy per-stock OceanDetail (v3 split). While that
- *  fetch is in flight `detail` is null and those rows show a `…` skeleton. All values are the
- *  REAL snapshot at date index `di` — never the interpolated play position. */
+/** Hover tip (PRD §9.2): ticker / sector / riser evidence (rise_pct, net5/10/20, up-days,
+ *  in-window drawdown, streak, candidate) / valuation evidence (P/S, EV/S, P/E, EV/EBITDA,
+ *  freshness). The three DRAW fields (rise_pct / P/S / candidate) come from the bulk and show
+ *  instantly; the other evidence fields live in the lazy per-stock OceanDetail (payload
+ *  split). While that fetch is in flight `detail` is null and those rows show a `…` skeleton.
+ *  All values are the REAL snapshot at date index `di` — never the interpolated play position. */
 const LOADING = '…'
 export function Tip({
   stock, draw, detail, di,
 }: { stock: OceanStock; draw: OceanDrawPt; detail: OceanDetail | null; di: number }) {
   const loading = detail == null
-  const drift = detail?.brk_drift_step[di] ?? null
-  const tau = detail?.brk_tau_date?.[di] ?? null
+  const net5 = detail?.net5[di] ?? null
+  const net10 = detail?.net10[di] ?? null
+  const net20 = detail?.net20[di] ?? null
+  const up10 = detail?.up10[di] ?? null
+  const ddw10 = detail?.ddw10[di] ?? null
+  const streak = detail?.streak_days[di] ?? null
   const evs = detail?.evs[di] ?? null
   const pe = detail?.pe[di] ?? null
   const evEbitda = detail?.ev_ebitda[di] ?? null
-  const ret10 = detail?.ret_10d[di] ?? null
-  const ret1m = detail?.ret_1m[di] ?? null
-  const volMult = detail?.vol_mult[di] ?? null
   const fresh = detail?.freshness[di] ?? null
   // formal-filing PIT (PRD §10.5): the per-day availability date, honest as the slider scrubs.
   const effEod = detail?.as_of_effective_eod?.[di] ?? null
@@ -55,24 +57,23 @@ export function Tip({
         <b>{stock.ticker}</b> <span className="dim">{stock.sector ?? '—'}</span>
       </div>
       <div className="otrow">
-        <span>brk_pct</span>
-        <b style={{ color: draw.brk_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>{draw.brk_pct.toFixed(0)}</b>
+        <span>rise_pct</span>
+        {/* color keys on the SEA LEVEL (visual reference); candidate comes ONLY from `cand` */}
+        <b style={{ color: draw.rise_pct >= 90 ? 'var(--grn)' : 'var(--txt)' }}>
+          {draw.rise_pct.toFixed(0)}{draw.candidate ? ' · 📈candidate' : ''}
+        </b>
       </div>
+      <div className="otrow"><span>net 5d/10d/20d</span><b>{loading ? LOADING : `${pct(net5)} / ${pct(net10)} / ${pct(net20)}`}</b></div>
       <div className="otrow">
-        <span>突破 drift·τ</span>
-        <b>{loading ? LOADING : `${drift != null ? drift.toFixed(2) : '—'} · ${tau ?? '—'}`}{draw.candidate ? ' · 🚀candidate' : ''}</b>
+        <span>上涨天数</span>
+        <b>{loading ? LOADING : up10 != null ? `${Math.round(up10 * 10)}/10` : '—'}</b>
       </div>
+      <div className="otrow"><span>窗口回撤</span><b>{loading ? LOADING : ddw10 != null ? (ddw10 * 100).toFixed(1) + '%' : '—'}</b></div>
+      <div className="otrow"><span>连续在榜</span><b>{loading ? LOADING : streak != null ? `${streak}d` : '—'}</b></div>
       <div className="otrow"><span>P/S</span><b>{draw.ps != null ? draw.ps.toFixed(1) : 'n.m.'}</b></div>
       <div className="otrow"><span>EV/S</span><b>{loading ? LOADING : num(evs)}</b></div>
       <div className="otrow"><span>P/E</span><b>{loading ? LOADING : pe != null ? pe.toFixed(1) : 'n.m.'}</b></div>
       <div className="otrow"><span>EV/EBITDA</span><b>{loading ? LOADING : num(evEbitda)}</b></div>
-      <div className="otrow"><span>10d / 1m</span><b>{loading ? LOADING : `${pct(ret10)} / ${pct(ret1m)}`}</b></div>
-      <div className="otrow">
-        <span>vol surge</span>
-        <b style={{ color: (volMult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
-          {loading ? LOADING : volMult != null ? volMult.toFixed(2) + '×' : '—'}
-        </b>
-      </div>
       <div className="otrow"><span>val freshness</span><b>{loading ? LOADING : fresh ?? '—'}</b></div>
       {effEod != null && <div className="otrow"><span>formal filed</span><b>{effEod}</b></div>}
       <div className="otrow"><span>mkt cap</span><b>{fmtCap(stock.mktcap)}</b></div>
@@ -166,10 +167,10 @@ export default function Ocean({
     return () => ac.abort()
   }, [hover?.ticker, data])
 
-  // ocean.json must be schema v3 (M8 payload split — columnar bulk + lazy per-stock detail). A
-  // frontend-only deploy can transiently serve an OLD v1/v2 payload until a nightly re-export
-  // lands — guard so the surface degrades to a notice instead of crashing on the columns.
-  const okSchema = !!data && data.schema_version === 4 && Array.isArray(data.dates) && !!data.axis
+  // ocean.json must be schema v5 (steady-riser columns: ps/rise_pct/cand). A frontend-only
+  // deploy can transiently serve an OLD v1–v4 payload until a nightly re-export lands —
+  // guard so the surface degrades to a notice instead of crashing on the columns.
+  const okSchema = !!data && data.schema_version === 5 && Array.isArray(data.dates) && !!data.axis
   // Effective date index: scrubbed value, else the latest snapshot.
   const di = okSchema ? dateIndex ?? data!.dates.length - 1 : 0
   useEffect(() => {
@@ -356,7 +357,7 @@ export default function Ocean({
       <div className="placeholder">
         <div className="ph-tag">数据升级中</div>
         <div className="ph-msg">
-          ocean.json 为旧 schema（v{data.schema_version ?? '?'}）。M8 Ocean 需要 schema v3 —— 触发一次{' '}
+          ocean.json 为旧 schema（v{data.schema_version ?? '?'}）。Ocean 需要 schema v5（steady-riser 列）—— 触发一次{' '}
           <code>nightly.yml</code> 重算生产数据（仅 push web 不更新数据，见 PROJECT-STATUS §6）。
         </div>
       </div>
@@ -408,8 +409,8 @@ export default function Ocean({
           onContextMenu={onContextMenu}
         />
         <div className="oax-x">P/S (log) → (便宜 · 贵)</div>
-        <div className="oax-y">brk_pct ↑ (突破强度)</div>
-        <div className="oquad">↑ 海平面以上 = 突破候选</div>
+        <div className="oax-y">rise_pct ↑ (连续上涨强度 · 10 日净涨幅百分位)</div>
+        <div className="oquad">↑ 海平面 = 90（视觉参考线，candidate 由 compute 判定）</div>
         {hover && hoverStock && hoverDraw && (
           <div
             className="otipwrap"
@@ -451,10 +452,11 @@ export default function Ocean({
       </div>
 
       <div className="foot">
-        <b>base→breakout 强度 × Valuation 二维相图</b>：纵轴 = brk_pct（base→breakout 强度横截面百分位），<b>海平面 = brk_pct 90</b>（top decile）；
-        海平面以上 = 长平台后陡突破（drift_step/τ 拐点 + 清越平台高点 + 放量），跃出高度 ∝ brk_pct−90，与 Breakouts 候选同源（C9）。横轴 =
-        <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}；candidate 加光晕 +
-        亮环。拖<b>日期滑杆</b>切 EOD；<b>▶ Play</b> 在相邻真实快照间平滑插值移动（仅视觉，tooltip/状态取真实快照，不伪造交易日）；
+        <b>连续上涨强度 × Valuation 二维相图</b>：纵轴 = rise_pct（<b>10 日净涨幅横截面百分位</b>，PRD §10.8），<b>海平面 = 90</b>
+        （top decile，<b>仅视觉参考线</b>——「过去两周涨幅进全市场前 10%」）；candidate（📈 光晕 + 亮环）= Risers 榜同一道 gate + top-N，
+        flag 由 compute 层单一真源写出、前端只读<b>绝不重算</b>（candidate ≠ y≥90，gate 含 up10 条件且 top-N 截断），与 Risers 候选逐票可追溯（C9）。横轴 =
+        <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}。拖<b>日期滑杆</b>切 EOD；
+        <b>▶ Play</b> 在相邻真实快照间平滑插值移动（仅视觉，tooltip/状态取真实快照，不伪造交易日）；
         <b>点击 pin</b>、<b>框选 lasso</b> → set 全局 scope（跨 tab 同步、可一键清）；<b>右键点 dot</b> → 在 Stock tab 打开该票。as_of {data.as_of_date} · {data.count} 点 ·
         P/S 域 [{data.x_domain[0]}, {data.x_domain[1]}]。
       </div>

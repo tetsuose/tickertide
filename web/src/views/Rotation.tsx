@@ -9,7 +9,7 @@ import {
   viewBoxXFromClient, viewBoxYFromClient, pointIndexAt, nearestSeriesAt, axisTickIndices, tickDate,
 } from '../lib/chart-hover'
 import CursorReadout from '../components/ChartCursor'
-import Breakouts from './Breakouts'
+import Risers from './Risers'
 
 // Rotation (PRD §9.4): the narrow-decide surface. Overview = every bucket's RS-Ratio on
 // one SVG multi-line chart (height=level >100 outperforms SPY, slope=momentum) + an
@@ -300,16 +300,16 @@ export default function Rotation({
           <div><span className="dim">breadth &gt;MA50</span><b>{drilled.breadth_ma50?.toFixed(0) ?? '—'}%</b></div>
           <div><span className="dim">breadth &gt;MA200</span><b>{drilled.breadth_ma200?.toFixed(0) ?? '—'}%</b></div>
           <div><span className="dim"># at 52w high</span><b>{drilled.at_high ?? '—'}</b></div>
-          <div><span className="dim"># 突破候选</span><b style={{ color: (drilled.candidates ?? 0) > 0 ? 'var(--grn)' : undefined }}>{drilled.candidates ?? '—'}</b></div>
+          <div><span className="dim"># riser 候选</span><b style={{ color: (drilled.candidates ?? 0) > 0 ? 'var(--grn)' : undefined }}>{drilled.candidates ?? '—'}</b></div>
           <div><span className="dim">agg EV/S</span><b>{drilled.agg_evs?.toFixed(1) ?? '—'}</b></div>
           <div><span className="dim">rel ret 1m/3m/6m</span><b>{fmtPct(drilled.rel_ret_1m)} / {fmtPct(drilled.rel_ret_3m)} / {fmtPct(drilled.rel_ret_6m)}</b></div>
           <div><span className="dim">members</span><b>{drilled.member_count ?? '—'}</b></div>
         </div>
         <div className="rot-memhead">
-          <span>成员 · top by base→breakout 强度 <em className="tag">scope 收窄到该 {noun}</em></span>
-          <button className="seg" onClick={() => onJumpTab?.('breakouts')}>在 Breakouts 看全部成员 →</button>
+          <span>成员 · top by 10 日净涨幅（net10） <em className="tag">scope 收窄到该 {noun}</em></span>
+          <button className="seg" onClick={() => onJumpTab?.('risers')}>在 Risers 看全部成员 →</button>
         </div>
-        <Breakouts scope={scope} limit={6} />
+        <Risers scope={scope} limit={6} />
         <div className="foot">
           单条 RS-Ratio 放大：<b>高度=level、线色=斜率(↑绿/↓红)=momentum</b>（N=1 时 color 空出来给斜率）。下面是该 {noun}
           成员证据卡（复用 board.json，按 scope filter — C9/DRY）。点「← all {noun}s」或顶部 scope ✕ 清 scope 回总览。

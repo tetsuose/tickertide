@@ -9,14 +9,15 @@ import {
   OCEAN_GEOM, type CanvasLike, type Palette, type DrawnPoint, type DrawOpts,
 } from '../lib/ocean-draw'
 
-// AC-M8: the Ocean canvas is an Ignition × Valuation SEA-LEVEL map — y = brk_pct (0-100,
-// sea level at 90), x = raw P/S on a LOG axis — scrubbed by a date slider with smooth play
-// interpolation between real EOD snapshots. The real <canvas> never runs headlessly, so we
-// test the pure draw lib (geometry / color / size / interpolation) + drawOcean against a
-// recording mock ctx, plus the component scaffold via SSR. Fixture: export/ocean.py (schema v3,
-// columnar draw fields) on a 520-ticker synthetic DB (seed 7) (regenerate: make fixture-pipeline
-// FIXTURE_ARGS="--tickers 520 --seed 7" && python export/ocean.py --days 4 --out <here> &&
-// rm -rf <here-dir>/ocean). The nine hover fields live in the lazy OceanDetail, built inline here.
+// AC-M8 (2026-07-02 spine pivot II): the Ocean canvas is a steady-riser × Valuation
+// SEA-LEVEL map — y = rise_pct (rise_net10_pct 0-100, sea level at 90 = VISUAL reference
+// only), x = raw P/S on a LOG axis — scrubbed by a date slider with smooth play
+// interpolation between real EOD snapshots. candidate is READ from the cand column (never
+// derived from y). The real <canvas> never runs headlessly, so we test the pure draw lib
+// (geometry / color / size / interpolation) + drawOcean against a recording mock ctx, plus
+// the component scaffold via SSR. Fixture: export/ocean.py (schema v5, columnar draw fields)
+// on the synthetic fixture DB (regenerate: make fixture-pipeline && python export/ocean.py).
+// The hover evidence fields live in the lazy OceanDetail, built inline here.
 const data = ocean as unknown as OceanData
 const ALL: Scope = { kind: 'all', key: null }
 const latest = data.dates.length - 1
@@ -43,17 +44,17 @@ const base = (over: Partial<DrawOpts> = {}): DrawOpts => ({
   data, dateIndex: latest, phase: 0, colorBy: 'sector', activeTheme: null, scope: ALL, palette: PAL, ...over,
 })
 
-// a tiny hand-built dataset for isolated draw assertions (candidate glow etc.). v3 stocks are
-// COLUMNAR — mkStock turns a list of per-day draw pts (or nulls) into ps/brk_pct/cand arrays.
+// a tiny hand-built dataset for isolated draw assertions (candidate glow etc.). v5 stocks are
+// COLUMNAR — mkStock turns a list of per-day draw pts (or nulls) into ps/rise_pct/cand arrays.
 function synth(stocks: OceanStock[], xDomain: [number, number] = [1, 100]): OceanData {
   return {
-    schema_version: 4, as_of_date: '2026-06-05',
-    axis: { x_metric: 'ps', x_scale: 'log', y_metric: 'brk_pct', sea_level: 90 },
+    schema_version: 5, as_of_date: '2026-06-05',
+    axis: { x_metric: 'ps', x_scale: 'log', y_metric: 'rise_net10_pct', sea_level: 90 },
     dates: ['2026-06-04', '2026-06-05'], x_domain: xDomain, count: stocks.length, stocks,
   }
 }
 function mkPt(over: Partial<OceanDrawPt> = {}): OceanDrawPt {
-  return { ps: 5, brk_pct: 50, candidate: false, ...over }
+  return { ps: 5, rise_pct: 50, candidate: false, ...over }
 }
 function mkStock(
   ticker: string, sector: string, mktcap: number,
@@ -62,19 +63,20 @@ function mkStock(
   return {
     ticker, sector, mktcap, themes,
     ps: days.map((d) => (d ? d.ps : null)),
-    brk_pct: days.map((d) => (d ? d.brk_pct : null)),
+    rise_pct: days.map((d) => (d ? d.rise_pct : null)),
     cand: days.map((d) => (d && d.candidate ? 1 : 0)),
   }
 }
-// the lazy per-stock hover detail (columnar fields, index-aligned to dates 0..di), including
-// the formal-filing PIT dates (as_of_period_end/as_of_effective_eod) + scalar valuation_basis.
+// the lazy per-stock hover detail (columnar riser + valuation fields, index-aligned to dates
+// 0..di), including the formal-filing PIT dates (as_of_period_end/as_of_effective_eod) +
+// scalar valuation_basis.
 function mkDetail(di: number, over: Partial<OceanDetail> = {}): OceanDetail {
   const n = di + 1
   const num = (v: number) => Array<number | null>(n).fill(v)
   return {
-    schema_version: 4, ticker: 'X', n, valuation_basis: 'formal_filing_pit',
-    brk_strength: num(0.5), brk_drift_step: num(0.2), brk_fit_gain: num(0.8), brk_clearance: num(0.5), brk_tau_date: Array<string | null>(n).fill('2026-03-01'), evs: num(5), pe: num(20),
-    ev_ebitda: num(12), ret_10d: num(0.01), ret_1m: num(0.03), vol_mult: num(1.1),
+    schema_version: 5, ticker: 'X', n, valuation_basis: 'formal_filing_pit',
+    net5: num(0.02), net10: num(0.08), net20: num(0.15), up10: num(0.7), ddw10: num(-0.03),
+    streak_days: num(4), evs: num(5), pe: num(20), ev_ebitda: num(12),
     freshness: Array<'fresh' | null>(n).fill('fresh'),
     as_of_period_end: Array<string | null>(n).fill('2026-04-16'),
     as_of_effective_eod: Array<string | null>(n).fill('2026-05-23'),
@@ -110,7 +112,7 @@ describe('Ocean draw lib (pure)', () => {
     expect(sc.sy(90)).toBeCloseTo(mid)                     // sy(seaLevel) === seaY
     expect(sc.sy(45)).toBeCloseTo(g.pt + sc.plotH * 0.75)  // below-sea [0,90] owns the lower half
     expect(sc.sy(95)).toBeCloseTo(g.pt + sc.plotH * 0.25)  // above-sea [90,100] owns the upper half
-    // the upper band is magnified: 5 brk_pct above the line span more px than 5 below it.
+    // the upper band is magnified: 5 rise_pct above the line span more px than 5 below it.
     expect(sc.sy(90) - sc.sy(95)).toBeGreaterThan(sc.sy(45) - sc.sy(50))
   })
 
@@ -141,7 +143,7 @@ describe('Ocean draw lib (pure)', () => {
   })
 
   it('colorVar resolves sector var; theme falls back when no active theme', () => {
-    const s = { ticker: 'X', sector: 'Information Technology', mktcap: 1e9, themes: [], ps: [], brk_pct: [], cand: [] } as OceanStock
+    const s = { ticker: 'X', sector: 'Information Technology', mktcap: 1e9, themes: [], ps: [], rise_pct: [], cand: [] } as OceanStock
     expect(colorVar(s, 'sector', null)).toBe('--sec-tech')
     expect(colorVar(s, 'theme', null)).toBe('--dim2')
   })
@@ -159,17 +161,17 @@ describe('Ocean draw lib (pure)', () => {
 
 // AC-M8 v3: the bulk is COLUMNAR draw-only; drawPtAt rebuilds a point, hover detail is lazy.
 describe('AC-M8 v3: columnar draw fields + lazy hover detail', () => {
-  it('drawPtAt reconstructs ps/brk_pct/candidate from the columns; null on a gap day', () => {
-    const s = mkStock('A', 'Energy', 1e9, [null, mkPt({ ps: 7, brk_pct: 95, candidate: true })])
+  it('drawPtAt reconstructs ps/rise_pct/candidate from the columns; null on a gap day', () => {
+    const s = mkStock('A', 'Energy', 1e9, [null, mkPt({ ps: 7, rise_pct: 95, candidate: true })])
     expect(drawPtAt(s, 0)).toBeNull()                              // null day (no position)
-    expect(drawPtAt(s, 1)).toEqual({ ps: 7, brk_pct: 95, candidate: true })
+    expect(drawPtAt(s, 1)).toEqual({ ps: 7, rise_pct: 95, candidate: true })
   })
 
   it('Tip renders the 3 draw fields immediately and a `…` skeleton until detail loads', () => {
     const s = data.stocks[0]
     const draw = drawPtAt(s, latest)!
     const loading = renderToStaticMarkup(<Tip stock={s} draw={draw} detail={null} di={latest} />)
-    expect(loading).toContain(draw.brk_pct.toFixed(0))            // brk_pct comes from the bulk
+    expect(loading).toContain(draw.rise_pct.toFixed(0))            // rise_pct comes from the bulk
     expect(loading).toContain(draw.ps.toFixed(1))                 // P/S comes from the bulk
     expect(loading).toContain('…')                                // EV/S etc. still loading
     // once the detail lands, the evidence values render (no skeleton).
@@ -181,13 +183,13 @@ describe('AC-M8 v3: columnar draw fields + lazy hover detail', () => {
 
 // AC-M8: interpolateOceanPoint — visual tween between real snapshots; state is never faked.
 describe('AC-M8: play interpolation', () => {
-  const a = mkPt({ ps: 2, brk_pct: 40 })
-  const b = mkPt({ ps: 8, brk_pct: 95, candidate: true })
+  const a = mkPt({ ps: 2, rise_pct: 40 })
+  const b = mkPt({ ps: 8, rise_pct: 95, candidate: true })
 
   it('both present: lerps x (log) + y; snap is the NEAREST real snapshot (never synthesized)', () => {
     const mid = interpolateOceanPoint(a, b, 0.5)!
     expect(mid.ps).toBeCloseTo(lerpLog(2, 8, 0.5))        // log-space lerp of x
-    expect(mid.brk_pct).toBeCloseTo(67.5)                 // linear lerp of y
+    expect(mid.rise_pct).toBeCloseTo(67.5)                 // linear lerp of y
     expect(mid.fade).toBe(1)
     expect(interpolateOceanPoint(a, b, 0.25)!.snap).toBe(a) // nearer prev
     expect(interpolateOceanPoint(a, b, 0.75)!.snap).toBe(b) // nearer next
@@ -206,7 +208,7 @@ describe('AC-M8: play interpolation', () => {
   it('prev missing, next present → fade IN (held at next)', () => {
     const fp = interpolateOceanPoint(null, b, 0.3)!
     expect(fp.snap).toBe(b)
-    expect(fp.brk_pct).toBe(95)
+    expect(fp.rise_pct).toBe(95)
     expect(fp.fade).toBeCloseTo(0.3)                      // phase
   })
 
@@ -248,19 +250,19 @@ describe('AC-M8: drawOcean paints the sea-level map', () => {
 
   it('a candidate point is highlighted with a glow halo + bright ring (extra arcs + stroke)', () => {
     const xs: [number, number] = [1, 100]
-    const plain = synth([mkStock('A', 'Energy', 1e9, [null, mkPt({ brk_pct: 95, candidate: false })])], xs)
-    const cand = synth([mkStock('A', 'Energy', 1e9, [null, mkPt({ brk_pct: 95, candidate: true })])], xs)
+    const plain = synth([mkStock('A', 'Energy', 1e9, [null, mkPt({ rise_pct: 95, candidate: false })])], xs)
+    const cand = synth([mkStock('A', 'Energy', 1e9, [null, mkPt({ rise_pct: 95, candidate: true })])], xs)
     const cp = mockCtx(); drawOcean(cp, base({ data: plain, dateIndex: 1 }))
     const cc = mockCtx(); drawOcean(cc, base({ data: cand, dateIndex: 1 }))
     expect(cc.calls.arc.length).toBeGreaterThan(cp.calls.arc.length)   // glow + ring add arcs
     expect(cc.calls.stroke).toBeGreaterThan(cp.calls.stroke)           // the bright ring strokes
   })
 
-  it('a sea-level y placement: an brk_pct=95 point is above the waterline, brk_pct=50 below', () => {
+  it('a sea-level y placement: an rise_pct=95 point is above the waterline, rise_pct=50 below', () => {
     const xs: [number, number] = [1, 100]
     const d = synth([
-      mkStock('HI', 'Energy', 1e9, [null, mkPt({ brk_pct: 95 })]),
-      mkStock('LO', 'Energy', 1e9, [null, mkPt({ brk_pct: 50 })]),
+      mkStock('HI', 'Energy', 1e9, [null, mkPt({ rise_pct: 95 })]),
+      mkStock('LO', 'Energy', 1e9, [null, mkPt({ rise_pct: 50 })]),
     ], xs)
     const drawn = drawOcean(mockCtx(), base({ data: d, dateIndex: 1 }))
     const sc = makeScales(xs, 90)
@@ -342,10 +344,10 @@ describe('AC-M8: hit-testing + pin/lasso scope', () => {
 
 describe('AC-M8: Ocean component scaffold (SSR)', () => {
   const html = renderToStaticMarkup(<Ocean initial={data} scope={ALL} />)
-  it('renders the canvas + color-mode toggles + the ignition/P-S axis labels', () => {
+  it('renders the canvas + color-mode toggles + the rise_pct/P-S axis labels', () => {
     expect(html).toContain('<canvas')
     for (const m of ['sector', 'theme']) expect(html).toContain(`>${m}</button>`)
-    expect(html).toContain('brk_pct')
+    expect(html).toContain('rise_pct')
     expect(html).toContain('P/S')
   })
   it('renders a date slider (max = dates-1) + a play button, opening on the latest EOD', () => {
@@ -362,19 +364,35 @@ describe('AC-M8: Ocean component scaffold (SSR)', () => {
   })
 })
 
-describe('AC-M8: Tip shows ignition + valuation evidence (not RS/Val pct)', () => {
+describe('AC-M8: Tip shows riser + valuation evidence (not RS/Val pct, not breakout)', () => {
   const s = data.stocks[0]
   const draw = drawPtAt(s, latest)!
   const html = renderToStaticMarkup(<Tip stock={s} draw={draw} detail={mkDetail(latest)} di={latest} />)
-  it('shows ticker + ignition + the valuation multiples + freshness', () => {
+  it('shows ticker + riser evidence + the valuation multiples + freshness', () => {
     expect(html).toContain(s.ticker)
-    for (const label of ['brk_pct', '突破', 'P/S', 'EV/S', 'P/E', 'EV/EBITDA', 'vol surge', 'val freshness'])
+    for (const label of ['rise_pct', 'net 5d/10d/20d', '上涨天数', '窗口回撤', '连续在榜', 'P/S', 'EV/S', 'P/E', 'EV/EBITDA', 'val freshness'])
       expect(html).toContain(label)
-    expect(html).toContain(draw.brk_pct.toFixed(0))
+    expect(html).toContain(draw.rise_pct.toFixed(0))
+    expect(html).toContain('7/10')                // up10 0.7 → 7/10 (chart-countable)
+    expect(html).toContain('4d')                  // streak_days
   })
-  it('no longer shows the old RS percentile / Val percentile rows', () => {
+  it('no longer shows the old RS/Val pct rows nor the breakout drift/τ row', () => {
     expect(html).not.toContain('RS pct')
     expect(html).not.toContain('Val pct')
+    expect(html).not.toContain('drift')
+    expect(html).not.toContain('τ')
+    expect(html).not.toContain('🚀')
+  })
+  it('candidate marker comes from the cand flag only (📈 when draw.candidate)', () => {
+    const candHtml = renderToStaticMarkup(
+      <Tip stock={s} draw={{ ...draw, candidate: true }} detail={mkDetail(latest)} di={latest} />,
+    )
+    expect(candHtml).toContain('📈candidate')
+    const nonCand = renderToStaticMarkup(
+      // rise_pct ABOVE the sea level but candidate=false → still NO marker (flag ≠ y>=90)
+      <Tip stock={s} draw={{ ...draw, rise_pct: 99, candidate: false }} detail={mkDetail(latest)} di={latest} />,
+    )
+    expect(nonCand).not.toContain('📈')
   })
   it('shows the formal-filing PIT availability date + basis tag (PRD §10.5)', () => {
     expect(html).toContain('formal filed')
