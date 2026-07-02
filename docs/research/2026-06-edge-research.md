@@ -21,6 +21,8 @@
 | 8 | `sector_vol` | 能否算各板块 VIX | **能(realized-vol版)**:真隐含VIX需期权历史无免费源;板块 realized-vol 指数 corr市场VIX 0.73-0.84,可用作 sizing/context(当前 XLK 40%/91分位最颠) | `908ac7a` |
 | 9 | `drawdown_decomposition` | 暴涨股(几倍十几倍)来自前期深跌/随大盘，还是行业/热度？深跌该不该进 Ocean | **拆三半**:① 暴涨集中在高特质波动行业(行业≈idio-vol,Spearman sector-rate~vol **+0.98**)×热度=**成立**;② **随大盘/beta 深跌对尾部(+300%)无 edge**(PIT lift 0.45x CI<1、市场压力 0.38x)→用户"非随大盘"直觉**对**(2x 档的 beta lift 是崩盘后反弹=regime,非选股);③ "深跌"**非干净零亦非可交易 edge**:leakage-clean PIT 控制下 deep idio drawdown lift ~1.4-3x **不塌到1**,但=survivorship 上界 + 与 idio-vol 不可分 + regime 接飞刀(V底2002/2008/1990旺,1999/2010死)。**Ocean=不编码深跌看涨轴/光晕**(理由:幸存者+不可分+接飞刀,非"无关联") | `#88` |
 
+| 10 | `steady_riser` (2026-07-02) | 用户重构 spec：「过去一两周连续上涨、回撤少」的简单/图上可验证筛法能否替代引擎、且在起涨初期 1–2 周抓到 SNDK/SOXL 型火箭 | **能**：V3(gate=10天里≥6天上涨&net>0、sort=net10) 七只样板票全部 **d0–d10** 进 top-50(检出时已涨 0–51%,整段 +245%~+2376%)；**严平滑硬 gate 反例=SNDK d66**(火箭初期不平滑:ker .25-.52、窗口回撤−11%)→平滑度(ker/ddw/up)只做证据列/排序键、绝不做硬 gate；picks 前向21d +1.4% vs 池+1.1%=无预测声称(合元结论,recall 工具) | (本 PR) |
+
 **元结论（9 次实测反复钉死）**：**在美股 EOD 这个域，"预测哪个会涨 / 择时进出"没有稳健可交易的前向 edge——个股、主题、市场三个层面都验证过。** 看似有 edge 的结果，剥掉 confound 后**要么塌、要么退化为不可交易的上界**：survivorship(深跌归零者缺席)、volatility-selection(高波动票方差大、易摸大数)、regime luck(2020s 是百年最旺)。
 **exp 9 的两点修订(诚实)**：(a) 用 **leakage-clean point-in-time 控制**后，"deep idiosyncratic drawdown → 暴涨"的前向关联**并不塌到零**(残 ~1.4-3x、CI 在 1 以上)——但它是 survivorship 上界 + 与 idio-vol 不可分 + regime 接飞刀，**仍非稳健可交易**；"都塌到零"是过度简化，真相是"塌成一个赶不动的上界"。(b) 我在 exp 9 v1 自造过一个 **bad control**(用全样本 vol 分位 = 伪装的 regime 代理，Simpson 把 lift 假性压到 1.1x、误判"无 edge")，经对抗复核纠正——记此为方法学坑：**测稀有大涨 label，vol 控制必须 point-in-time**。
 唯一稳健的是：
@@ -93,6 +95,18 @@
   - **(B) 深跌（idio）**：PIT lift **1.84x@+100%**（CI[1.58,2.16]）… **1.44x@+300%**（CI[1.07,1.90]），**不塌到 1**；但 per-year 高度 regime 依赖（V 底 2002=5.4/2008=4.8/1990=5.0 旺，1999/2004/1996/2010 ≤0.9 死 = **接飞刀**，同 exp 5 主题层）。
   - **幸存者方向（关键）**：deep day 是可能归零路径的前缘，退市抹掉其全部 deep 日 + 永不打 rocket 标 → deep 分子被抬高**多于**对照分母 → 所有 lift（naive、PIT ~2x、idio 残）都是**上界**。另：**30%** 的"rocket"是纯往返（前向峰未破前高）= 算术，"multi-bagger"措辞夸大真·新高家数。CI 仅 year-clustered（~26 有效年/~360 有效票），未做 CRSP 退市纳入——欲彻底关掉 idio 残 ~2x，需 delisting-inclusive 重跑。
 - **裁决（三半）**：① 正面成立（**idio-vol × 热度**，非"行业基本面"）；② 用户"非随大盘"对**尾部**（beta 深跌 +300% 无 edge）；③ "深跌"**非干净零**（PIT 残 ~2x）但**非可交易 edge**——survivorship 上界 + 与 idio-vol 不可分 + regime 接飞刀。**Ocean：不把 deep-drawdown/distance-from-high 编成看涨轴/光晕**（PRD §16）；诚实理由 = 幸存者 + 不可分 + 接飞刀，**而非**"无前向关联"。正向驱动（idio-vol/sector）已由 `colorBy=sector` 承载 → **零代码改动**。
+
+### 10. steady_riser — 「连续上涨、回撤少」简单筛法（2026-07-02，脊柱重构实证）
+
+- **Q**（用户 spec）：算法应**简单、不易出错、图上可验证**（与直观相符、**不指向预测收益**）；把「每天扫几千张 K 线找过去一两周持续走高的票」数学化；须在起涨初期 1–2 周抓到 SNDK/SOXL 型票（后期下跌的入选也没关系 = recall 工具）。
+- **法**：真实 Nasdaq screener universe ≥$2B 隔一抽一 ~1030 只 + 样板票（SNDK/SOXL/ARM/MRVL/AAOI/CRDO/SITM）、3y 日线（batch yfinance）。W=10 天四个图上可读指标：`net10`(净涨幅)、`up10`(上涨天数占比)、`ddw10`(窗口内最大回撤)、`ker10`(路径效率)。五个变体（纯涨幅榜 V0 / 严平滑 gate V1: ker≥.6&ddw≥−5% / net×ker V2 / **up≥6/10+净涨排序 V3** / 宽 gate V4）比四问：样板票检出时点、榜单质量、日间稳定性、前向诚实。
+- **数**：
+  - **(Q1 检出)**：V3 七只样板票全部 **d0–d10** 进 top-50——SNDK d0、SOXL d7(+42%)、ARM d8(+20%)、MRVL d10(+17%)、AAOI d5(+37%)、CRDO d8(+36%)、SITM d9(+19%)；整段涨幅 +245%~+2376%，检出点全在「初期一两周」。
+  - **(反例，关键)**：严平滑 V1 把 SNDK 挡到 **d66(+155%)**——SNDK 起涨期 ker 仅 .25–.52、窗口回撤 −11%：**真火箭初期往往不平滑**（呼应 exp 4：平滑赢家与爆发火箭是互斥原型）。平滑度当**硬 gate 会漏最大的鱼**；当证据列/排序键无害。
+  - **(Q2 质量)**：V3 对 V0 垃圾压降温和（单日尖峰占净涨 48% vs 52%、窗口回撤 −3.4% vs −4.1%）→ 靠 gate 提纯有天花板，正解是把 up/ddw/ker 露成**证据列**让用户自行收紧（evidence-first）。
+  - **(Q3 可用性)**：top-50 日间 Jaccard 0.54；V3 gate 通过数中位 349/1032（top-N 才是真界）；在榜 streak 中位 2d、40%≥3d → UI 显示「连续在榜天数」列（描述非过滤）。
+  - **(Q4 诚实)**：picks 前向 21d 中位 +1.4% vs 池 +1.1% —— **无前向 edge、也不声称**（exp 2 已证短窗涨幅榜偏 reversal；工具定位 recall+证据，precision 归用户翻财报）。
+- **裁决**：**V3 形态成立、可作换芯规格候选**——gate=`up10≥0.6 AND net10>0`、sort=`net10`、top-N；`up10/ddw10/ker10/连续在榜天数` 全作图上可验证证据列；**无横截面百分位、无变点拟合、无可调 alpha 参**（W=10、up≥6/10 是 UX 常数非拟合量）。落地程序 = PRD §10.8/§16 立法 → compute → export → web（同 2026-06-16 pivot 体例）。
 
 ---
 
