@@ -1,13 +1,29 @@
 # TickerTide — ROADMAP（开发方案）
 
 > PRD §13 里程碑的执行展开。**M0·M1·M2·M3 + 部署轨 D 写到可直接 `make task-open` 执行的粒度（★ 详细方案）；M4–M6 给纲要**（目标/前置/关键未决/验收指针），随各自临近再细化。**D（部署 + 夜间自动化）是正交 infra 轨，建议 M3 后与 M4/M5 并行。**
+> **进度补记（2026-07-02）**：06-16 pivot（base→breakout）已全上线（#77–#82）；**M6 扩量 DONE**（#89–#96：Breakouts 全 $500M floor 3327 只、Ocean/Valuation EDGAR 扩到 2338、nightly 全绿 ~20min）；**2026-07-02 Spine Pivot II：核心转 steady-riser（连续上涨），见下段**——此后本行以下的引擎表述均为历史。
 > **进度（2026-06-13）：M0 ✅（PR #1–#8）· M1 ✅（#9–#14）· M2 ✅ Ocean（#16–#20）· M3 ✅ Rotation（#25–#29）· D ✅ 部署（#37–#44、#48、#50；tickertide.pages.dev）· M4 ✅ DONE 主题分类（M4.1–4.4 #32–#36、M4.6 接线 #51、M4.5 LLM 抽取+human 审批 #52）· M5 ✅ DONE 正式版（Valuation duckdb-wasm 全 universe + PEG/Mgn% #57/#58、Stock per-name bundle + 四格时间轴 stack #59/#60、收口 #61；预览 #53；wasm 走 R2 绕 Pages 25MiB 限——待 operator 配 R2）· M7 ✅ DONE ignition 发现引擎 + Discovery 持续点火榜（M7.1 compute #64、M7.2 export #65、M7.3 Discovery #66、M7.4 Stock 诊断 #67、M7.5 收口 #68；`make ac-m7` 一键复验 AC-M7 五条）· M8 ✅ DONE Ocean 重构（Ignition × Valuation 海平面图 + 日期滑杆/Play 插值动画；composite 退出用户可见层）。 · **2026-06-16 SPINE PIVOT**：核心引擎转 base→breakout、ignition+composite 退役、Discovery→Breakouts、Ocean 纵轴改 base→breakout 强度（PRD §10.8/§16 已修订 ✅）；M7/M8 重做中（M7⟲ 引擎换芯 / M8⟲ Ocean 纵轴）。**
 > **M4.5 NVDA demo（真实上线）**：`themes/extract.py` 拉真实 10-K → `claude` CLI（print 模式，**订阅 plan 额度，不接 API key**）→ 候选；sejonep 审批 AI 0.90/SEMI 1.00（C6）。真实 nightly 暴露并修了 2 个数据成熟度 bug：**theme 历史不足**（#54 seed as_of 回填到 bars 最早日 + check_theme graceful SKIP）、**approved as_of off-by-one**（#55 默认用 10-K filing 日而非审批日，否则最新 EOD board 回落 seed）。线上 NVDA 现显 SEMI 100%/AI 90% chip、theme Rotation 8 线 ×52 周。
 > **ignition 双引擎（2026-06-13 立项 → ✅ M7 DONE）**：重新梳理算法发现现有 `composite` 是趋势确认引擎、系统性滞后于「早期发现」初衷 → 新增 **`ignition` 发现引擎**（短窗口/拐点/突破，与 composite 并列）。实证（`analysis/verify_ignition.py` timing + `analysis/precision_ignition.py` precision）：ignition 比 composite 早 14–45 周点亮已知大牛股（ARM/MRVL/AAOI/SNDK）；**瞬时点火无精度，唯 persistence（持续 ~5 日）有 lift** → **Discovery = 「持续点火」榜**，三级漏斗（触发→持续→翻财报）。规格 PRD §10.8/§16、BUILD-PLAN §4.8。**M7.1–M7.5 已全 merged（#64–#68）**：ignition 5 分量落 `derived_daily` → board 持续点火榜 + 点火证据 → Discovery 改持续点火排序 → Stock 点火诊断 → AC-M7 五条一键复验（`make ac-m7`）。**双引擎脊柱兑现。**（⚠️ **2026-06-16 SPINE PIVOT 后此 ignition 双引擎方案已 SUPERSEDED**——见下方 Pivot 段。）
 
 ---
 
-## 🔄 2026-06-16 Spine Pivot — 核心引擎转 base→breakout（ignition 退役）
+## 🔄 2026-07-02 Spine Pivot II — 核心转 steady-riser（连续上涨；base→breakout 退役）
+
+> **背景（用户拍板 + exp 10 实证）**：算法三条硬要求 = **简单、不易出错、图上可验证（与直观相符）**，且**不指向预测收益**；产品语义 = 把「每天扫几千张 K 线找过去一两周持续走高、回撤少的票」数学化提效。base→breakout（变点拟合）违背前三条且实测偏 ~7.5 月前的老突破。**exp 10**（`analysis/steady_riser.py`，PR #97）：V3 形态（gate=`up10≥0.6 & net10>0`、sort=`net10`、top-50）把 SNDK/SOXL/ARM/MRVL/AAOI/CRDO/SITM（整段 +245%~+2376%）全部在起涨低点后 **0–10 个交易日**内送进榜；**严平滑硬 gate 反例 = SNDK d66**（火箭初期不平滑）→ 平滑度只做证据列。规格已立法：PRD §10.8（steady-riser）/ §10.9（base→breakout RETIRED）/ §16 AMENDMENT 2026-07-02。
+>
+> **已拍板决策**：① 证据列同时露 net5/net20；② base→breakout 彻底退役（不算/不导/不显）；③ **ETF 纳入 universe**（SOXL 型），落地推后到换芯在现有个股数据上跑通之后；④ 先不做数据重采集。
+
+**改造程序（PR 化，依赖序，同上次 pivot 体例）：**
+1. ✅ **PRD / SoT 立法**（§1/§2/§4/§9/§10.8/§10.9/§11/§12/§13/§14/§16/§17 + 附录 A/B/C + CLAUDE.md + 本段）。
+2. **引擎层** `compute/riser.py`（rise_net5/10/20 · up10 · ddw10 · ker10 · net10_pct · candidate(gate∧top-50，单一真源) · streak_days）→ 接 `compute/run.py` 写 `derived_daily.rise_*`；本 PR 暂留 breakout 计算（export 仍读，保 nightly 绿）。
+3. **导出层** `export/board.py`（Risers gate+net10 排序 + 证据字段）/ `ocean.py`（y=`rise_net10_pct`、cand 读 flag）/ `stock_bundle.py`（riser 诊断）/ `rotation.py`（# riser 候选聚合）；schema 版本 bump；`check_breakout.py`→`check_riser.py`；**compute 停算 brk_\*、删 `compute/breakout.py`**（**须跑 nightly 才上数据**）。
+4. **Web 层** Breakouts→Risers（连续上涨）（view / nav / `types.ts`）、证据列（net5/10/20、up10 x/10、ddw10、ker、连续在榜天数）、Ocean 轴标签、EvidenceCard 改 riser 窗口高亮。
+5. **验证** AC-M7/M8 重写（守 C9 candidate 单一真源）+ nightly 手动触发对齐数据。
+
+---
+
+## 🔄 2026-06-16 Spine Pivot — 核心引擎转 base→breakout（ignition 退役）（已被 2026-07-02 Pivot II 取代，历史）
 
 > **背景**：深挖发现 ignition（瞬时点火 + persistence）forward edge ≈ 0 causal（全宇宙 754 池实测，中位 lift≈0；唯一有 lift 的 e_persist 用未来不可因果实现）。北极星 = 在 multi-bagger 长期上行的*早期*捕捉异动，真正服务它的是 **base→breakout（长平台 base → 陡突破）**：log 价单变点 τ（2 段分段线性 OLS、τ 自适应、无固定窗口）+ 无量纲特征（base_slope/σ≈0、drift_step=(s2−s1)/σ≳0.13、fit_gain=1−SSE2/SSE1≳0.7、ceiling clearance、bar-level VCP、volume surge）、**recall-first 取 top-N、无可调参**（PRD §10.8/§16 已修订 ✅）。**ignition 与 composite 双退役；Discovery→Breakouts（突破）；Ocean 纵轴 = base→breakout 强度。** 实证原型 `analysis/`（base_breakout / live_screen / full_screen：全市场 6749→habitat 3715→拉到 3593→747 候选）。
 
