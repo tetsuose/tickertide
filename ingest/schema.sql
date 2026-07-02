@@ -85,14 +85,12 @@ CREATE TABLE IF NOT EXISTS bucket_rrg (
   PRIMARY KEY (bucket_type, bucket, date)
 );
 
--- derived_daily: per-stock signals + composite (M0.3) + ignition (M7.1). Spec: PRD
--- §12, math: §10.6 (composite) / §10.8 (ignition). Stores the 5 composite COMPONENTS
--- (c_*) in [0,1] so the client can recompute composite at any early<->reliable knob k
--- (`composite` is the default-k snapshot). The two engines are PARALLEL and share this
--- one per-stock row (C9): composite confirms (long windows, "already a leader"),
--- ignition discovers (short windows, "just starting"); both lenses read this table so
--- they never drift. The ignition columns (ig_*/ignition/ign_pct/ign_persist_days, §10.8)
--- carry the 5 short-window components + the cross-sectional score + top-decile persistence.
+-- derived_daily: per-stock signals + the steady-riser core screen (PRD §10.8, 2026-07-02
+-- spine pivot II). One row per (ticker,date) shared by every lens (C9). rise_* is the
+-- CORE: chart-verifiable metrics + the cross-sectional percentile + the candidate flag
+-- (single source of truth — export/web never re-derive it) + the on-list streak.
+-- composite/c_* are calc-layer residue only (§10.6, never user-visible); brk_* is the
+-- RETIRED base→breakout engine (§10.9) kept only until export/ switches off it.
 CREATE TABLE IF NOT EXISTS derived_daily (
   ticker            VARCHAR,
   date              DATE,
@@ -117,21 +115,30 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   c_accel           DOUBLE,    -- component [0,1]: rs_accel score
   composite         DOUBLE,    -- 100 * Σ wᵢ·cᵢ at default k (calc-layer only, §10.6 — NOT user-visible)
   rank_in_universe  INTEGER,   -- dense rank by composite per date (1 = strongest)
-  -- base→breakout engine (CORE detection, PRD §10.8; 2026-06-16 spine pivot). The single core
-  -- engine — ignition is fully RETIRED (its ig_*/ignition/ign_pct/ign_persist_days columns were
-  -- dropped, db.drop_ignition_columns). composite stays as calc-layer residue (§10.6, board C9
-  -- guard only). Per-stock causal log-price single-changepoint τ + dimensionless features
-  -- (÷ daily-return σ); brk_strength_pct is the cross-sectional rank (compute/run.py).
+  -- base→breakout (RETIRED, PRD §10.9; 2026-07-02 spine pivot II). Kept only until export/
+  -- switches to rise_* — then these columns are removed (fresh DBs each nightly).
   brk_tau_date      VARCHAR,   -- estimated changepoint date (2-seg piecewise-linear kink on log price)
   brk_base_slope    DOUBLE,    -- s1/σ: base-segment slope (≈0 = flat long base)
   brk_brk_slope     DOUBLE,    -- s2/σ: breakout-segment slope (steep)
-  brk_drift_step    DOUBLE,    -- (s2-s1)/σ: slope jump (strongest discriminator, ≳0.13)
-  brk_fit_gain      DOUBLE,    -- 1-SSE2/SSE1: kink salience (≳0.7)
-  brk_clearance     DOUBLE,    -- close/max(base-high) - 1: did price clear the base ceiling
-  brk_vcp           DOUBLE,    -- bar-level VCP: ATR(breakout)/ATR(base) (coil release)
+  brk_drift_step    DOUBLE,    -- (s2-s1)/σ: slope jump
+  brk_fit_gain      DOUBLE,    -- 1-SSE2/SSE1: kink salience
+  brk_clearance     DOUBLE,    -- close/max(base-high) - 1
+  brk_vcp           DOUBLE,    -- bar-level VCP: ATR(breakout)/ATR(base)
   brk_vsurge        DOUBLE,    -- volume surge: mean(vol breakout)/mean(vol base)
-  brk_strength      DOUBLE,    -- recall-first combined strength (0 if degeneracy guards fail)
-  brk_strength_pct  DOUBLE,    -- cross-sectional percentile of brk_strength, per date, 0-100
+  brk_strength      DOUBLE,    -- recall-first combined strength
+  brk_strength_pct  DOUBLE,    -- cross-sectional percentile of brk_strength
+  -- steady-riser (CORE screen, PRD §10.8; 2026-07-02 spine pivot II). Chart-verifiable
+  -- by construction: every value can be counted off the candles. Gate/candidate/streak
+  -- are computed once in compute/run.py (C9 single source of truth).
+  rise_net5         DOUBLE,    -- close/close[-5] - 1 (short reference window)
+  rise_net10        DOUBLE,    -- close/close[-10] - 1 (PRIMARY: "the last 1-2 weeks"; sort key)
+  rise_net20        DOUBLE,    -- close/close[-20] - 1 (long reference window)
+  rise_up10         DOUBLE,    -- fraction of up days in the last 10 (gate: >= 0.6)
+  rise_ddw10        DOUBLE,    -- max drawdown inside the 10d window from its running peak (<=0)
+  rise_ker10        DOUBLE,    -- path efficiency |Σδ|/Σ|δ| in [0,1] (evidence column, never a gate)
+  rise_net10_pct    DOUBLE,    -- cross-sectional percentile of rise_net10, per date, 0-100 (Ocean y)
+  rise_candidate    INTEGER,   -- 1 = gate AND net10 top-N (single truth; export/web never re-derive)
+  rise_streak_days  INTEGER,   -- consecutive days candidate=1 (islands; display column, not a filter)
   PRIMARY KEY (ticker, date)
 );
 

@@ -201,6 +201,23 @@ def ensure_breakout_columns(con: duckdb.DuckDBPyConnection) -> None:
         con.execute(f"ALTER TABLE derived_daily ADD COLUMN IF NOT EXISTS {name} {typ}")
 
 
+# steady-riser columns (PRD §10.8, 2026-07-02 spine pivot II — the core screen). ALTER
+# existing DBs in place (fresh DBs get them from ingest/schema.sql). Order matters for
+# run.py's positional INSERT: rise_* sits after brk_* in both schema.sql and this ALTER
+# sequence. Idempotent: ADD COLUMN IF NOT EXISTS.
+_RISER_COLS = [
+    ("rise_net5", "DOUBLE"), ("rise_net10", "DOUBLE"), ("rise_net20", "DOUBLE"),
+    ("rise_up10", "DOUBLE"), ("rise_ddw10", "DOUBLE"), ("rise_ker10", "DOUBLE"),
+    ("rise_net10_pct", "DOUBLE"), ("rise_candidate", "INTEGER"), ("rise_streak_days", "INTEGER"),
+]
+
+
+def ensure_riser_columns(con: duckdb.DuckDBPyConnection) -> None:
+    """Add the steady-riser columns to an existing derived_daily if missing (migration)."""
+    for name, typ in _RISER_COLS:
+        con.execute(f"ALTER TABLE derived_daily ADD COLUMN IF NOT EXISTS {name} {typ}")
+
+
 # ignition columns retired by the 2026-06-16 spine pivot (base→breakout is the core engine).
 # Drop them from an existing derived_daily so run.py's INSERT (which no longer SELECTs them)
 # matches the table. Idempotent: DROP COLUMN IF EXISTS. composite/c_* stay (calc-layer, §10.6).
