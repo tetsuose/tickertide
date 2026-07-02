@@ -3,9 +3,6 @@ import type { Stock, ChartSeries } from '../types'
 import MiniChart from './MiniChart'
 import { loadBoardChart } from '../lib/data'
 
-const fmtDate = (d: string | null): string => (d == null ? '—' : d.slice(5)) // MM-DD
-const fmtNum = (v: number | null, nd = 2): string => (v == null ? '—' : v.toFixed(nd))
-
 function fmtMktcap(v: number | null): string {
   if (v == null) return '—'
   if (v >= 1e12) return '$' + (v / 1e12).toFixed(1) + 'T'
@@ -15,12 +12,18 @@ function fmtMktcap(v: number | null): string {
 }
 
 const pct = (v: number | null): string =>
-  v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(0) + '%'
+  v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%'
+
+// The steady-riser window (W=10 trading days, PRD §10.8) — highlighted on the mini-chart so
+// every riser number (net10 / up-days / in-window drawdown) is countable inside the band.
+const RISER_WINDOW = 10
 
 // evidence-card = the collapsed state of a Stock (PRD §9.1.3): scannable raw facts,
-// base→breakout-first (2026-06-16 spine pivot — ignition retired; composite is not a
-// user-visible concept). The card header surfaces the base→breakout state; the base/τ/breakout
-// 证据 strip + the 6 raw evidence numbers + the mini-chart carry the rest. Click → open Stock.
+// steady-riser-first (2026-07-02 spine pivot II — base→breakout retired; composite/ignition
+// are not user-visible concepts). The card header surfaces the riser state (candidate 📈 +
+// 连续在榜 N 天, else a dim net10 chip); the riser evidence fields (net5/net10/net20, up-days,
+// in-window drawdown, vol×) + the mini-chart (last-10d window highlighted) carry the rest —
+// every number is countable on the chart. Click → open Stock.
 export default function EvidenceCard({
   stock,
   onOpen,
@@ -33,7 +36,7 @@ export default function EvidenceCard({
   chart?: ChartSeries
 }) {
   const e = stock.evidence
-  const brk = stock.breakout
+  const r = stock.riser
 
   // schema v2 payload split: the mini-chart is NOT in the bulk board.json — fetch this card's
   // chart on render (board/<ticker>.json). Chart source priority: injected prop (SSR/tests) →
@@ -66,56 +69,23 @@ export default function EvidenceCard({
           </span>
         </div>
         <div className="ec-headr">
-          {/* base→breakout badge: this IS the Breakouts sort signal (PRD §10.8). candidate
-              = brk_strength_pct top decile (recall-first, no persistence). When not a candidate,
-              a dim brk_pct chip still gives the breakout read (composite/ignition are gone). */}
-          {brk?.candidate ? (
+          {/* steady-riser badge: this IS the Risers sort signal (PRD §10.8). candidate =
+              the compute-layer gate + top-N flag (read-only, C9 — never re-derived here).
+              When not a candidate, a dim net10 chip still gives the riser read. */}
+          {r?.candidate ? (
             <span
               className="ec-ign"
-              title={`突破候选: brk_pct ${brk.brk_strength_pct?.toFixed(0)} · τ ${brk.evidence.tau_date ?? '—'}`}
+              title={`连续上涨候选: net10 ${pct(r.net10)} · 连续在榜 ${r.streak_days ?? '—'} 天`}
             >
-              🚀 {brk.evidence.days_since_tau != null ? `${brk.evidence.days_since_tau}d` : '突破'}
+              📈 {r.streak_days != null ? `在榜${r.streak_days}d` : '连续上涨'}
             </span>
-          ) : brk?.brk_strength_pct != null ? (
-            <span className="ec-ignpct" title="base→breakout 强度横截面百分位（≥90 = 海平面以上 = 已突破）">
-              brk {brk.brk_strength_pct.toFixed(0)}
+          ) : r?.net10 != null ? (
+            <span className="ec-ignpct" title="10 日净涨幅（steady-riser 排序键；candidate 由 compute 层判定，非阈值推导）">
+              10d {pct(r.net10)}
             </span>
           ) : null}
         </div>
       </div>
-
-      {/* base/τ/breakout 证据 (PRD §10.8) — the card's primary read on the breakout board:
-          estimated kink τ + days-since / drift_step (slope jump) / fit_gain (kink salience) /
-          breakout-side volume surge. Same source as the chart bars (C9). vol_mult here is
-          brk_vsurge, distinct from the 50d vol_mult in the field strip below. */}
-      {brk && (
-        <div className="ec-ignev">
-          <span className="ec-ignev-i" title="估计变点 τ（base→breakout 拐点）+ 距今天数">
-            <em>τ</em> {fmtDate(brk.evidence.tau_date)}
-            {brk.evidence.days_since_tau != null && (
-              <i className="ec-ignev-d"> ·{brk.evidence.days_since_tau}d前</i>
-            )}
-          </span>
-          <span className="ec-ignev-i" title="drift_step = (s2−s1)/σ，斜率跳变（最强判别，≳0.13）">
-            <em>drift</em>{' '}
-            <b style={{ color: (brk.evidence.drift_step ?? 0) >= 0.13 ? 'var(--grn)' : 'var(--txt)' }}>
-              {fmtNum(brk.evidence.drift_step)}
-            </b>
-          </span>
-          <span className="ec-ignev-i" title="fit_gain = 1−SSE2/SSE1，拐点显著度（≳0.7）">
-            <em>fit</em>{' '}
-            <b style={{ color: (brk.evidence.fit_gain ?? 0) >= 0.7 ? 'var(--grn)' : 'var(--txt)' }}>
-              {fmtNum(brk.evidence.fit_gain)}
-            </b>
-          </span>
-          <span className="ec-ignev-i" title="突破段放量× = brk_vsurge">
-            <em>vol</em>{' '}
-            <b style={{ color: (brk.evidence.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
-              {brk.evidence.vol_mult == null ? '—' : brk.evidence.vol_mult.toFixed(2) + '×'}
-            </b>
-          </span>
-        </div>
-      )}
 
       {stock.themes.length > 0 && (
         <div className="ec-themes">
@@ -128,31 +98,39 @@ export default function EvidenceCard({
       )}
 
       <div className="ec-chart">
-        {chart ? <MiniChart chart={chart} /> : <div className="ec-chart-skel" aria-hidden="true" />}
+        {chart ? (
+          <MiniChart chart={chart} hlLastN={RISER_WINDOW} />
+        ) : (
+          <div className="ec-chart-skel" aria-hidden="true" />
+        )}
       </div>
 
+      {/* riser evidence fields (PRD §9.3/§10.8) — every number countable inside the
+          highlighted 10-day window on the chart above (C9). 涨绿跌红. */}
       <div className="ec-fields">
-        <div className="ec-f">
-          <span>1M</span>
-          <b style={{ color: (e.ret_1m ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{pct(e.ret_1m)}</b>
+        <div className="ec-f" title="5 日净涨幅">
+          <span>5d</span>
+          <b style={{ color: (r?.net5 ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{pct(r?.net5 ?? null)}</b>
         </div>
-        <div className="ec-f">
-          <span>3M</span>
-          <b style={{ color: (e.ret_3m ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{pct(e.ret_3m)}</b>
+        <div className="ec-f" title="10 日净涨幅（排序键）">
+          <span>10d</span>
+          <b style={{ color: (r?.net10 ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{pct(r?.net10 ?? null)}</b>
         </div>
-        <div className="ec-f">
-          <span>6M</span>
-          <b style={{ color: (e.ret_6m ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{pct(e.ret_6m)}</b>
+        <div className="ec-f" title="20 日净涨幅">
+          <span>20d</span>
+          <b style={{ color: (r?.net20 ?? 0) >= 0 ? 'var(--grn)' : 'var(--red)' }}>{pct(r?.net20 ?? null)}</b>
         </div>
-        <div className="ec-f">
-          <span>from high</span>
-          <b>{pct(e.from_high)}</b>
+        <div className="ec-f" title="10 天里上涨天数（gate: ≥6/10）">
+          <span>上涨天数</span>
+          <b style={{ color: (r?.up10 ?? 0) >= 0.6 ? 'var(--grn)' : 'var(--txt)' }}>
+            {r?.up10 == null ? '—' : `${Math.round(r.up10 * 10)}/10`}
+          </b>
         </div>
-        <div className="ec-f">
-          <span>week</span>
-          <b>{e.weeks_since_breakout ?? '—'}</b>
+        <div className="ec-f" title="10 日窗口内最大回撤（证据列，不做过滤）">
+          <span>回撤</span>
+          <b style={{ color: 'var(--txt)' }}>{r?.ddw10 == null ? '—' : (r.ddw10 * 100).toFixed(1) + '%'}</b>
         </div>
-        <div className="ec-f">
+        <div className="ec-f" title="50 日均量放大倍数">
           <span>vol</span>
           <b style={{ color: (e.vol_mult ?? 0) >= 1.5 ? 'var(--grn)' : 'var(--txt)' }}>
             {e.vol_mult == null ? '—' : e.vol_mult.toFixed(1) + '×'}

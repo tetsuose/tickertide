@@ -22,8 +22,8 @@ export async function loadBoardChart(ticker: string, signal?: AbortSignal): Prom
   return (await res.json()) as BoardChartDetail
 }
 
-// Load the nightly Ocean bulk snapshot (export/ocean.py -> public/data/ocean.json, v3): the
-// columnar draw fields (ps/ign_pct/cand) for every stock. The nine hover-only fields are NOT
+// Load the nightly Ocean bulk snapshot (export/ocean.py -> public/data/ocean.json, v5): the
+// columnar draw fields (ps/rise_pct/cand) for every stock. The hover-only fields are NOT
 // here — they load lazily per stock via loadOceanDetail (payload reduction; scales to M6).
 export async function loadOcean(signal?: AbortSignal): Promise<OceanData> {
   const base = import.meta.env?.BASE_URL ?? './'
@@ -32,8 +32,8 @@ export async function loadOcean(signal?: AbortSignal): Promise<OceanData> {
   return (await res.json()) as OceanData
 }
 
-// Load one stock's Ocean hover detail (export/ocean.py -> public/data/ocean/<TICKER>.json, v3):
-// the nine tooltip-only fields (columnar, index-aligned to ocean.json's dates). Fetched on hover
+// Load one stock's Ocean hover detail (export/ocean.py -> public/data/ocean/<TICKER>.json, v5):
+// the tooltip-only riser/valuation fields (columnar, index-aligned to ocean.json's dates). Fetched on hover
 // so a session only ever downloads detail for the names actually inspected (M8 payload split).
 export async function loadOceanDetail(ticker: string, signal?: AbortSignal): Promise<OceanDetail> {
   const base = import.meta.env?.BASE_URL ?? './'

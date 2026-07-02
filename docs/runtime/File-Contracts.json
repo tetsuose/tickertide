@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated_at": "2026-07-02T06:27:41.036641+00:00",
+ "updated_at": "2026-07-02T06:52:31.921471+00:00",
  "policy": {
   "stage_values": [
    "scaffolded",
@@ -135,6 +135,7 @@
    }
   },
   {
+   "notes": "退役引擎归档(compute/breakout.py -> analysis/);产品层零引用",
    "path": "analysis/breakout_engine.py",
    "kind": "script",
    "module": "analysis",
@@ -143,8 +144,7 @@
     "purpose": "已退役的 base→breakout 变点引擎实现(原 compute/breakout.py,2026-07-02 pivot II 移出管线,PRD §10.9):log 价 2 段分段线性单变点 τ + 无量纲特征 + recall-first strength。仅供 analysis/walkforward_breakout.py(其退役依据之一的 OOS 验证)复现使用,不被 ingest/compute/export/web 任何管线代码 import",
     "invariants": "纯历史保留:不进 nightly、不进 requirements 之外的依赖、不新增调用方;算法冻结不再改(改=翻案退役决定);因果性与常数同原实现(H=504/MINSEG=40/recency 15-252)",
     "verification": "python3 analysis/walkforward_breakout.py 可跑通(import breakout_engine 解析自 analysis/ 目录);compute/ 目录 grep 无 breakout import"
-   },
-   "notes": "退役引擎归档(compute/breakout.py -> analysis/);产品层零引用"
+   }
   },
   {
    "notes": "暴涨股(几倍十几倍)是否来自前期深跌/随大盘 vs 行业/热度的 leakage-clean 拆解(edge-research exp9);裁决三半:行业≈idio-vol×热度成立、随大盘/beta 对尾部无edge、深跌非干净零亦非可交易edge(survivorship上界+不可分+接飞刀);→Ocean 不编码深跌看涨轴(PRD§16)",
@@ -747,6 +747,7 @@
    }
   },
   {
+   "notes": "原 check_breakout.py(2026-06-16 pivot)改名重写;守卫对象由 brk 块换 riser 块",
    "path": "export/check_riser.py",
    "kind": "script",
    "module": "export",
@@ -755,8 +756,7 @@
     "purpose": "AC-M7 C9 守卫(2026-07-02 pivot II):证明 board.json 的 riser 块与引擎同源——覆盖率/取值范围(net10_pct∈[0,100]、up10/ker10∈[0,1]、ddw10<=0)、candidate⇒自带 gate 证据(up10>=0.6∧net10>0)、#candidates<=top-N、streak⇔candidate、非空、stock↔board riser 块逐字节一致(同 board._riser 构建)。被 make riser-c9 与 compute/check_ac_m7.py 复用(DRY 单一 C9 逻辑源)",
     "invariants": "candidate flag 是 derived_daily 落库的单一真源——本检查刻意**不重推 top-N**(那会是 gate 的第二实现,#92-#94 舍入边界教训的漂移类别),只证 flag 与其自带证据不矛盾;只读导出产物(board.json+stock bundles),不touch DB;names/counts only 无 secrets;任何不一致 exit 非零可作 gate",
     "verification": "make riser-c9 输出 GATE_PASS(fixture 30 票:coverage=30/30、candidates=13<=top-50、stock_xcheck=8);构造 candidate 但 up10<0.6 的行会 GATE_FAIL 'gate evidence fails'"
-   },
-   "notes": "原 check_breakout.py(2026-06-16 pivot)改名重写;守卫对象由 brk 块换 riser 块"
+   }
   },
   {
    "notes": "",
@@ -1234,7 +1234,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "App 顶栏回归门（vitest）：断言 early⟷reliable 旋钮已移除（PRD §9.0/§16，核心转 ignition、ignition 无可调参）",
-    "invariants": "renderToStaticMarkup(<App/>) 无 fetch（effects 不跑、各 surface 显 loading 占位）即足以验顶栏 chrome；断言顶栏不含 range 滑块(type=range/class=knob/aria-label 旋钮)、不含 RELIABLE/EARLY 标与权重条(wbars/wbfill)；断言改以 IGNITION 引擎说明(enginenote + IGNITION + 无可调参)替代；仍渲染 5-lens tab 组 + 默认 Discovery surface ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "renderToStaticMarkup(<App/>) 无 fetch（effects 不跑、各 surface 显 loading 占位）即足以验顶栏 chrome；断言顶栏不含 range 滑块(type=range/class=knob/aria-label 旋钮)、不含 RELIABLE/EARLY 标与权重条(wbars/wbfill)；断言改以 IGNITION 引擎说明(enginenote + IGNITION + 无可调参)替代；仍渲染 5-lens tab 组 + 默认 Discovery surface ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "npm test / make web-test 全绿（本文件 4 用例）；与 App.tsx 合同一致（顶栏两部分、无旋钮）"
    }
   },
@@ -1246,7 +1246,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "应用 shell：固定顶部控制栏（5 tab + IGNITION 引擎说明 + scope chip；early⟷reliable 旋钮已取消，PRD §9.0/§16）+ 中央 surface 面板 + 全局 scope/pinned 单一真源",
-    "invariants": "5 surface 固定顺序、默认 Discovery；无旋钮/无 k state——核心是 ignition、ignition 无可调参，顶栏只剩 tab 组 + 一行 IGNITION 引擎说明(enginenote) + scope chip；discovery 渲染 <Discovery scope pinned limit=DISCOVERY_LIMIT(20)>（board 上限 top-20，bounded/decide §9.3）、ocean 渲染 <Ocean scope setScope pinned setPinned onOpen=openStock>(lasso writer + 右键 dot 打开 Stock)、其余照传；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；composite 退出全部用户可见层(M8、Discovery/Stock/Rotation/App 均不显示，仅计算层暂存)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab，不再传 k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜；Valuation/Stock 视图已挂载、placeholder 分支移除；selectedTicker 状态 + openStock 路由让任意 surface(Discovery 卡 / Valuation 行 / Ocean 右键 dot)的 onOpen 切到 Stock per-name ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "5 surface 固定顺序、默认 Discovery；无旋钮/无 k state——核心是 ignition、ignition 无可调参，顶栏只剩 tab 组 + 一行 IGNITION 引擎说明(enginenote) + scope chip；discovery 渲染 <Discovery scope pinned limit=DISCOVERY_LIMIT(20)>（board 上限 top-20，bounded/decide §9.3）、ocean 渲染 <Ocean scope setScope pinned setPinned onOpen=openStock>(lasso writer + 右键 dot 打开 Stock)、其余照传；scope(all|sector|theme|pinned) + pinned 集 = App 单一真源、跨 tab 粘滞、scope chip 可一键清(pinned 显计数)(C8/C10)；composite 退出全部用户可见层(M8、Discovery/Stock/Rotation/App 均不显示，仅计算层暂存)；rotation tab 接 <Rotation>(传 scope/setScope/onJumpTab=setTab，不再传 k)、Rotation 为第 2 个 scope writer(league 行/线→sector)；header as_of badge(D.4)：useEffect load manifest → 显 as_of + 数据龄 + 陈旧色(fresh/aging/stale dot)，陈旧/缺数据可见、绝不静默当新鲜；Valuation/Stock 视图已挂载、placeholder 分支移除；selectedTicker 状态 + openStock 路由让任意 surface(Discovery 卡 / Valuation 行 / Ocean 右键 dot)的 onOpen 切到 Stock per-name ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "npm run build 通过；App.test SSR：顶栏不含 range 滑块/RELIABLE/EARLY/wbars，含 IGNITION enginenote；ocean tab 渲染 Ocean canvas；scope≠all 显 chip + 可清"
    }
   },
@@ -1270,7 +1270,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "evidence-card = Stock 的 collapsed 态（PRD §9.1.3 + §10.8，M8）：头部 + 🔥持续点火标(或 ign_pct 角标) + 点火证据 strip + theme tags + MiniChart(schema v2: 按票懒加载 chart、未到位显骨架) + 6 原始字段。composite 已退出(无角标/无 d/d/无可展开面板)",
-    "invariants": "证据优先、永不给 buy/target；ignition-first：candidate 时显 🔥+ign_persist_days 标、否则显 ign_pct 角标(≥90=海平面以上=点亮)；composite 已退出(无 badge/无 d/d/无 5 分量展开，M8)；点火证据 strip 取 stock.ignition.evidence 同源 derived_daily(C9 不重算)：突破日 breakout_day(MM-DD)+days_since_breakout、放量× vol_mult(=ig_vsurge 5/60 比，区别于 6 字段里的 50d vol)、步速比 step_rate_ratio(=ig_accel 可读形，显示 clamp ±20× 防 ret50≈0 爆值)、收复 MA50(reclaimed_ma50 即 ig_breakout gate)；schema v2 payload 拆分：chart 不在 bulk board.json — 卡片渲染时 loadBoardChart(ticker) 取 board/<T>.json、chart 源优先级：注入 chart prop(SSR/测试) → bulk 内联 stock.chart(旧 v1 数据过渡兜底) → 懒取 board/<T>.json；未到位/失败显 .ec-chart-skel 骨架(chart 为补充、不阻塞卡面文本)、AbortController 卸载即取消；点卡任意处 onOpen(Stock) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "证据优先、永不给 buy/target；ignition-first：candidate 时显 🔥+ign_persist_days 标、否则显 ign_pct 角标(≥90=海平面以上=点亮)；composite 已退出(无 badge/无 d/d/无 5 分量展开，M8)；点火证据 strip 取 stock.ignition.evidence 同源 derived_daily(C9 不重算)：突破日 breakout_day(MM-DD)+days_since_breakout、放量× vol_mult(=ig_vsurge 5/60 比，区别于 6 字段里的 50d vol)、步速比 step_rate_ratio(=ig_accel 可读形，显示 clamp ±20× 防 ret50≈0 爆值)、收复 MA50(reclaimed_ma50 即 ig_breakout gate)；schema v2 payload 拆分：chart 不在 bulk board.json — 卡片渲染时 loadBoardChart(ticker) 取 board/<T>.json、chart 源优先级：注入 chart prop(SSR/测试) → bulk 内联 stock.chart(旧 v1 数据过渡兜底) → 懒取 board/<T>.json；未到位/失败显 .ec-chart-skel 骨架(chart 为补充、不阻塞卡面文本)、AbortController 卸载即取消；点卡任意处 onOpen(Stock) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Discovery.test SSR 含 ticker/ign_pct 或 🔥candidate 标/6 字段/无 composite 角标(ec-badge)与展开面板(M8)/点火证据 strip(brk·vol·step·MA50)/step_rate clamp(>20× 且原始爆值不 verbatim)/reclaimed 收复；无 chart prop 时 SSR 显 .ec-chart-skel 且无 svg(懒加载)、注入 chart prop 时渲染 mini-chart svg+var(--ma50)+52w 虚线；build 通过"
    }
   },
@@ -1282,7 +1282,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "纯 SVG mini-chart：~90d K线 + MA50/150/200 + 成交量 + 52w 高虚线 + 常驻 MM/DD 日期轴 + hover 时间游标读收盘价（PRD §9.3）",
-    "invariants": "props-only 无 DOM 测量（SSR 与浏览器渲染一致、确定）；K线涨绿跌红；价轴含 low/high/MA/52w-high 使虚线在视野；MA 在 null 处断笔；底部常驻日期刻度(MM/DD，起/中/止)；hover 时间游标=竖线+收盘价 marker+date·close 读数，为 hover-only overlay(hoverIndex 静息 null)故 SSR 不渲染游标；几何转写自 UX 合同",
+    "invariants": "props-only 无 DOM 测量（SSR 与浏览器渲染一致、确定）；K线涨绿跌红；价轴含 low/high/MA/52w-high 使虚线在视野；MA 在 null 处断笔；底部常驻日期刻度(MM/DD，起/中/止)；hover 时间游标=竖线+收盘价 marker+date·close 读数，为 hover-only overlay(hoverIndex 静息 null)故 SSR 不渲染游标；几何转写自 UX 合同 ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "SSR renderToStaticMarkup 含 <svg>/<rect>/MA stroke var/stroke-dasharray、静息态无游标；Discovery.test 10 项过；npm run build 通过"
    }
   },
@@ -1318,7 +1318,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "C9 单测 + AC-M1/AC-M7 渲染测试用样本 board.json（export/board.py bulk 真实产物，schema v2，30 票，含 ignition 块，**无 chart**——payload 拆分；单票 chart 见 board.chart.sample.json）",
-    "invariants": "export/board.py bulk 产物(schema v2，已不含 chart——payload 拆分；mini-chart 渲染测试用同源抽出的 board.chart.sample.json)、含 components c_* + 导出 composite + 每票 ignition 块(ignition/ign_pct/ign_persist_days/candidate/components{}/evidence{})；early⟷reliable 旋钮已取消(PRD §16)故不再含 knob_default_k/weights_default 顶层字段；≥18 票满足 AC-M1「≥18 卡」、≥1 票 candidate=true 供 AC-M7 持续点火排序断言、含 step_rate_ratio>20 票供 clamp 断言；固定供回归对拍；非运行时数据(运行时走 public/data、gitignore)",
+    "invariants": "export/board.py bulk 产物(schema v2，已不含 chart——payload 拆分；mini-chart 渲染测试用同源抽出的 board.chart.sample.json)、含 components c_* + 导出 composite + 每票 ignition 块(ignition/ign_pct/ign_persist_days/candidate/components{}/evidence{})；early⟷reliable 旋钮已取消(PRD §16)故不再含 knob_default_k/weights_default 顶层字段；≥18 票满足 AC-M1「≥18 卡」、≥1 票 candidate=true 供 AC-M7 持续点火排序断言、含 step_rate_ratio>20 票供 clamp 断言；固定供回归对拍；非运行时数据(运行时走 public/data、gitignore) ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "composite.test.ts + Discovery.test.tsx 据此对拍/渲染；fixture 与 fresh export byte-identical(同 seed 确定可复现)"
    }
   },
@@ -1330,7 +1330,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "AC-M8 Ocean 渲染测试用样本 ocean.json bulk(schema v3，columnar 绘制字段)（export/ocean.py 真实产物，520 票 fixture→519 票×N 日；为控体积用 --days 4 导出；仅 bulk，detail 不入 fixture——测试内联构造 OceanDetail）",
-    "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；schema_version=3、axis.sea_level=90；每票 columnar ps[]/ign_pct[]/cand[] 与 dates 对齐、最新坐标非空(≥500 可渲染点)；有位置日 ign_pct∈[0,100]、ps>0、cand∈{0,1}；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)；导出顺带写的 __fixtures__/ocean/ detail 目录在再生时 rm 掉(不入测试 fixture)",
+    "invariants": "由真实 export/ocean.py 在合成 fixture DB(seed 7,520 票)产出、非手写；schema_version=3、axis.sea_level=90；每票 columnar ps[]/ign_pct[]/cand[] 与 dates 对齐、最新坐标非空(≥500 可渲染点)；有位置日 ign_pct∈[0,100]、ps>0、cand∈{0,1}；提交版固定快照(__fixtures__/ 不被 gitignore，区别于派生的 data/ocean.json)；导出顺带写的 __fixtures__/ocean/ detail 目录在再生时 rm 掉(不入测试 fixture) ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Ocean.test.tsx import 后断言 count≥500、最新坐标全非空、每票 sector 可识别、drawPtAt 重建点位；再生命令见 Ocean.test.tsx notes"
    }
   },
@@ -1366,7 +1366,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "M5.4 Stock SSR 测试 fixture：从 stock_bundle.py 导出的一个 bundle(TT07)，注入 Stock/StockStack 跳过 fetch",
-    "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染；valuation + revenue_q 带 formal-filing PIT 字段(as_of_effective_eod/valuation_basis/disclosure_lag_days；revenue_q filed_date/effective_eod_date)供 §10.5 渲染断言",
+    "invariants": "镜像 stock/<T>.json bundle(meta/components/valuation/price/revenue_q/ps_series)；含 ROBO theme chip(exposure 0.58)验 chip%；price/revenue/ps 序列非空覆盖四格渲染；valuation + revenue_q 带 formal-filing PIT 字段(as_of_effective_eod/valuation_basis/disclosure_lag_days；revenue_q filed_date/effective_eod_date)供 §10.5 渲染断言 ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Stock.test/StockStack.test 注入渲染；header/卡/分量/四格齐"
    }
   },
@@ -1438,7 +1438,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "载入 nightly 静态快照：board.json(Discovery bulk，schema v2 无 chart) + board/<T>.json 懒加载 per-stock mini-chart + ocean.json bulk + ocean/<T>.json 懒加载 hover detail(Ocean v3 拆分) + rotation.json/rotation.theme.json(Rotation sector/theme)（export/*.py 产物）",
-    "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadOceanDetail(ticker,signal) 懒加载 ocean/<TICKER>.json(v3 九个 tooltip 字段，hover 时按票取，同 BASE_URL fetch 范式)→ OceanDetail；loadBoardChart(ticker,signal) 懒加载 board/<TICKER>.json(v2 单票 90d chart，卡片渲染时按票取，同范式)→ BoardChartDetail；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)；loadStockBundle/loadStockIndex 懒加载 per-name bundle(M5.4)",
+    "invariants": "loadBoard/loadOcean 同范式：fetch 路径用 import.meta.env.BASE_URL 尊重 Vite base='./'；非 2xx 抛错供上层降级；分别返回 BoardData/OceanData(types.ts 镜像)；支持 AbortSignal 取消；loadOceanDetail(ticker,signal) 懒加载 ocean/<TICKER>.json(v3 九个 tooltip 字段，hover 时按票取，同 BASE_URL fetch 范式)→ OceanDetail；loadBoardChart(ticker,signal) 懒加载 board/<TICKER>.json(v2 单票 90d chart，卡片渲染时按票取，同范式)→ BoardChartDetail；loadRotation(signal,bucketType='sector') 按 bucketType 取 rotation.json(sector)或 rotation.theme.json(theme)、同 BASE_URL fetch 范式(两文件因 theme index 从首个 as_of 起 weeks 轴不同)；loadManifest 载入 manifest.json(新鲜度 D.4，同 BASE_URL fetch 范式)；loadStockBundle/loadStockIndex 懒加载 per-name bundle(M5.4) ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Discovery 按 loadBoard、Ocean 按 loadOcean(bulk)+hover loadOceanDetail(按票)、Rotation 按 loadRotation(sector/theme) 运行时载入渲染；对应 json 缺失时上层显 NO DATA 态/tooltip 退化为骨架"
    }
   },
@@ -1462,7 +1462,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "board 驱动视图(Valuation/Stock)的共享展示格式化：fmtMktcap/num/pct + ignition 点火证据格式化(fmtStepRate/SR_CLAMP/fmtMonthDay)。scoreColor 已删(composite 退出用户可见层，M8)",
-    "invariants": "纯函数无 DOM、SSR 可测；null→em-dash；fmtStepRate 把步速比(ig_accel 可读形)显示 clamp 在 ±SR_CLAMP(=20×、display-only，引擎 ranked ig_accel 不受影响)、超界前缀 >/<，与 EvidenceCard(M7.3)本地副本同阈值同语义(共享主源，Stock 点火诊断复用此处而非另起一套)；fmtMonthDay 取 ISO 日期 MM-DD；EvidenceCard(M1/M7.3)仍保留本地副本、不动已验证代码(后续统一重构)",
+    "invariants": "纯函数无 DOM、SSR 可测；null→em-dash；fmtStepRate 把步速比(ig_accel 可读形)显示 clamp 在 ±SR_CLAMP(=20×、display-only，引擎 ranked ig_accel 不受影响)、超界前缀 >/<，与 EvidenceCard(M7.3)本地副本同阈值同语义(共享主源，Stock 点火诊断复用此处而非另起一套)；fmtMonthDay 取 ISO 日期 MM-DD；EvidenceCard(M1/M7.3)仍保留本地副本、不动已验证代码(后续统一重构) ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Valuation/Stock 视图与其测试消费；Stock.test 断言 fmtStepRate clamp(>20× 显 &gt;20×)；tsc 通过"
    }
   },
@@ -1498,7 +1498,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "Ocean canvas 纯绘制库（M8 海平面图）：log P/S 横轴 + ign_pct 纵轴 + 海平面(ign_pct 90)几何/配色/尺寸 helpers + drawPtAt(从 v3 columnar 列重建当日绘制点) + interpolateOceanPoint 插值 + drawOcean 单次绘制一动画帧(含 candidate glow + pinned 标记 + lasso rect) + nearestPoint/pointsInRect 命中测试（PRD §9.2）",
-    "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；makeScales：x=log10 P/S 映射 x_domain→宽、y=ign_pct 分段 split 轴 sy(海平面 sea_level 锚定绘图区垂直中点：vc≤sea→下半[0,sea]、vc>sea→上半(sea,100]，两段各占半高、px/pct 比例不同以放大海平面以上 catch zone；anchors sy(0)=底/sy(sea)=中/sy(100)=顶不变故朝向与上下海平面命中保持)、seaY=sy(sea_level)=绘图区中点；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色两模式(sector/theme)返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawPtAt(s,i)：从 v3 columnar 列(ps[i]/ign_pct[i]/cand[i])重建 OceanDrawPt{ps,ign_pct,candidate}，ps 或 ign_pct 为 null→该日无位置返 null(列→点唯一入口；ign_persist_days 等不在此，走懒加载 OceanDetail)；interpolateOceanPoint(prev,next:OceanDrawPt|null,phase)：两点都有→x(log)/y lerp + snap 取最近真实快照、prev only→淡出(fade=1-phase)、next only→淡入(fade=phase)、都无→null(状态恒取真实 snapshot 不伪造，snap 仅含三绘制字段)；drawOcean 经 drawPtAt 取当帧点，画海平面以下压暗 + 以上高亮 + waterline(ign 90) + P/S log 网格 + ign 轴刻度 + 当帧点(in-scope 按是否点亮 0.5/0.92、否则淡至 1.2px C10、candidate 加 glow halo + 亮环)+可选 hover 白环 + pinned 强调点(≤PIN_LABEL_CAP 标 ticker，C2)+lasso 选框，并返回非淡点(插值后)屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)、命中用当帧插值位置；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集 ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "无 React/无真实 canvas 依赖、纯函数可头测；makeScales：x=log10 P/S 映射 x_domain→宽、y=ign_pct 分段 split 轴 sy(海平面 sea_level 锚定绘图区垂直中点：vc≤sea→下半[0,sea]、vc>sea→上半(sea,100]，两段各占半高、px/pct 比例不同以放大海平面以上 catch zone；anchors sy(0)=底/sy(sea)=中/sy(100)=顶不变故朝向与上下海平面命中保持)、seaY=sy(sea_level)=绘图区中点；size=clamp(2+√(mktcap$B)·0.34,1.6,11)；颜色两模式(sector/theme)返回 CSS 变量名(不写裸 hex，theme.css 为 hex SoT)，resolvePalette 运行时解析、测试注入假调色板；inScope 按 scope 判定(pinned=ticker∈pinned 集)；drawPtAt(s,i)：从 v3 columnar 列(ps[i]/ign_pct[i]/cand[i])重建 OceanDrawPt{ps,ign_pct,candidate}，ps 或 ign_pct 为 null→该日无位置返 null(列→点唯一入口；ign_persist_days 等不在此，走懒加载 OceanDetail)；interpolateOceanPoint(prev,next:OceanDrawPt|null,phase)：两点都有→x(log)/y lerp + snap 取最近真实快照、prev only→淡出(fade=1-phase)、next only→淡入(fade=phase)、都无→null(状态恒取真实 snapshot 不伪造，snap 仅含三绘制字段)；drawOcean 经 drawPtAt 取当帧点，画海平面以下压暗 + 以上高亮 + waterline(ign 90) + P/S log 网格 + ign 轴刻度 + 当帧点(in-scope 按是否点亮 0.5/0.92、否则淡至 1.2px C10、candidate 加 glow halo + 亮环)+可选 hover 白环 + pinned 强调点(≤PIN_LABEL_CAP 标 ticker，C2)+lasso 选框，并返回非淡点(插值后)屏幕位置；nearestPoint 线性扫描 ~r+5px 最近点(NFR-8)、命中用当帧插值位置；pointsInRect 返回框内 ticker(支持反向拖拽)；CanvasLike 为 CanvasRenderingContext2D 结构子集 ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Ocean.test.tsx：radiusFor/makeScales(海平面=sy(90)、log P/S 单调)/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/drawPtAt(列重建点、gap 日 null)/interpolateOceanPoint(双有 lerp、prev-only 淡出、next-only 淡入、都无 null)/nearestPoint/pointsInRect/inScope 纯测；drawOcean mock-ctx 在 519 票 fixture 返回 ≥500 drawn 落框内 + 海平面背景层 + scope 淡化 + hover ring + candidate glow(多 arc+stroke) + 海平面上下 y 摆位 + 切日点位移动 + pinned 标签"
    }
   },
@@ -1546,32 +1546,8 @@
    "stage": "implemented",
    "contract": {
     "purpose": "board.json(M1.1/M7.2) + ocean.json bulk + ocean/<T>.json detail(M8 v3) + rotation.json(M3.3) + stock bundle(M5.3/M7.4) 的 TS 类型镜像 + SurfaceId/Scope，前端数据桥",
-    "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；Stock(card).chart 可选(schema v2 payload 拆分：bulk 不发 chart、卡片懒加载 board/<T>.json；保留 chart? 仅作旧 v1 数据 artifact 过渡兜底)，90d mini-chart=BoardChartDetail{schema_version,ticker,chart:ChartSeries}=board/<T>.json；ChartSeries 为共享形(Discovery 90d mini + StockBundle 2y price)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)；formal-filing PIT(§10.5，可选字段、pre-PIT 缺省)：Valuation/ValuationRow/StockBundle.valuation 带 as_of_effective_eod(==as_of_filed,v1)/valuation_basis/disclosure_lag_days，RevenueQuarter 带 filed_date/effective_eod_date/disclosure_lag_days，OceanDetail 带 as_of_period_end/as_of_effective_eod columnar + valuation_basis 标量 ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "结构与 export/board.py、export/ocean.py、export/stock_bundle.py 输出逐字段对齐；引擎可空处置 null；BoardData.components=5 分量供前端按 k 重算(C9)、绝不在前端重算引擎；Stock(card).ignition 与 StockBundle.ignition(均可选/可空，pre-M7 fixture 或引擎无值时缺) = 第二引擎(PRD §10.8)：Ignition{ignition/ign_pct/ign_persist_days/candidate + IgnitionComponents{accel,expand,vsurge,breakout,rsturn}(原始 self-relative 非 [0,1]) + IgnitionEvidence{breakout_day,days_since_breakout,vol_mult(=ig_vsurge 5/60 比≠Evidence.vol_mult 50d),step_rate_ratio(ret50≈0 会爆需前端 clamp),reclaimed_ma50,ma50}}，StockBundle 与 board card 共用同一 Ignition 类型(同源 C9)；BoardData 顶层 ignition_coverage/candidates/persist_min/recon_max_drift(可选)；Stock(card).chart 可选(schema v2 payload 拆分：bulk 不发 chart、卡片懒加载 board/<T>.json；保留 chart? 仅作旧 v1 数据 artifact 过渡兜底)，90d mini-chart=BoardChartDetail{schema_version,ticker,chart:ChartSeries}=board/<T>.json；ChartSeries 为共享形(Discovery 90d mini + StockBundle 2y price)；OceanData/OceanStock/OceanDrawPt/OceanDetail/OceanAxis(M8 v3 payload 拆分)：OceanStock 为 columnar(ps[]/ign_pct[]/cand[] 与 dates 对齐、ps|ign_pct null=该日无位置、cand∈{0,1})、OceanDrawPt{ps,ign_pct,candidate}=drawPtAt 由列重建的当日绘制点、OceanDetail{schema_version,ticker,n,九个 tooltip columnar 字段(ignition/ign_persist_days/evs/pe/ev_ebitda/ret_10d/ret_1m/vol_mult/freshness)与 dates 同索引}=ocean/<T>.json 懒加载、axis{x_metric,x_scale,y_metric,sea_level}+x_domain；RotationData/RotationBucket/RotationState 镜像 rotation.json(4 态枚举)；ManifestData 镜像 manifest.json；ValuationRow/ValuationData 镜像 valuation.parquet(M5.2)；StockBundle/RevenueQuarter/PsPoint/StockIndex 镜像 stock bundle(M5.3/M5.4)；formal-filing PIT(§10.5，可选字段、pre-PIT 缺省)：Valuation/ValuationRow/StockBundle.valuation 带 as_of_effective_eod(==as_of_filed,v1)/valuation_basis/disclosure_lag_days，RevenueQuarter 带 filed_date/effective_eod_date/disclosure_lag_days，OceanDetail 带 as_of_period_end/as_of_effective_eod columnar + valuation_basis 标量 ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "tsc 通过；Discovery 按 BoardData、Ocean 按 OceanData、Stock 按 StockBundle(含 ignition)消费无类型错"
-   }
-  },
-  {
-   "notes": "",
-   "path": "web/src/views/Breakouts.test.tsx",
-   "kind": "code",
-   "module": "web",
-   "stage": "implemented",
-   "contract": {
-    "purpose": "Breakouts view + EvidenceCard 的 SSR 回归 gate(AC-M1/AC-M7,base→breakout):从真实 fixture board.sample.json 渲染并断言用户可见合同",
-    "invariants": "用 react-dom/server SSR;board.sample.json 为 export 产物(breakout 块);断言排序键=candidate→brk_strength_pct、不露 composite/ignition、base/τ/breakout 证据、scope",
-    "verification": "`make web-test` 全绿;与 export/board.py breakout 块同口径"
-   }
-  },
-  {
-   "notes": "",
-   "path": "web/src/views/Breakouts.tsx",
-   "kind": "code",
-   "module": "web",
-   "stage": "implemented",
-   "contract": {
-    "purpose": "Breakouts（突破）surface（原 Discovery 改名，PRD §9.3 + §10.8，2026-06-16 spine pivot）：2 列 evidence-card 网格,按 base→breakout 强度排序(candidate→brk_strength_pct desc,recall-first),逐张检视入选候选价格走势 + base/τ/breakout 标注",
-    "invariants": "按 base→breakout STRENGTH 排序(非 composite/ignition);scope filter 先于 sort(C10);candidate 置顶;无旋钮;读 board.json(loadBoard),前端不重算引擎(C9)",
-    "verification": "Breakouts.test.tsx:≥18 卡、候选置顶、brk 强度序≠composite 序、scope 过滤、不露 composite/ignition;`make web-test`"
    }
   },
   {
@@ -1582,7 +1558,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "AC-M8 提交版回归 gate（vitest）：Ocean 纯绘制库 + v3 columnar(drawPtAt)/lazy detail(Tip 骨架) + drawOcean mock-ctx(≥500 点/scrubber/hover/pin/lasso/scope 淡化) + SSR scaffold",
-    "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)；Tip formal-filing PIT(§10.5)：formal filed 日 + basis tag ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "无浏览器：纯 helpers(radiusFor/makeScales/colorVar/withAlpha/logTicks/fmtPsTick/lerp·lerpLog·clamp/nearestPoint/pointsInRect/inScope) 直测；v3：mkStock 造 columnar 票、drawPtAt 由列重建点(gap 日 null)、Tip(stock,draw,detail,di)——detail=null 显 … 骨架(三绘制字段仍即时显)、detail 内联构造后显估值证据；interpolateOceanPoint(OceanDrawPt) 双有 lerp/prev-only 淡出/next-only 淡入/都无 null；drawOcean recording mock-ctx 计 arc≥500 落框内、scope 淡化、hover ring、切日点位移动、candidate glow(多 arc+stroke)、海平面上下 y 摆位、pinned 标签、lasso rect(多 fillRect+stroke)；Tip/Ocean SSR 断言(无 RS/Val pct)；fixture=ocean.sample.json(v3 bulk)；Tip formal-filing PIT(§10.5)：formal filed 日 + basis tag ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "npm test / make web-test 全绿（本文件 31 用例）"
    }
   },
@@ -1594,9 +1570,33 @@
    "stage": "implemented",
    "contract": {
     "purpose": "Ocean surface（PRD §9.2，M8 v3）：Ignition × Valuation 海平面 canvas + 配色切换 + √市值尺寸 + 日期滑杆 + Play/Pause/prev/next 受控插值动画(rAF) + hover tip(三绘制字段即时 + 九证据字段 per-stock 懒加载) + click pin + lasso 框选 set 全局 scope(首个 scope writer C10) + 右键 dot 经 onOpen 在 Stock surface 打开该票",
-    "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；onDown 仅左键(button 0，右键交 onContextMenu)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；onContextMenu 右键命中 dot(nearestPoint)→preventDefault+onOpen(命中才阻止原生菜单、空白处放行原生菜单)在 Stock 打开该票；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级；tip 增 formal-filing PIT(§10.5)：per-day formal filed(detail.as_of_effective_eod[di]，滑杆回溯仍诚实)+basis tag ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "读 ocean.json bulk(loadOcean，columnar 三绘制字段) 或 initial 注入；canvas 2x retina；drawRef 每渲染刷新闭包、redraw effect + rAF 播放循环都调它(phase/dateIndex 存 ref 故逐帧不触发 React render NFR-8)、色板 resolvePalette、绘制点位存 pos ref、drawPtAt 由列重建点；日期 slider 默认跟随 latest EOD；Play 在相邻真实 EOD 间 ~900-1200ms 插值、到最新日自停、拖 slider/点击暂停且 phase=0、插值仅视觉(tooltip 取真实快照)；hover 经 nearestPoint(当帧插值位)→ effect 懒取 ocean/<ticker>.json(loadOceanDetail，按票缓存 detailCache、hover 切换 abort 在途请求、仅 n==dates.length 对齐才应用)、Tip overlay(stock+drawPt+detail+di：三绘制字段即时显，九证据字段 detail 未到显 … 骨架、到后显值；detail.ticker≠hover 时传 null 防切换瞬间错配；无 RS/Val pct)；onDown 仅左键(button 0，右键交 onContextMenu)；mousedown/move/up 区分 click(<4px→toggle pin) 与 drag(→pointsInRect setPinned + setScope({pinned}))；onContextMenu 右键命中 dot(nearestPoint)→preventDefault+onOpen(命中才阻止原生菜单、空白处放行原生菜单)在 Stock 打开该票；pinned 与 scope 由 App 单一真源透传、Ocean 仅作 writer；respect scope 淡化非成员(C10)；schema 守卫(非 v3/缺 dates→「数据升级中」提示，防 frontend-only 部署读旧 ocean.json v1/v2 崩)；错误/加载态降级；tip 增 formal-filing PIT(§10.5)：per-day formal filed(detail.as_of_effective_eod[di]，滑杆回溯仍诚实)+basis tag ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "SSR 含 canvas+两配色切换+ign_pct/P-S 轴标+日期 range(max=dates-1)+Play 按钮+latest EOD 标；Tip SSR：detail 在显 ignition+估值倍数+freshness、detail=null 显 … 骨架(三绘制字段仍显)、均不含 RS/Val pct；命中/绘制/插值/drawPtAt 正确性见 ocean-draw 头测；npm build(tsc) 通过；浏览器交互+性能(hover 首取 detail)"
    }
+  },
+  {
+   "path": "web/src/views/Risers.test.tsx",
+   "kind": "code",
+   "module": "web",
+   "stage": "implemented",
+   "contract": {
+    "purpose": "Risers view + EvidenceCard 的 SSR 回归 gate(AC-M1/AC-M7，steady-riser)：从真实 fixture board.sample.json(schema v4) 渲染并断言用户可见合同",
+    "invariants": "Risers.test.tsx：≥18 卡、候选置顶、riser 序(candidate→net10)≠composite 序、candidate 只读 flag（fixture 含 flag 与 net10_pct>=90 推导分歧的票，断言榜首前缀跟 flag 走）、riser 证据字段(5d/10d/20d/上涨天数/回撤/vol)、📈 candidate 徽章+连续在榜、非 candidate net10 角标、mini-chart 近 10 日窗口静态高亮(mc-hlwin)、scope 过滤、不露 composite/ignition/🚀/drift/τ",
+    "verification": "`make web-test`（vitest SSR，renderToStaticMarkup 无 fetch）"
+   },
+   "notes": ""
+  },
+  {
+   "path": "web/src/views/Risers.tsx",
+   "kind": "code",
+   "module": "web",
+   "stage": "implemented",
+   "contract": {
+    "purpose": "Risers（连续上涨）surface（原 Breakouts 改名换芯，PRD §9.3 + §10.8，2026-07-02 spine pivot II）：2 列 evidence-card 网格，gate=10 天里 ≥6 天上涨且 net10>0，按 candidate→net10 desc 排序（recall-first），逐张检视入选候选价格走势，每个数字图上可数",
+    "invariants": "scope 过滤先于排序(C10)；排序键=riserKey(candidate?1:0, net10??-Infinity) 双键降序，与 compute/check_ac_m7.py::_riser_key 逐位一致（AC gate 校验同序）；candidate 为 compute 层单一真源只读 flag（derived_daily.rise_candidate），前端绝不重算/重推（连 pct>=90 推导都不允许，#92–#94 舍入边界教训）；平滑度(ker/ddw)只做证据列绝不做过滤；limit 由 App 传 RISERS_LIMIT(20) bounded/decide；initial 注入免 fetch(SSR/测试)；foot 说明 gate/排序/recall-first、永不给 buy/target",
+    "verification": "web/src/views/Risers.test.tsx：≥18 卡、candidate 置顶、riser 序=candidate→net10 且 ≠composite 序、flag-vs-pct>=90 推导分歧断言、scope 过滤、不露 breakout/composite/ignition；`make web-test`；compute/check_ac_m7.py AC-M7.2 校验导出序"
+   },
+   "notes": ""
   },
   {
    "notes": "",
@@ -1606,7 +1606,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "Rotation SSR 渲染 + rotation-draw 纯函数测试（AC-M3/AC-M4）：renderToStaticMarkup 喂提交版 rotation.sample.json(sector) + rotation.theme.sample.json(theme)",
-    "invariants": "用 export 真实产物 fixture(非手写)；sector：总览 ≥11 path/4 态/league/y=100/params、钻进 N=1+成员跳转、rotation-draw geometry(夹 100/null 断线/斜率分段/标签防重叠)；theme(M4.4)：总览 path 数=count(4)+不含「待 M4」+THEME_VAR(--th-*)色+「非市值加权」标注、theme drill(scope.kind=theme)N=1+成员；SVG SSR 可断言(非 canvas、effect 不跑) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "用 export 真实产物 fixture(非手写)；sector：总览 ≥11 path/4 态/league/y=100/params、钻进 N=1+成员跳转、rotation-draw geometry(夹 100/null 断线/斜率分段/标签防重叠)；theme(M4.4)：总览 path 数=count(4)+不含「待 M4」+THEME_VAR(--th-*)色+「非市值加权」标注、theme drill(scope.kind=theme)N=1+成员；SVG SSR 可断言(非 canvas、effect 不跑) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "npx vitest run：Rotation.test 14 项过(含 4 theme)、不破坏 Ocean(23)/Discovery(10)/composite(4) 既有；npm run build tsc 通过"
    }
   },
@@ -1618,7 +1618,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "Rotation surface（PRD §9.4）：bucket RS-Ratio SVG 多线总览 + enriched league 表 + 钻进 N=1 单线(斜率色)+summary+成员预览 + 常驻周日期轴 + hover 时间游标；GICS↔Theme 切换两种 bucket 模式均真实渲染(M4.4)",
-    "invariants": "读 rotation.json(sector)/rotation.theme.json(theme，toggle 首次切 theme 时 lazy-load)；initial 注入免 fetch(SSR/test)、其 bucket_type 定起始视图；theme 模式复用同一多线/league/钻进组件、经 bucketColorVar 上 THEME_VAR(--th-*)色；总览 hover 改由 svg 级 mousemove 驱动(按 viewBox-y 选最近线高亮 + 周游标)、点击 pick 当前高亮线、league 行/end label 仍可 hover/pick(共享 hover state)；右缘末值排序标签、y=100 基线；点 league 行/线→setScope({kind:bucketType}) 第 2 个 scope writer(C10)+原地 inline drawer 不 auto-jump(§9.1.2)、drill 当 scope.kind===当前 bucketType；N=1 线色=短窗斜率(↑绿↓红)=momentum、drill 保留原始周 index 对齐(soloScale/segments 仍见紧凑无 gap 序列)；两图底部常驻 MM/DD 周刻度；时间游标=竖线+最近线(总览)/该线(drill)RS marker + bucket·date·RS 读数，为 hover-only overlay 故 SSR 不渲染游标、不改 path 数=count 断言；成员预览复用 Discovery(已按 theme scope 过滤 s.themes — C9/DRY)不重复造；theme 总览标注 point-in-time + 非市值加权；params 暴露透明 reconstruction 不复刻 StockCharts ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "读 rotation.json(sector)/rotation.theme.json(theme，toggle 首次切 theme 时 lazy-load)；initial 注入免 fetch(SSR/test)、其 bucket_type 定起始视图；theme 模式复用同一多线/league/钻进组件、经 bucketColorVar 上 THEME_VAR(--th-*)色；总览 hover 改由 svg 级 mousemove 驱动(按 viewBox-y 选最近线高亮 + 周游标)、点击 pick 当前高亮线、league 行/end label 仍可 hover/pick(共享 hover state)；右缘末值排序标签、y=100 基线；点 league 行/线→setScope({kind:bucketType}) 第 2 个 scope writer(C10)+原地 inline drawer 不 auto-jump(§9.1.2)、drill 当 scope.kind===当前 bucketType；N=1 线色=短窗斜率(↑绿↓红)=momentum、drill 保留原始周 index 对齐(soloScale/segments 仍见紧凑无 gap 序列)；两图底部常驻 MM/DD 周刻度；时间游标=竖线+最近线(总览)/该线(drill)RS marker + bucket·date·RS 读数，为 hover-only overlay 故 SSR 不渲染游标、不改 path 数=count 断言；成员预览复用 Discovery(已按 theme scope 过滤 s.themes — C9/DRY)不重复造；theme 总览标注 point-in-time + 非市值加权；params 暴露透明 reconstruction 不复刻 StockCharts ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Rotation.test.tsx SSR：sector 总览 path 数=count(≥11)+4 态+league+y=100+params、钻进 N=1+summary+「看全部成员」；theme 总览 path 数=count(4)+不含「待 M4」占位+THEME_VAR(--th-*)色+「非市值加权」标注、theme drill(scope.kind=theme)N=1+成员；游标 hover-only 不破 path 数断言；npx vitest run(14 项)+ npm run build(tsc)通过"
    }
   },
@@ -1630,7 +1630,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "Stock 视图 + StockStack AC（PRD §9.6，M5.4）+ 点火诊断(M7.4 PRD §10.8)的 SSR 回归门",
-    "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)；formal-filing PIT(§10.5)：StockStack effective filed 标记(filed 标签+dashed 竖线)、Stock 口径注(formal-filing PIT/入估值序列/effective 日) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "用 stock.sample.json(从真实 bundle 再生、含 ignition 块)+renderToStaticMarkup 无 fetch；断言 Stock 头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 估值卡/无 composite 5 分量(stk-crow=0)/四格 stack；StockStack 四格标签/季度网格/PS 线/空 price 安全；M7.4 点火诊断断言：渲染 5 ignition 分量 + 点火证据 strip + persistence timeline；composite 退出用户可见层(M8、无大分数/无 5 分量 stack)；🔥持续点火 candidate(注入 TT22 真实块)亮 persist 日格、○未点火(fixture TT07 persist=0)无 lit 格；step_rate clamp(>20× 显 &gt;20×)；ignition 头条无旋钮(无可调参 PRD §16)：含「发现核心」、不含 k=/type=range/early；无 ignition(null)整块隐藏(back-compat)；formal-filing PIT(§10.5)：StockStack effective filed 标记(filed 标签+dashed 竖线)、Stock 口径注(formal-filing PIT/入估值序列/effective 日) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "npm test 全过；与 Stock.tsx + StockStack 合同一致"
    }
   },
@@ -1642,7 +1642,7 @@
    "stage": "implemented",
    "contract": {
     "purpose": "Stock detail 视图（PRD §9.6，M5.4 + M7.4 点火诊断 + M8）：per-name bundle 懒加载 + 四格时间轴对齐 stack + ignition 诊断小节(头条)；composite 退出用户可见层(无大分数/无 5 分量 stack)",
-    "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后；formal-filing PIT 口径注(§10.5)：估值卡下显 formal-filing PIT + 财季 period_end/正式披露 filed/入估值序列 effective_eod/披露滞后，footer 同口径说明(REVENUE 在 period_end、P/S 在 effective 阶进、不用预披露/8-K/估计) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI）",
+    "invariants": "per-name、不受 scope；懒加载 stock/<ticker>.json(loadStockBundle，ticker 变重取)+stock/index.json(下拉)或 initial 注入(SSR/测试)；核心 StockStack 四格(替代 #53 单 MiniChart)；头部 ticker+sector·mktcap+theme chips(exposure%)+IGN PCT 大分数(读 bundle.ignition.ign_pct、标签「发现核心」、candidate 时绿)；6 估值卡(bundle.valuation)；无 composite 5 分量 stack(M8)；M7.4 在 stack 与估值卡之间插「点火诊断」小节(bundle.ignition 存在才渲染、缺则整块隐藏，back-compat)：persistence timeline(PersistTimeline 离散日格、lit 格=连续 top-decile 日、capped 10) + 🔥持续点火/○未点火 + ign_pct/persist/score 读数 + 点火证据 strip(复用 .ec-ignev，brk/vol/step/MA50，step 经 fmtStepRate clamp) + ignition 5 原始分量(accel/expand/vsurge/breakout/rsturn，原始值非 [0,1] 故不画百分比条)；ignition 块 verbatim 自 bundle(同源 C9、勿重算)、ignition 是核心无可调参；composite 退出用户可见层(M8、不再显示大分数/分量 stack，仅计算层暂存)；无 k prop；读同一 valuation_daily/fundamentals_q(C9)；filing AI 摘要留 M5 之后；formal-filing PIT 口径注(§10.5)：估值卡下显 formal-filing PIT + 财季 period_end/正式披露 filed/入估值序列 effective_eod/披露滞后，footer 同口径说明(REVENUE 在 period_end、P/S 在 effective 阶进、不用预披露/8-K/估计) ; **2026-06-16 spine pivot**：ignition→base→breakout（brk_strength_pct/brk_*、Discovery→Breakouts、Ocean 纵轴 brk_pct、composite/ignition 退出 UI） ; **2026-07-02 spine pivot II**：base→breakout→steady-riser（riser 块 net5/net10/net20/up10/ddw10/ker10/net10_pct/candidate/streak_days、Breakouts→Risers、Ocean 纵轴 rise_net10_pct(schema v5)、candidate=compute 单一真源只读 flag 绝不前端重推）",
     "verification": "Stock.test SSR(注入 bundle)断言头部 IGN PCT(非 COMPOSITE)/theme chip exposure%/6 卡/无 composite 5 分量(stk-crow=0)/四格 stack + 点火诊断(5 ignition 分量/点火证据/persistence timeline/🔥candidate/○未点火/step clamp/无 k=/无 range 滑块/无 ignition 隐藏)；浏览器 smoke 懒加载 + 四格渲染"
    }
   },
@@ -1774,6 +1774,32 @@
   },
   {
    "notes": "",
+   "path": "web/src/views/Breakouts.test.tsx",
+   "kind": "code",
+   "module": "web",
+   "stage": "implemented",
+   "contract": {
+    "purpose": "Breakouts view + EvidenceCard 的 SSR 回归 gate(AC-M1/AC-M7,base→breakout):从真实 fixture board.sample.json 渲染并断言用户可见合同",
+    "invariants": "用 react-dom/server SSR;board.sample.json 为 export 产物(breakout 块);断言排序键=candidate→brk_strength_pct、不露 composite/ignition、base/τ/breakout 证据、scope",
+    "verification": "`make web-test` 全绿;与 export/board.py breakout 块同口径"
+   },
+   "removed_at": "2026-07-02T06:52:31.921455+00:00"
+  },
+  {
+   "notes": "",
+   "path": "web/src/views/Breakouts.tsx",
+   "kind": "code",
+   "module": "web",
+   "stage": "implemented",
+   "contract": {
+    "purpose": "Breakouts（突破）surface（原 Discovery 改名，PRD §9.3 + §10.8，2026-06-16 spine pivot）：2 列 evidence-card 网格,按 base→breakout 强度排序(candidate→brk_strength_pct desc,recall-first),逐张检视入选候选价格走势 + base/τ/breakout 标注",
+    "invariants": "按 base→breakout STRENGTH 排序(非 composite/ignition);scope filter 先于 sort(C10);candidate 置顶;无旋钮;读 board.json(loadBoard),前端不重算引擎(C9)",
+    "verification": "Breakouts.test.tsx:≥18 卡、候选置顶、brk 强度序≠composite 序、scope 过滤、不露 composite/ignition;`make web-test`"
+   },
+   "removed_at": "2026-07-02T06:52:31.921459+00:00"
+  },
+  {
+   "notes": "",
    "path": "web/src/views/Discovery.test.tsx",
    "kind": "code",
    "module": "web",
@@ -1799,5 +1825,5 @@
    "removed_at": "2026-06-16T15:41:30.212229+00:00"
   }
  ],
- "last_structure_digest": "80805ec8f493570cc69365b7d641fa9c48f99f77505eedfe12a7dd4f3f9b77ef"
+ "last_structure_digest": "1c72d83923a61a4fc7d3d5e6c58ff308cd465ebef2e995b5860a03bd7f691f95"
 }

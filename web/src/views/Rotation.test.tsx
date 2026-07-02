@@ -49,8 +49,8 @@ describe('Rotation drill (scope=sector)', () => {
     expect(html).toContain('momentum') // SoloRSLine axis label = slope color
   })
 
-  it('offers the "see all members in Breakouts" scope+jump action', () => {
-    expect(html).toContain('在 Breakouts 看全部成员')
+  it('offers the "see all members in Risers" scope+jump action', () => {
+    expect(html).toContain('在 Risers 看全部成员')
   })
 })
 
@@ -79,7 +79,7 @@ describe('Rotation theme mode (M4.4)', () => {
     const html = renderToStaticMarkup(<Rotation initial={themeData} scope={{ kind: 'theme', key: th }} />)
     expect(html).toContain(th)
     expect(html).toContain('单条放大')
-    expect(html).toContain('在 Breakouts 看全部成员')
+    expect(html).toContain('在 Risers 看全部成员')
   })
 })
 
