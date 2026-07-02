@@ -6,18 +6,19 @@
 ## 0. 这是什么
 
 一个 **盘后(EOD)、美股专属** 的 momentum + valuation 监控工具。
-**脊柱：两台 per-stock 引擎(composite 确认 + ignition 发现，PRD §10.8) → 五个 lens，两个尺度(wide explore / bounded decide)，零常驻 backend。**
+**脊柱：单一核心筛法 steady-riser（连续上涨，PRD §10.8，2026-07-02）→ 五个 lens，两个尺度(wide explore / bounded decide)，零常驻 backend。**
 
-**SCOPE（不可越界）：** 仅限美股(NYSE/Nasdaq/AMEX，ADR 可纳入)；中文/cross-language 标的判定本期不做。
+**SCOPE（不可越界）：** 仅限美股(NYSE/Nasdaq/AMEX，ADR 可纳入；**ETF 已拍板纳入、落地推后**，PRD §17)；中文/cross-language 标的判定本期不做。
 
 ## 1. 脊柱原则（贯穿所有 surface，code 不要翻案）
 
-- 引擎 = **两台并列**：`composite`(确认，长窗口) + `ignition`(发现，短窗口/拐点/突破，PRD §10.8)；**五个 lens 共用同一份 per-stock 数据**（数据一致性是硬约束）。
-- Discovery=ignition 持续点火榜 / Rotation=composite group-by / Ocean=二维相图 / Valuation=横截面 / Stock=单票展开。
-- 两个尺度：wide/explore(Ocean、Valuation screener，数千只) + bounded/decide(Discovery、Rotation)。
-- **核心 = ignition**(项目核心技术指标，无可调参)；composite 退**辅助确认**，用**固定权重**(k=0.5)，不删任何 component。`early⟷reliable` 旋钮**已取消**(诊断为假 early、核心转 ignition、ignition 无可调参；PRD §16/§17)。
-- **evidence-first**：默认露原始证据，composite 只是可展开角标(固定权重、可看不可拨)，永不给 buy/target。
-- **核心是 ignition、composite 退辅助确认**：不回测优化，买 robustness 不买 alpha；ignition 无可调参、composite 固定权重，全程暴露 composite 分量条(可看不可拨)，旋钮已取消。
+- 核心筛法 = **steady-riser（连续上涨）**：把「每天扫几千张 K 线找过去一两周持续走高、回撤少的票」数学化——W=10 天净涨幅(net5/10/20)/上涨天数占比(up10)/窗口内最大回撤(ddw10)/路径效率(ker10)，gate=`up10≥0.6 & net10>0`、按 net10 排序取 top-N(50)。**算法三条硬要求：简单、不易出错、图上可验证（与直观相符）；不指向预测收益**（recall 工具，precision 归用户翻财报）。
+- **五个 lens 共用同一份 per-stock 数据**（C9 硬约束；`rise_candidate` 由 compute 层单一真源，export/前端只读不重算）。
+- Risers=连续上涨榜 / Rotation=RS-Ratio group-by / Ocean=rise_net10_pct×估值二维相图 / Valuation=横截面 / Stock=单票展开。
+- 两个尺度：wide/explore(Ocean、Valuation screener，数千只) + bounded/decide(Risers、Rotation)。
+- **无可调 alpha 参**(W=10、up≥6/10、N=50 是 UX 常数)；**平滑度(ker/ddw)绝不做硬 gate**(exp 10 反例：严平滑 gate 漏 SNDK 到 d66——真火箭初期不平滑)，只做证据列。
+- **evidence-first**：默认露原始证据(每个数字在 K 线图上可人工数出来)，永不给 buy/target；不回测优化、不声称前向收益(exp 10 picks≈池中位)，买 robustness 不买 alpha。
+- **base→breakout / ignition / composite 全部退役**(PRD §10.6/§10.9 历史锚点)。
 
 ## 2. 开工前必读（权威顺序）
 
@@ -55,7 +56,7 @@
 
 ## 5. 模块拓扑（`make atlas` 看全貌）
 
-`ingest/`(Stooq+Nasdaq+EDGAR 拉取) · `compute/`(DuckDB composite/RS/valuation) · `export/`(Parquet/JSON 分片) · `web/`(canvas + duckdb-wasm 客户端) · `themes/`(主题 membership，LLM+human-in-loop) · `engine//scripts//gate/`(devtopology 工作流) · `docs/`(规格)。
+`ingest/`(Stooq+Nasdaq+EDGAR 拉取) · `compute/`(DuckDB riser/RS/valuation) · `export/`(Parquet/JSON 分片) · `web/`(canvas + duckdb-wasm 客户端) · `themes/`(主题 membership，LLM+human-in-loop) · `engine//scripts//gate/`(devtopology 工作流) · `docs/`(规格)。
 
 ## 6. 三层状态协议
 
@@ -63,12 +64,12 @@
 
 ## 7. 已定死（code 不要再翻案，详见 PRD §16 / BUILD-PLAN §12）
 
-- spine：**2 引擎(composite 确认 + ignition 发现)** → 5 surface → 2 scale → 零持久后端。
-- 数据源：Stooq(EOD) + Nasdaq screener(universe/mktcap/GICS/PE) + EDGAR(权威基本面) + yfinance(脆弱兜底)。
-- 数学：vol-normalized EWMAC、RS=双窗超额收益横截面百分位、trend=KER/OLS t 值、composite=Σwᵢ·分量(权重固定 k=0.5，前端读引擎导出值不重算 C9；early⟷reliable 旋钮已取消)。
-- **ignition(双引擎，PRD §10.8/§16；项目核心)**：早期发现引擎(短窗口/拐点/突破)、**核心技术指标**，瞬时点火无精度、唯 persistence(持续~5日)有 lift → Discovery=持续点火榜；三级漏斗(触发→持续→翻财报)；实证 `analysis/`。**ignition 无任何可调参**(刻意)；composite 退辅助确认(固定权重)，旋钮已取消。
+- spine：**单一核心筛法 steady-riser（连续上涨，2026-07-02）** → 5 surface → 2 scale → 零持久后端。**base→breakout / ignition / composite 全部退役。**
+- 数据源：Stooq(EOD) + Nasdaq screener(universe/mktcap/GICS/PE) + EDGAR(权威基本面) + yfinance(脆弱兜底)；ETF 纳入已拍板、落地推后(PRD §17)。
+- 数学：**核心 = steady-riser（PRD §10.8）**——`rise_net5/10/20`(净涨幅)、`rise_up10`(上涨天数占比)、`rise_ddw10`(窗口回撤)、`rise_ker10`(路径效率)，gate=`up10≥0.6 & net10>0`、net10 排序 top-50、`rise_candidate` 单一真源(前端读导出值不重算 C9)；辅助：vol-normalized EWMAC、RS=双窗超额收益横截面百分位、trend=KER/OLS t 值。early⟷reliable 旋钮已取消。
+- **平滑度绝不做硬 gate**(exp 10：严平滑 gate 把 SNDK 挡到 d66；ker/ddw/up 是证据列)；漏斗=recall-first 筛选→基本面/财务 precision(human)。
 - 估值：price ÷ trailing-4Q 日频(分母季度 ASOF)、**formal-filing PIT**(分母只用正式 SEC filing、ASOF 键=`effective_eod_date`(v1==filed_date)非 period_end、`valuation_basis='formal_filing_pit'`；PRD §10.5)、`E≤0→n.m.` 退 P/S、无 forward、百分位用 common-vintage(当前 fresh-cohort v1)。
-- Rotation = RS-Ratio 多线(非散点)；Ocean 轴固定 RS×估值(**RRG-axes 已砍**)。
+- Rotation = RS-Ratio 多线(非散点)；Ocean 轴固定 rise_net10_pct×原始 P/S log(**RRG-axes 已砍**)。
 - 全局 scope(all|sector|theme|pinned)单一真源、跨 tab 粘滞、可见可一键清。
 - point-in-time membership 硬要求；theme 指数非市值加权。
 
