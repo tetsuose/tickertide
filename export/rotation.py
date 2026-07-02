@@ -6,8 +6,8 @@ enriched league. This export assembles, per bucket (sector M3 / theme M4):
     the SAME alignment Ocean uses for pts[] so the client just zips series to axis;
   - the league snapshot: level / slope_4w / state + member aggregates (breadth /
     #at-52w-high / # igniting / # candidates / agg EV-S / multi-horizon rel return) — all
-    from compute.rotation.league_table, the SAME source as Discovery/Ocean/Stock (C9). M8:
-    ignition aggregates replace the composite median (composite is no longer user-visible);
+    from compute.rotation.league_table, the SAME source as Risers/Ocean/Stock (C9).
+    2026-07-02 pivot II: igniting/candidates both count the STORED rise_candidate flag;
   - members[]: top-N member tickers; the client filters board.json by scope=sector for
     the actual evidence cards, so rotation.json carries only the ticker list (DRY/C9);
   - etf: the SPDR ticker from ingest/sector_etf_map.txt (audit; bucket joins by name).
@@ -69,12 +69,12 @@ def _etf_map() -> dict:
 
 
 def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
-    """Top-N member tickers per bucket by base→breakout strength (brk_strength_pct) on
+    """Top-N member tickers per bucket by the steady-riser sort (rise_net10) on
     `latest_date`. Bucket membership is rotation._bucket_members (sector: universe.sector;
     theme: theme_membership point-in-time, many-to-many) — the SAME source the league uses
-    (C9). 2026-06-16 spine pivot: ordered by the base→breakout engine, not composite/ignition.
-    The client filters board.json by scope for the actual evidence cards (DRY/C9); this carries
-    the ticker list only."""
+    (C9). 2026-07-02 spine pivot II: ordered by the riser screen's sort key (net10), the
+    same order Risers shows. The client filters board.json by scope for the actual evidence
+    cards (DRY/C9); this carries the ticker list only."""
     mem = rotation._bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
@@ -82,8 +82,8 @@ def _members(con, latest_date, top_n: int, bucket_type: str) -> dict:
             """
             SELECT mr.bucket AS bucket, d.ticker
             FROM derived_daily d JOIN mem_rel mr ON mr.ticker = d.ticker
-            WHERE d.date = ? AND d.brk_strength_pct IS NOT NULL
-            ORDER BY mr.bucket, d.brk_strength_pct DESC
+            WHERE d.date = ? AND d.rise_net10 IS NOT NULL
+            ORDER BY mr.bucket, d.rise_net10 DESC
             """,
             [latest_date],
         ).fetchall()

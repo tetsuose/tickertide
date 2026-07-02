@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated_at": "2026-07-02T06:09:18.314088+00:00",
+ "updated_at": "2026-07-02T06:27:41.036641+00:00",
  "policy": {
   "stage_values": [
    "scaffolded",
@@ -133,6 +133,18 @@
     "invariants": "文档链接有效；架构与里程碑与 PRD 同步；命令为真",
     "verification": "README 内链接可达；命令为有效 make target"
    }
+  },
+  {
+   "path": "analysis/breakout_engine.py",
+   "kind": "script",
+   "module": "analysis",
+   "stage": "baseline",
+   "contract": {
+    "purpose": "已退役的 base→breakout 变点引擎实现(原 compute/breakout.py,2026-07-02 pivot II 移出管线,PRD §10.9):log 价 2 段分段线性单变点 τ + 无量纲特征 + recall-first strength。仅供 analysis/walkforward_breakout.py(其退役依据之一的 OOS 验证)复现使用,不被 ingest/compute/export/web 任何管线代码 import",
+    "invariants": "纯历史保留:不进 nightly、不进 requirements 之外的依赖、不新增调用方;算法冻结不再改(改=翻案退役决定);因果性与常数同原实现(H=504/MINSEG=40/recency 15-252)",
+    "verification": "python3 analysis/walkforward_breakout.py 可跑通(import breakout_engine 解析自 analysis/ 目录);compute/ 目录 grep 无 breakout import"
+   },
+   "notes": "退役引擎归档(compute/breakout.py -> analysis/);产品层零引用"
   },
   {
    "notes": "暴涨股(几倍十几倍)是否来自前期深跌/随大盘 vs 行业/热度的 leakage-clean 拆解(edge-research exp9);裁决三半:行业≈idio-vol×热度成立、随大盘/beta 对尾部无edge、深跌非干净零亦非可交易edge(survivorship上界+不可分+接飞刀);→Ocean 不编码深跌看涨轴(PRD§16)",
@@ -316,18 +328,6 @@
   },
   {
    "notes": "",
-   "path": "compute/breakout.py",
-   "kind": "script",
-   "module": "compute",
-   "stage": "implemented",
-   "contract": {
-    "purpose": "per-stock base→breakout 信号数学（核心探测引擎，PRD §10.8，2026-06-16 spine pivot 取代 ignition）：在 log 价格上逐日因果估计单变点 τ（2 段分段线性 OLS、扫合法切点取最小总 SSE、无固定 base/breakout 窗口），导出无量纲特征（base_slope=s1/σ、brk_slope=s2/σ、drift_step=(s2−s1)/σ、fit_gain=1−SSE2/SSE1、ceiling clearance、bar-level VCP、volume surge）与 recall-first brk_strength",
-    "invariants": "pandas/numpy 算 per-stock 时序（横截面 PERCENT_RANK(brk_strength)→brk_strength_pct 在 run.py 做，C9）；因果——每个交易日仅用 trailing H 窗、τ 限 recency band(REC_LO..REC_HI)，绝不前视；用 adj_close 作 log 价；常数离线定死、无用户旋钮（PRD §10.8.4：H=504/MINSEG=40/REC 15-252/SLACK_FLAT=1.5/退化护栏 CLEAR_MAX/BRK_SLOPE_CAP/BASE_PX_MIN/BASE_FLAT_MAX）；strength=fit·max(0,drift)·exp(−1.5|base_slope|) 且护栏不过即 0（recall-first，假阳交下游基本面 precision）；与 analysis/ 原型（full_screen/live_screen）同源数学",
-    "verification": "compute_breakout 返回 date + brk_tau_date + 8 特征列；fit_gain≤1（2 段嵌套 1 段、SSE2≤SSE1line）；brk_strength≥0；护栏不过的票 strength=0 不进候选；横截面后（run.py）brk_strength_pct∈[0,100]；公式对齐 PRD §10.8.1-10.8.4"
-   }
-  },
-  {
-   "notes": "",
    "path": "compute/check.py",
    "kind": "script",
    "module": "compute",
@@ -411,6 +411,7 @@
    }
   },
   {
+   "notes": "核心筛法 per-stock 层(2026-07-02 换芯);candidate flag 的单一真源在 run.py SQL 落库,export/web 只读不重算(C9,#92-#94 舍入边界教训)",
    "path": "compute/riser.py",
    "kind": "script",
    "module": "compute",
@@ -419,8 +420,7 @@
     "purpose": "steady-riser 核心筛法的 per-stock 时序指标(PRD §10.8,2026-07-02 spine pivot II):把「每天扫几千张K线找过去一两周持续走高、回撤少的票」数学化——rise_net5/10/20(净涨幅)、rise_up10(上涨天数占比)、rise_ddw10(窗口内最大回撤)、rise_ker10(路径效率)。每个数字图上可人工核对(简单/不易出错/与直观相符);不指向预测收益(exp 10 picks≈池中位)。横截面工作(percentile/gate/candidate/streak)留给 compute/run.py 的 DuckDB SQL(与 signals/breakout 同分工)",
     "invariants": "全因果:每个(ticker,date)行只用<=该日收盘;主窗 W=10、参照窗 5/20、gate up>=6/10、TOP_N=50 是 UX 常数非拟合量(§10.8.5,不回测优化);首 W 行指标置 NaN(部分窗口绝不可能过 gate);平滑度(ker/ddw)绝不做硬 gate(§10.8.3,SNDK d66 反例)只做证据列;输出 date 为 str %Y-%m-%d 与 signals.py 对齐;_spx 形参仅保持引擎签名统一、不使用",
     "verification": "make fixture-pipeline && make check(CHECK_OK):derived_daily 落 rise_* 9 列;抽查合成完美上涨票(up10=1.0、ker=1.0、ddw=0)与候选榜排序方向一致;不变量 0 违例:rise_candidate=1 ⟹ (up10>=0.6 ∧ net10>0)、(streak_days>0) ⟺ candidate=1;candidate 与 rise_net10_pct 解耦(pct 89.7 亦可 candidate=1,flag 单一真源不由 y 值推导)。实证 analysis/steady_riser.py(exp 10)"
-   },
-   "notes": "核心筛法 per-stock 层(2026-07-02 换芯);candidate flag 的单一真源在 run.py SQL 落库,export/web 只读不重算(C9,#92-#94 舍入边界教训)"
+   }
   },
   {
    "notes": "",
@@ -735,18 +735,6 @@
    }
   },
   {
-   "notes": "",
-   "path": "export/check_breakout.py",
-   "kind": "script",
-   "module": "export",
-   "stage": "implemented",
-   "contract": {
-    "purpose": "base→breakout C9 自检（AC-M7，2026-06-16 spine pivot 取代 ignition 自检）：复读导出的 board.json 证明 breakout 块同源自引擎——覆盖率、范围（brk_strength_pct∈[0,100]、brk_strength≥0）、recall-first candidate gate（==brk_strength_pct≥90，无 persistence）、evidence.vol_mult==features.vsurge（brk_vsurge verbatim）、非空候选、stock↔board breakout 块逐字一致",
-    "invariants": "只读导出产物（board.json + stock/<T>.json）不碰引擎；candidate gate 用 board.brk_top_decile（默认 90）重算、与 board 自身 candidate 比对；features 必须恰为 6 键（base_slope/brk_slope/drift_step/fit_gain/clearance/vsurge）；check() 复用于 compute/check_ac_m7.py（DRY，单一 C9 源）；只输出名称/计数无 secret",
-    "verification": "GATE_PASS/GATE_FAIL 单行；breakout_coverage==stocks；候选满足 brk_strength_pct≥90；stock_xcheck>0；与 export/board._breakout 同口径"
-   }
-  },
-  {
    "notes": "跨两份 export(board.json+ocean.json，须同一 DB)校验 + v3 per-stock detail(ocean/<T>.json)拆分一致性；本任务以 520 票 fixture 验证 shared=519 全过(含 detail/gate/evs 各 519)",
    "path": "export/check_ocean.py",
    "kind": "script",
@@ -757,6 +745,18 @@
     "invariants": "读同一 DB 导出的 board.json + ocean.json + ocean/<T>.json，对最新快照逐票断言：as_of 同日；ign_pct=ocean bulk ign_pct[-1] == board.ignition.ign_pct(同 derived_daily.ign_pct)；candidate=ocean bulk cand[-1] == board.ignition.candidate(同持续点火 gate)；ps=ocean bulk ps[-1] == board.valuation.ps(同 valuation_daily.ps)；v3 拆分一致：detail.n==len(ocean.dates)(窗口对齐)、bulk 预算的 cand == (ign_pct≥90 AND detail.ign_persist_days[-1]≥5)(gate 不因拆分失同步)、detail.evs[-1] == board.valuation.evs 且 detail.as_of_effective_eod[-1] == board.valuation.as_of_effective_eod(detail 估值+formal-filing PIT 可得日追溯同一 board valuation_daily 行，§10.5)、detail.valuation_basis∈{formal_filing_pit,NULL}；容差仅取整(ign 0.1/ps 0.01/evs 0.01)；只比两份都在的票；任一不符 GATE_FAIL 非零退出可门禁；names/counts only 无 secrets；**2026-06-16 spine pivot**：交叉校验改 ocean.brk_pct==board.breakout.brk_strength_pct、candidate=recall-first top-decile gate（无 persistence）、v4 bulk↔detail",
     "verification": "make ocean-c9（先 fixture-pipeline + make export 出 bulk + ocean/ detail）→ GATE_PASS、shared/ign_checked/cand_checked/ps_checked/detail_checked/gate_checked/evs_checked/aoe_checked 计数一致；构造不符(含 gate 失同步)可触发 GATE_FAIL"
    }
+  },
+  {
+   "path": "export/check_riser.py",
+   "kind": "script",
+   "module": "export",
+   "stage": "baseline",
+   "contract": {
+    "purpose": "AC-M7 C9 守卫(2026-07-02 pivot II):证明 board.json 的 riser 块与引擎同源——覆盖率/取值范围(net10_pct∈[0,100]、up10/ker10∈[0,1]、ddw10<=0)、candidate⇒自带 gate 证据(up10>=0.6∧net10>0)、#candidates<=top-N、streak⇔candidate、非空、stock↔board riser 块逐字节一致(同 board._riser 构建)。被 make riser-c9 与 compute/check_ac_m7.py 复用(DRY 单一 C9 逻辑源)",
+    "invariants": "candidate flag 是 derived_daily 落库的单一真源——本检查刻意**不重推 top-N**(那会是 gate 的第二实现,#92-#94 舍入边界教训的漂移类别),只证 flag 与其自带证据不矛盾;只读导出产物(board.json+stock bundles),不touch DB;names/counts only 无 secrets;任何不一致 exit 非零可作 gate",
+    "verification": "make riser-c9 输出 GATE_PASS(fixture 30 票:coverage=30/30、candidates=13<=top-50、stock_xcheck=8);构造 candidate 但 up10<0.6 的行会 GATE_FAIL 'gate evidence fails'"
+   },
+   "notes": "原 check_breakout.py(2026-06-16 pivot)改名重写;守卫对象由 brk 块换 riser 块"
   },
   {
    "notes": "",
@@ -1722,6 +1722,19 @@
  "retired_entries": [
   {
    "notes": "",
+   "path": "compute/breakout.py",
+   "kind": "script",
+   "module": "compute",
+   "stage": "implemented",
+   "contract": {
+    "purpose": "per-stock base→breakout 信号数学（核心探测引擎，PRD §10.8，2026-06-16 spine pivot 取代 ignition）：在 log 价格上逐日因果估计单变点 τ（2 段分段线性 OLS、扫合法切点取最小总 SSE、无固定 base/breakout 窗口），导出无量纲特征（base_slope=s1/σ、brk_slope=s2/σ、drift_step=(s2−s1)/σ、fit_gain=1−SSE2/SSE1、ceiling clearance、bar-level VCP、volume surge）与 recall-first brk_strength",
+    "invariants": "pandas/numpy 算 per-stock 时序（横截面 PERCENT_RANK(brk_strength)→brk_strength_pct 在 run.py 做，C9）；因果——每个交易日仅用 trailing H 窗、τ 限 recency band(REC_LO..REC_HI)，绝不前视；用 adj_close 作 log 价；常数离线定死、无用户旋钮（PRD §10.8.4：H=504/MINSEG=40/REC 15-252/SLACK_FLAT=1.5/退化护栏 CLEAR_MAX/BRK_SLOPE_CAP/BASE_PX_MIN/BASE_FLAT_MAX）；strength=fit·max(0,drift)·exp(−1.5|base_slope|) 且护栏不过即 0（recall-first，假阳交下游基本面 precision）；与 analysis/ 原型（full_screen/live_screen）同源数学",
+    "verification": "compute_breakout 返回 date + brk_tau_date + 8 特征列；fit_gain≤1（2 段嵌套 1 段、SSE2≤SSE1line）；brk_strength≥0；护栏不过的票 strength=0 不进候选；横截面后（run.py）brk_strength_pct∈[0,100]；公式对齐 PRD §10.8.1-10.8.4"
+   },
+   "removed_at": "2026-07-02T06:27:41.036623+00:00"
+  },
+  {
+   "notes": "",
    "path": "compute/ignition.py",
    "kind": "script",
    "module": "compute",
@@ -1732,6 +1745,19 @@
     "verification": "compute_ignition 返回 date + ig_accel/ig_expand/ig_vsurge/ig_breakout/ig_rsturn 五列；ig_breakout∈[0,1]（构造 clamp）；横截面综合后（run.py）ignition∈[0,100]；公式对齐 PRD §10.8.1 与 analysis/verify_ignition.ignition_metrics 同源"
    },
    "removed_at": "2026-06-17T01:00:22.597339+00:00"
+  },
+  {
+   "notes": "",
+   "path": "export/check_breakout.py",
+   "kind": "script",
+   "module": "export",
+   "stage": "implemented",
+   "contract": {
+    "purpose": "base→breakout C9 自检（AC-M7，2026-06-16 spine pivot 取代 ignition 自检）：复读导出的 board.json 证明 breakout 块同源自引擎——覆盖率、范围（brk_strength_pct∈[0,100]、brk_strength≥0）、recall-first candidate gate（==brk_strength_pct≥90，无 persistence）、evidence.vol_mult==features.vsurge（brk_vsurge verbatim）、非空候选、stock↔board breakout 块逐字一致",
+    "invariants": "只读导出产物（board.json + stock/<T>.json）不碰引擎；candidate gate 用 board.brk_top_decile（默认 90）重算、与 board 自身 candidate 比对；features 必须恰为 6 键（base_slope/brk_slope/drift_step/fit_gain/clearance/vsurge）；check() 复用于 compute/check_ac_m7.py（DRY，单一 C9 源）；只输出名称/计数无 secret",
+    "verification": "GATE_PASS/GATE_FAIL 单行；breakout_coverage==stocks；候选满足 brk_strength_pct≥90；stock_xcheck>0；与 export/board._breakout 同口径"
+   },
+   "removed_at": "2026-07-02T06:27:41.036628+00:00"
   },
   {
    "notes": "读单份 board.json(export/board.py 产物)做 ignition 块的同源自检；本任务以 30 票 fixture 验证 coverage=30/candidates=2(persist≥5)/vsurge_checked=30 全过；负向(翻 candidate 标记 / 改 vol_mult)可触发 GATE_FAIL",
@@ -1773,5 +1799,5 @@
    "removed_at": "2026-06-16T15:41:30.212229+00:00"
   }
  ],
- "last_structure_digest": "ecc9d33ae40fd579706037b0cccb5b078a5ce3c2d97bcfaaeb7ac54ea70a1a65"
+ "last_structure_digest": "80805ec8f493570cc69365b7d641fa9c48f99f77505eedfe12a7dd4f3f9b77ef"
 }

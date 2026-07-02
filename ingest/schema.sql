@@ -89,8 +89,9 @@ CREATE TABLE IF NOT EXISTS bucket_rrg (
 -- spine pivot II). One row per (ticker,date) shared by every lens (C9). rise_* is the
 -- CORE: chart-verifiable metrics + the cross-sectional percentile + the candidate flag
 -- (single source of truth — export/web never re-derive it) + the on-list streak.
--- composite/c_* are calc-layer residue only (§10.6, never user-visible); brk_* is the
--- RETIRED base→breakout engine (§10.9) kept only until export/ switches off it.
+-- composite/c_* are calc-layer residue only (§10.6, never user-visible). The retired
+-- engines' columns (ig_* / brk_*) are gone: dropped by db.drop_*_columns migrations on
+-- existing DBs, absent from fresh ones.
 CREATE TABLE IF NOT EXISTS derived_daily (
   ticker            VARCHAR,
   date              DATE,
@@ -115,18 +116,6 @@ CREATE TABLE IF NOT EXISTS derived_daily (
   c_accel           DOUBLE,    -- component [0,1]: rs_accel score
   composite         DOUBLE,    -- 100 * Σ wᵢ·cᵢ at default k (calc-layer only, §10.6 — NOT user-visible)
   rank_in_universe  INTEGER,   -- dense rank by composite per date (1 = strongest)
-  -- base→breakout (RETIRED, PRD §10.9; 2026-07-02 spine pivot II). Kept only until export/
-  -- switches to rise_* — then these columns are removed (fresh DBs each nightly).
-  brk_tau_date      VARCHAR,   -- estimated changepoint date (2-seg piecewise-linear kink on log price)
-  brk_base_slope    DOUBLE,    -- s1/σ: base-segment slope (≈0 = flat long base)
-  brk_brk_slope     DOUBLE,    -- s2/σ: breakout-segment slope (steep)
-  brk_drift_step    DOUBLE,    -- (s2-s1)/σ: slope jump
-  brk_fit_gain      DOUBLE,    -- 1-SSE2/SSE1: kink salience
-  brk_clearance     DOUBLE,    -- close/max(base-high) - 1
-  brk_vcp           DOUBLE,    -- bar-level VCP: ATR(breakout)/ATR(base)
-  brk_vsurge        DOUBLE,    -- volume surge: mean(vol breakout)/mean(vol base)
-  brk_strength      DOUBLE,    -- recall-first combined strength
-  brk_strength_pct  DOUBLE,    -- cross-sectional percentile of brk_strength
   -- steady-riser (CORE screen, PRD §10.8; 2026-07-02 spine pivot II). Chart-verifiable
   -- by construction: every value can be counted off the candles. Gate/candidate/streak
   -- are computed once in compute/run.py (C9 single source of truth).

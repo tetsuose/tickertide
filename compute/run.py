@@ -3,8 +3,8 @@
 Usage:
     python3 compute/run.py [--k 0.5] [--db data/tickertide.duckdb] [--min-bars 60]
 
-Per-stock time-series metrics (pandas, compute/signals.py + compute/riser.py +
-compute/breakout.py) are concatenated, then the cross-sectional work runs in DuckDB:
+Per-stock time-series metrics (pandas, compute/signals.py + compute/riser.py) are
+concatenated, then the cross-sectional work runs in DuckDB:
   - rs_pct  = PERCENT_RANK() over each date (the IBD-style cross-sectional RS)
   - rs_accel = rs_pct[t] - rs_pct[t-21]
   - components c_* clamped to [0,1]; composite = 100·Σ wᵢ·cᵢ at the given k
@@ -12,8 +12,8 @@ compute/breakout.py) are concatenated, then the cross-sectional work runs in Duc
     (compute/riser.py) + cross-sectional rise_net10_pct, the gate (up10>=0.6 AND net10>0),
     the net10 top-N `rise_candidate` flag (SINGLE source of truth — export/web never
     re-derive it) and the on-list `rise_streak_days` (islands).
-  - base→breakout (RETIRED §10.9): still computed THIS PR only because export/ still reads
-    brk_* — removed together with the export switch (keeps nightly green between merges).
+base→breakout is fully retired (§10.9 — columns dropped, db.drop_breakout_columns; the
+engine implementation lives on as analysis/breakout_engine.py, retirement evidence only).
 ignition is fully retired (columns dropped). composite is calc-layer residue only (§10.6).
 All land in the SAME derived_daily row (C9).
 """
@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 import pandas as pd  # noqa: E402
 
-from compute import breakout, db, riser, signals  # noqa: E402
+from compute import db, riser, signals  # noqa: E402
 
 
 def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
@@ -46,10 +46,9 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
             continue
         m = signals.compute_metrics(bars, spx)       # composite inputs (long windows) — calc-layer only (§10.6)
         r = riser.compute_riser(bars)                # steady-riser metrics (core screen, PRD §10.8)
-        b = breakout.compute_breakout(bars)          # base→breakout (RETIRED §10.9; kept until export switches)
-        # All share the SAME bars (C9) and emit a str `date`; merge per ticker so each
-        # (ticker,date) row carries the core riser metrics + legacy residue.
-        m = m.merge(r, on="date", how="left").merge(b, on="date", how="left")
+        # Both share the SAME bars (C9) and emit a str `date`; merge per ticker so each
+        # (ticker,date) row carries the core riser metrics + the composite calc-layer residue.
+        m = m.merge(r, on="date", how="left")
         m["ticker"] = t
         frames.append(m)
 
@@ -59,9 +58,9 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
 
     w = signals.weights(k)
     con.register("allm", allm)
-    db.ensure_breakout_columns(con)   # brk_* kept until export switches (RETIRED §10.9)
     db.ensure_riser_columns(con)      # migrate existing derived_daily to carry rise_* (§10.8)
     db.drop_ignition_columns(con)     # ignition fully retired (2026-06-16 spine pivot) — drop ig_*/ign_*
+    db.drop_breakout_columns(con)     # base→breakout fully retired (2026-07-02 pivot II) — drop brk_*
     db.clear_derived(con)
     con.execute(
         f"""
@@ -73,9 +72,7 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
             -- (drives the Ocean y-axis). ROUND to 1dp at source = single displayed value
             -- (#92-#94 lesson). The candidate gate does NOT read this percentile — it reads
             -- the raw gate + top-N below, and the flag itself is stored (single truth).
-            ROUND(PERCENT_RANK() OVER (PARTITION BY date ORDER BY rise_net10) * 100, 1) AS rise_net10_pct,
-            -- base→breakout percentile (RETIRED §10.9) — kept until export switches.
-            ROUND(PERCENT_RANK() OVER (PARTITION BY date ORDER BY brk_strength) * 100, 1) AS brk_strength_pct
+            ROUND(PERCENT_RANK() OVER (PARTITION BY date ORDER BY rise_net10) * 100, 1) AS rise_net10_pct
           FROM allm WHERE rs_raw IS NOT NULL
         ),
         y AS (
@@ -130,8 +127,6 @@ def compute_all(con, k: float = 0.5, min_bars: int = 60) -> dict:
                ma50, ma150, ma200, trend_quality, vol_ratio, ud_vol_ratio,
                ewmac_fast, ewmac_slow, c_rs, c_high, c_trend, c_vol, c_accel, composite,
                CAST(RANK() OVER (PARTITION BY date ORDER BY composite DESC) AS INTEGER) AS rank_in_universe,
-               brk_tau_date, brk_base_slope, brk_brk_slope, brk_drift_step, brk_fit_gain,
-               brk_clearance, brk_vcp, brk_vsurge, brk_strength, brk_strength_pct,
                rise_net5, rise_net10, rise_net20, rise_up10, rise_ddw10, rise_ker10,
                rise_net10_pct, CAST(rise_candidate AS INTEGER) AS rise_candidate,
                CAST(CASE WHEN rise_candidate = 1

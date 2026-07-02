@@ -46,19 +46,31 @@ def run_checks(con) -> list[tuple[str, bool, str]]:
         )
         checks.append(("5 components in [0,1]", in_range, "component ranges within [0,1]"))
 
-        # base→breakout (PRD §10.8, CORE engine after the 2026-06-16 spine pivot): the per-stock
-        # changepoint features + cross-sectional brk_strength_pct populate the SAME derived_daily
-        # row (C9). brk_strength_pct∈[0,100], brk_strength>=0 (recall-first; 0 = guards failed).
-        n_brk = con.execute("SELECT count(*) FROM derived_daily WHERE brk_strength_pct IS NOT NULL").fetchone()[0]
-        checks.append(("base→breakout generated", n_brk > 0, f"{n_brk} rows with brk_strength_pct"))
-        if n_brk > 0:
-            gb = con.execute(
-                "SELECT min(brk_strength_pct), max(brk_strength_pct), min(brk_strength) "
-                "FROM derived_daily WHERE brk_strength_pct IS NOT NULL"
+        # steady-riser (PRD §10.8, CORE screen after the 2026-07-02 spine pivot II): the
+        # per-stock chart-verifiable metrics + cross-sectional rise_net10_pct + the stored
+        # candidate flag populate the SAME derived_daily row (C9).
+        n_ris = con.execute("SELECT count(*) FROM derived_daily WHERE rise_net10 IS NOT NULL").fetchone()[0]
+        checks.append(("steady-riser generated", n_ris > 0, f"{n_ris} rows with rise_net10"))
+        if n_ris > 0:
+            gr = con.execute(
+                "SELECT min(rise_net10_pct), max(rise_net10_pct), min(rise_up10), max(rise_up10), "
+                "max(rise_ddw10) FROM derived_daily WHERE rise_net10 IS NOT NULL"
             ).fetchone()
-            brk_range = gb[0] >= -1e-9 and gb[1] <= 100 + 1e-9 and (gb[2] is None or gb[2] >= -1e-9)
-            checks.append(("brk_strength_pct∈[0,100], brk_strength>=0", brk_range,
-                           f"brk_pct∈[{gb[0]:.1f},{gb[1]:.1f}] brk_strength_min={gb[2]}"))
+            ris_range = (gr[0] is None or (gr[0] >= -1e-9 and gr[1] <= 100 + 1e-9)) \
+                and (gr[2] is None or (gr[2] >= -1e-9 and gr[3] <= 1 + 1e-9)) \
+                and (gr[4] is None or gr[4] <= 1e-9)
+            checks.append(("rise_net10_pct∈[0,100], up10∈[0,1], ddw10<=0", ris_range,
+                           f"pct∈[{gr[0]},{gr[1]}] up10∈[{gr[2]},{gr[3]}] ddw10_max={gr[4]}"))
+            # candidate ⇒ gate + streak ⇔ candidate (the stored flag is the single truth).
+            bad = con.execute(
+                "SELECT count(*) FROM derived_daily WHERE rise_candidate = 1 "
+                "AND NOT (rise_up10 >= 0.6 AND rise_net10 > 0)"
+            ).fetchone()[0]
+            bad2 = con.execute(
+                "SELECT count(*) FROM derived_daily WHERE (rise_streak_days > 0) != (rise_candidate = 1)"
+            ).fetchone()[0]
+            checks.append(("candidate⇒gate & streak⇔candidate", bad == 0 and bad2 == 0,
+                           f"gate violations={bad}, streak mismatches={bad2}"))
 
     # fundamentals_q formal-filing only (AC-7, PRD §10.5): v1 ingests ONLY formal SEC
     # filings — no preliminary / 8-K earnings / press release / estimate rows.
