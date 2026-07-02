@@ -11,12 +11,12 @@ the sector (rotation.json) and theme (rotation.theme.json) exports:
   - same as_of date (both export the latest snapshot);
   - members[] ⊆ board tickers (the client filters board.json by scope=sector for cards);
   - member_count == # board stocks in that sector;
-  - igniting == # board members above the sea level (breakout.brk_strength_pct >= 90);
-  - candidates == # board members flagged breakout.candidate (the recall-first top-decile gate).
+  - igniting == candidates == # board members flagged riser.candidate — the STORED
+    derived_daily.rise_candidate flag both files carry verbatim.
 
-2026-06-16 spine pivot: the league aggregates the base→breakout engine (ignition retired),
-not the composite median that is no longer user-visible — so this proves the league's counts
-trace to the very candidate flags the Breakouts cards show (C9). Run on the SAME DB's two exports (see
+2026-07-02 spine pivot II: the league aggregates the steady-riser screen (base→breakout
+retired) — so this proves the league's counts trace to the very candidate flags the Risers
+cards show (C9). Run on the SAME DB's two exports (see
 `make rotation-c9`). Exits non-zero on any mismatch so it can gate. Names/counts only — no
 secrets. NOTE: this holds when board and rotation see the same member set; board.py's
 --min-bars filter (default 60) can prune a thin-history stock the rotation aggregate still
@@ -31,7 +31,6 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SEA_LEVEL = 90  # ign_pct >= this = lit (== export/board.py IGN_TOP_DECILE / ocean.py SEA_LEVEL)
 
 
 def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
@@ -55,7 +54,7 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
         elif s.get("sector"):
             by_bucket[s["sector"]].append(s)
 
-    mem_checked = brk_checked = 0
+    mem_checked = ris_checked = 0
     for b in rotation.get("buckets", []):
         bk = b["bucket"]
         members = by_bucket.get(bk, [])
@@ -66,20 +65,16 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
             mem_checked += 1
             if b["member_count"] != len(members):
                 problems.append(f"{bk}: member_count rotation={b['member_count']} vs board={len(members)}")
-        # igniting / candidates trace to the board's base→breakout block (the SAME recall-first
-        # gate, brk_strength_pct>=90 == board.breakout.candidate). 2026-06-16 spine pivot.
-        # Count via the `candidate` FLAG, not board.json's brk_strength_pct >= SEA_LEVEL: the flag
-        # is computed on the RAW percentile (board.py), while board.json stores brk_strength_pct
-        # ROUNDED to 1dp — so a boundary stock at raw 89.95 (candidate=False) rounds to 90.0 and a
-        # brk_pct>=90 count would over-count it by 1 vs the league's raw sum(cand) (the rotation-c9
-        # desync seen at full-universe scale; igniting == candidates, so both use the flag).
+        # igniting / candidates trace to the board's riser block — BOTH count the STORED
+        # derived_daily.rise_candidate flag (never a threshold recomputed from a rounded
+        # display value — the #92-#94 boundary lesson; igniting == candidates by contract).
         if b.get("igniting") is not None:
-            brk_checked += 1
-            lit = sum(1 for s in members if (s.get("breakout") or {}).get("candidate"))
+            ris_checked += 1
+            lit = sum(1 for s in members if (s.get("riser") or {}).get("candidate"))
             if b["igniting"] != lit:
                 problems.append(f"{bk}: igniting rotation={b['igniting']} vs board={lit}")
         if b.get("candidates") is not None:
-            cands = sum(1 for s in members if (s.get("breakout") or {}).get("candidate"))
+            cands = sum(1 for s in members if (s.get("riser") or {}).get("candidate"))
             if b["candidates"] != cands:
                 problems.append(f"{bk}: candidates rotation={b['candidates']} vs board={cands}")
 
@@ -87,7 +82,7 @@ def check(board: dict, rotation: dict) -> tuple[bool, list[str], dict]:
         "board_stocks": len(board_tickers),
         "rotation_buckets": len(rotation.get("buckets", [])),
         "member_count_checked": mem_checked,
-        "breakout_checked": brk_checked,
+        "riser_checked": ris_checked,
     }
     return (not problems), problems, stats
 
@@ -104,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[rotation-c9] as_of board={board.get('as_of_date')} rotation={rotation.get('as_of_date')}  "
           f"buckets={stats['rotation_buckets']}  member_count_checked={stats['member_count_checked']}  "
-          f"breakout_checked={stats['breakout_checked']}")
+          f"riser_checked={stats['riser_checked']}")
     if ok:
         print("[rotation-c9] GATE_PASS C9 rotation league↔board members consistent "
               "(member_count, igniting, candidates, members⊆board)")

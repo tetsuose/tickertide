@@ -130,7 +130,6 @@ def compute_rotation(con, n1: int | None = None, n2: int | None = None,
 # export/rotation.py (M3.3) calls league_table() for the latest snapshot. ---
 
 AT_HIGH_PROX = 0.99       # within 1% of the 252d high counts as "at 52-week high"
-BRK_SEA_LEVEL = 90        # brk_strength_pct >= this = base→breakout candidate (== board.BRK_TOP_DECILE, §10.8)
 REL_HORIZONS = {"rel_ret_1m": 21, "rel_ret_3m": 63, "rel_ret_6m": 126}  # trading days
 
 
@@ -150,12 +149,12 @@ def _bucket_members(con, bucket_type: str, as_of) -> pd.DataFrame:
 def _member_aggregates(con, latest_date, bucket_type: str, min_bars: int = 60) -> pd.DataFrame:
     """Per-bucket member breadth / #at-52w-high / candidate aggregates on `latest_date`, over
     the bucket's MEMBERS (sector: universe.sector; theme: theme_membership PIT). The member
-    numbers come from derived_daily / daily_bars — the SAME per-stock source as Discovery /
-    Ocean / Stock, so the league traces back (C9). 2026-06-16 spine pivot: composite median +
-    ignition are gone; the league aggregates the base→breakout engine instead —
-    `candidates` (members at base→breakout top decile, brk_strength_pct>=90, the SAME
-    recall-first gate Breakouts sorts by). `igniting` == `candidates` (no separate lit tier —
-    base→breakout has one recall-first gate, no persistence).
+    numbers come from derived_daily / daily_bars — the SAME per-stock source as Risers /
+    Ocean / Stock, so the league traces back (C9). 2026-07-02 spine pivot II: the league
+    aggregates the steady-riser screen — `candidates` = members with the STORED
+    derived_daily.rise_candidate flag (the SAME gate+top-N the Risers board shows; read
+    verbatim, never re-derived here — single truth). `igniting` == `candidates` (one
+    recall-first gate; the duplicate key is kept for the export/web field contract).
 
     COUNT ALIGNMENT (C9): the population is restricted to members with >= `min_bars` bars on/before
     snap — EXACTLY export/board.py's inclusion rule (it skips thin-history stocks it can't chart).
@@ -163,7 +162,7 @@ def _member_aggregates(con, latest_date, bucket_type: str, min_bars: int = 60) -
     desyncs `candidates` from the board's per-sector candidate count at full-universe scale (the
     failure check_rotation.py's NOTE warns about). daily_bars is LEFT-joined so the breadth (vs
     ma50/ma200) degrades to 0 for the rare on-snap-bar-missing member rather than dropping it from
-    the count — the candidate count itself reads brk_strength_pct from derived_daily only."""
+    the count — the candidate count itself reads rise_candidate from derived_daily only."""
     mem = _bucket_members(con, bucket_type, latest_date)
     con.register("mem_rel", mem)
     try:
@@ -173,7 +172,7 @@ def _member_aggregates(con, latest_date, bucket_type: str, min_bars: int = 60) -
               SELECT ticker, count(*) AS nb FROM daily_bars WHERE date <= ? GROUP BY ticker
             ), m AS (
               SELECT mr.bucket AS bucket,
-                     CASE WHEN d.brk_strength_pct >= ? THEN 1 ELSE 0 END AS cand,
+                     CASE WHEN d.rise_candidate = 1 THEN 1 ELSE 0 END AS cand,
                      CASE WHEN b.close > d.ma50  THEN 1.0 ELSE 0.0 END AS gt50,
                      CASE WHEN b.close > d.ma200 THEN 1.0 ELSE 0.0 END AS gt200,
                      CASE WHEN d.high_prox >= ? THEN 1 ELSE 0 END      AS athigh
@@ -191,7 +190,7 @@ def _member_aggregates(con, latest_date, bucket_type: str, min_bars: int = 60) -
                    sum(cand)        AS candidates
             FROM m GROUP BY bucket
             """,
-            [latest_date, BRK_SEA_LEVEL, AT_HIGH_PROX, min_bars, latest_date],
+            [latest_date, AT_HIGH_PROX, min_bars, latest_date],
         ).df()
     finally:
         con.unregister("mem_rel")

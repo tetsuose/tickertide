@@ -12,9 +12,9 @@ the ~90d OHLCV mini-chart is ~96% of the raw payload, yet Discovery is bounded/
 decide (App caps the board at top-20), so only ~20 of the ~500 charts are ever on
 screen at once. So v2 splits the export in two:
   - BULK `board.json` — every stock's card data (identity / composite + c_* / the
-    6 evidence numbers / ignition block / valuation / theme chips), WITHOUT the
+    6 evidence numbers / riser block / valuation / theme chips), WITHOUT the
     chart. The only file the client downloads up front; it still carries every
-    field Discovery needs to sort (持续点火) and scope-filter the WHOLE universe.
+    field Risers needs to sort (net10) and scope-filter the WHOLE universe.
   - DETAIL `board/<TICKER>.json` — that stock's mini-chart only ({schema_version,
     ticker, chart}). Fetched lazily by the card as it renders, so a session only
     downloads charts for the handful of names actually shown. Measured: full board
@@ -32,20 +32,18 @@ traceable to one source (PRD §9.3 "同一份 export"):
                           (transparent proxy; a dedicated breakout signal is a
                           later milestone — it is NOT an engine number)
 
-The CORE engine (base→breakout, PRD §10.8; 2026-06-16 spine pivot — replaces ignition,
-which is retired) is carried per stock. Breakouts (the renamed Discovery, §9.3) sorts by
-base→breakout STRENGTH, so each stock ships its cross-sectional `brk_strength_pct`, raw
-`brk_strength`, the estimated changepoint `brk_tau_date`, and the dimensionless features
-(base_slope/σ, brk_slope/σ, drift_step, fit_gain, ceiling clearance, volume surge) — all
-verbatim from derived_daily (NEVER recomputed here — C9, same source as compute/run.py) —
-plus a `candidate` flag = brk_strength_pct>=BRK_TOP_DECILE. recall-first: top decile = on
-the board; NO persistence gate (ignition retired), false positives are expected and
-fundamentals/financials are the downstream precision stage (§10.8.3). No tunable knob.
-
-The base/τ/breakout 证据 mirrors the stored features (flat base → steep breakout: the kink
-date τ, days since τ, drift_step, fit_gain, ceiling clearance, breakout-side volume surge),
-so the card shows what the changepoint fit found without re-scoring the engine. composite is
-also retired (kept transitionally for the C9 reconstruct guard until the web stops reading it).
+The CORE screen (steady-riser, PRD §10.8; 2026-07-02 spine pivot II — replaces base→breakout,
+which is retired §10.9) is carried per stock. Risers (the renamed Breakouts, §9.3) gates on
+`up10>=0.6 AND net10>0` and sorts by `rise_net10`, so each stock ships its chart-verifiable
+metrics (rise_net5/net10/net20, rise_up10, rise_ddw10, rise_ker10), the cross-sectional
+`rise_net10_pct`, the STORED `rise_candidate` flag and `rise_streak_days` — ALL verbatim from
+derived_daily (NEVER recomputed here — C9, same source as compute/run.py). In particular the
+candidate flag is read as stored, never re-derived from the percentile or re-gated here
+(the #92-#94 rounding-boundary lesson). recall-first: false positives are expected — and
+names that later fall are fine; fundamentals/financials are the downstream precision stage
+(§10.8.4). Smoothness (ker/ddw) is evidence, never a hard gate (§10.8.3). No tunable knob.
+composite is retired (kept transitionally for the C9 reconstruct guard until the web stops
+reading it).
 
 This export carries each engine's score verbatim and never recomputes it; the
 client reads the exported composite directly and uses the c_* only to show each
@@ -71,9 +69,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from compute import db, signals  # noqa: E402
+from compute import db, riser, signals  # noqa: E402
 
-SCHEMA_VERSION = 3  # v3: ignition→base→breakout block (2026-06-16 spine pivot); v2 = payload split
+SCHEMA_VERSION = 4  # v4: breakout→riser block (2026-07-02 spine pivot II); v3 = breakout; v2 = payload split
 DEFAULT_OUT = ROOT / "web" / "public" / "data" / "board.json"
 
 CHART_DAYS = 90          # mini-chart window (PRD §9.3: ~90d K线)
@@ -84,11 +82,6 @@ HIGH_WIN = 252           # 52-week high window
 FRESH_DAYS = 95          # <=95d = fresh (current quarter reported), PRD §10.5
 STALE_DAYS = 160         # <=160d = stale (one quarter behind); >160d = overdue
 COMPOSITE_TOL = 1e-6     # C9 self-check tolerance (engine vs reconstructed)
-
-# base→breakout (PRD §10.8, CORE engine after the 2026-06-16 spine pivot) — recall-first
-# top-decile candidate gate. No persistence gate (ignition retired); false positives are
-# expected, fundamentals are the downstream precision stage (§10.8.3).
-BRK_TOP_DECILE = 90      # brk_strength_pct >= this = top-decile candidate (recall-first, §10.8)
 
 
 def freshness(age_days: int | None) -> str | None:
@@ -194,52 +187,25 @@ def _evidence(d: dict, bars: list[tuple], snap) -> dict:
     }
 
 
-def _breakout(bk: dict, snap) -> dict:
-    """Per-stock base→breakout block, verbatim from derived_daily (C9, core engine §10.8).
+def _riser(rk: dict) -> dict:
+    """Per-stock steady-riser block, verbatim from derived_daily (C9, core screen §10.8).
 
-    `bk` carries the engine's stored base→breakout numbers (NEVER recomputed here):
-    cross-sectional `brk_strength_pct`∈[0,100], raw `brk_strength`, the estimated changepoint
-    `brk_tau_date`, and the dimensionless features (base_slope/σ, brk_slope/σ, drift_step,
-    fit_gain, ceiling clearance, volume surge). `candidate` = top decile (brk_strength_pct>=90)
-    — Breakouts' recall-first sort key; NO persistence gate (ignition retired), false positives
-    are expected and fundamentals are the downstream precision stage (§10.8.3).
-
-    The base/τ/breakout 证据 mirrors the stored features so the card can show what the kink
-    fit found (flat base → steep breakout) without re-scoring the engine. All values are read
-    verbatim from derived_daily; the only derived field is days_since_tau = snap − τ."""
-    pct = bk.get("brk_strength_pct")
-    tau = bk.get("brk_tau_date")
-    candidate = pct is not None and pct >= BRK_TOP_DECILE
-
-    days_since_tau = None
-    if tau is not None:
-        try:
-            td = tau if isinstance(tau, date) else date.fromisoformat(str(tau))
-            days_since_tau = (snap - td).days
-        except (TypeError, ValueError):
-            days_since_tau = None
-
+    `rk` carries the screen's stored numbers (NEVER recomputed here): the chart-verifiable
+    metrics (rise_net5/net10/net20 net rises, rise_up10 up-day ratio, rise_ddw10 in-window
+    drawdown, rise_ker10 path efficiency), the cross-sectional `rise_net10_pct`, the STORED
+    `rise_candidate` flag (computed ONCE in compute/run.py — gate up10>=0.6 AND net10>0,
+    net10 top-N; never re-derived from the percentile here, the #92-#94 boundary lesson)
+    and `rise_streak_days` (consecutive days on the list; display column, not a filter)."""
     return {
-        "brk_strength_pct": _num(pct, 1),
-        "brk_strength": _num(bk.get("brk_strength"), 4),
-        "candidate": bool(candidate),
-        "features": {
-            "base_slope": _num(bk.get("brk_base_slope"), 3),
-            "brk_slope": _num(bk.get("brk_brk_slope"), 3),
-            "drift_step": _num(bk.get("brk_drift_step"), 3),
-            "fit_gain": _num(bk.get("brk_fit_gain"), 3),
-            "clearance": _num(bk.get("brk_clearance"), 3),
-            "vsurge": _num(bk.get("brk_vsurge"), 3),
-        },
-        "evidence": {
-            "tau_date": _iso(tau),
-            "days_since_tau": days_since_tau,
-            "drift_step": _num(bk.get("brk_drift_step"), 3),
-            "fit_gain": _num(bk.get("brk_fit_gain"), 3),
-            "clearance": _num(bk.get("brk_clearance"), 3),
-            "vol_mult": _num(bk.get("brk_vsurge"), 3),   # breakout-side volume surge (stored col, C9)
-            "ma50": _num(bk.get("ma50"), 4),
-        },
+        "net5": _num(rk.get("rise_net5"), 4),
+        "net10": _num(rk.get("rise_net10"), 4),
+        "net20": _num(rk.get("rise_net20"), 4),
+        "up10": _num(rk.get("rise_up10"), 2),
+        "ddw10": _num(rk.get("rise_ddw10"), 4),
+        "ker10": _num(rk.get("rise_ker10"), 3),
+        "net10_pct": _num(rk.get("rise_net10_pct"), 1),
+        "candidate": bool(rk.get("rise_candidate") == 1),
+        "streak_days": int(rk.get("rise_streak_days") or 0),
     }
 
 
@@ -266,27 +232,27 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
                d.composite, d.rank_in_universe,
                d.c_rs, d.c_high, d.c_trend, d.c_vol, d.c_accel,
                d.ret_63, d.ret_126, d.high_prox,
-               d.brk_strength, d.brk_strength_pct, d.brk_drift_step, d.brk_fit_gain,
-               d.brk_clearance, d.brk_tau_date, d.brk_base_slope, d.brk_brk_slope, d.brk_vsurge, d.ma50
+               d.rise_net5, d.rise_net10, d.rise_net20, d.rise_up10, d.rise_ddw10,
+               d.rise_ker10, d.rise_net10_pct, d.rise_candidate, d.rise_streak_days
         FROM derived_daily d
         LEFT JOIN universe u ON u.ticker = d.ticker
         WHERE d.date = ?
-        ORDER BY d.composite DESC NULLS LAST
+        ORDER BY d.rise_net10 DESC NULLS LAST
         """ + (f"LIMIT {int(limit)}" if limit else ""),
         [snap],
     ).fetchall()
 
     stocks, max_drift, n_val = [], 0.0, 0
-    n_brk, n_cand = 0, 0
+    n_ris, n_cand = 0, 0
     chart_by_ticker: dict[str, dict] = {}  # v2 split: per-stock mini-chart (board/<t>.json)
     for r in head:
         t = r[0]
         comp = {"rs": r[6], "high": r[7], "trend": r[8], "vol": r[9], "accel": r[10]}
         d = {"ret_63": r[11], "ret_126": r[12], "high_prox": r[13]}
-        bk = {
-            "brk_strength": r[14], "brk_strength_pct": r[15], "brk_drift_step": r[16],
-            "brk_fit_gain": r[17], "brk_clearance": r[18], "brk_tau_date": r[19],
-            "brk_base_slope": r[20], "brk_brk_slope": r[21], "brk_vsurge": r[22], "ma50": r[23],
+        rk = {
+            "rise_net5": r[14], "rise_net10": r[15], "rise_net20": r[16],
+            "rise_up10": r[17], "rise_ddw10": r[18], "rise_ker10": r[19],
+            "rise_net10_pct": r[20], "rise_candidate": r[21], "rise_streak_days": r[22],
         }
 
         bars = con.execute(
@@ -335,14 +301,14 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
         if r[4] is not None:
             max_drift = max(max_drift, abs(recon - r[4]))
 
-        brk_block = _breakout(bk, snap)
-        if brk_block["brk_strength_pct"] is not None:
-            n_brk += 1
-        if brk_block["candidate"]:
+        ris_block = _riser(rk)
+        if ris_block["net10"] is not None:
+            n_ris += 1
+        if ris_block["candidate"]:
             n_cand += 1
-        # No reconstruct guard for base→breakout: every field is read verbatim from
-        # derived_daily (the engine is NEVER re-derived here), so there is no drift to catch
-        # (unlike the composite C9 guard below, which re-weights c_* and must match).
+        # No reconstruct guard for the riser block: every field is read verbatim from
+        # derived_daily (the screen is NEVER re-derived here — candidate included), so
+        # there is no drift to catch (unlike the composite C9 guard below).
 
         stocks.append({
             "ticker": t,
@@ -355,7 +321,7 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
             "rank": int(r[5]) if r[5] is not None else None,
             "components": {key: _num(comp[key], 4) for key in comp},
             "evidence": _evidence(d, bars, snap),
-            "breakout": brk_block,
+            "riser": ris_block,
             "valuation": valuation,
         })
         # v2 payload split: the ~90d mini-chart rides in its OWN per-stock file
@@ -378,9 +344,9 @@ def build_board(con, k: float = 0.5, limit: int | None = None, min_bars: int = 6
         "composite_recon_max_drift": round(max_drift, 9),
         "count": len(stocks),
         "valuation_coverage": n_val,
-        "breakout_coverage": n_brk,
-        "breakout_candidates": n_cand,
-        "brk_top_decile": BRK_TOP_DECILE,
+        "riser_coverage": n_ris,
+        "riser_candidates": n_cand,
+        "riser_top_n": riser.TOP_N,
         "stocks": stocks,
     }
     _self_check(bulk, chart_by_ticker)
@@ -464,8 +430,8 @@ def main(argv: list[str] | None = None) -> int:
     kb = out.stat().st_size / 1024
     chart_kb = chart_bytes / 1024
     print(f"[board] {args.out}  as_of={board['as_of_date']}  stocks={board['count']}  "
-          f"valuation={board['valuation_coverage']}  breakout={board['breakout_coverage']}  "
-          f"brk_candidates={board['breakout_candidates']}(brk_pct>={board['brk_top_decile']})  "
+          f"valuation={board['valuation_coverage']}  riser={board['riser_coverage']}  "
+          f"riser_candidates={board['riser_candidates']}(top-{board['riser_top_n']})  "
           f"C9_drift={board['composite_recon_max_drift']}  "
           f"bulk={kb:.1f}KB  charts={len(chart_by_ticker)}×→{chart_kb:.1f}KB")
     return 0

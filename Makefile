@@ -5,7 +5,7 @@ export PYTHONDONTWRITEBYTECODE := 1
         start mirror atlas context verify health health-strict \
         writeback-preview writeback-apply enforce-fill gate-report \
         task-open task-check task-status task-close route accept \
-        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 breakout-c9 ac-m7 ac-m7-e2e serve pipeline check check-theme check-land pit-check split-check ebitda-check \
+        ingest fundamentals themes theme-extract compute export ocean-c9 rotation-c9 theme-c9 valuation-c9 riser-c9 ac-m7 ac-m7-e2e serve pipeline check check-theme check-land pit-check split-check ebitda-check \
         fixture fixture-pipeline \
         web-install web-build web-test web-dev
 
@@ -57,7 +57,7 @@ help:
 	@echo "    make export                   board + ocean + rotation(+theme) + manifest -> web/public/data"
 	@echo "    make ocean-c9                 AC-M2 C9: ocean.json positions == board/Stock numbers"
 	@echo "    make theme-c9                 AC-M4 C9: rotation.theme.json league == board PIT theme chips"
-	@echo "    make breakout-c9              AC-M7 C9: board.json breakout same-source + candidate gate"
+	@echo "    make riser-c9                 AC-M7 C9: board.json riser same-source + stored candidate flag"
 	@echo "    make ac-m7                    AC-M7: all 5 clauses over the exported board + stock bundles"
 	@echo "    make ac-m7-e2e                AC-M7 end-to-end: fixture-pipeline -> export -> ac-m7 (one command)"
 	@echo ""
@@ -238,15 +238,15 @@ theme-c9:
 valuation-c9:
 	@python3 export/check_valuation.py
 
-# C9 self-check (AC-M7): board.json breakout block same-source (candidate gate + vsurge trace).
-breakout-c9:
-	@python3 export/check_breakout.py
+# C9 self-check (AC-M7): board.json riser block same-source (stored candidate flag + gate evidence).
+riser-c9:
+	@python3 export/check_riser.py
 
 # AC-M7 aggregate acceptance (PRD §14, §10.8): the five AC-M7 clauses as ONE labelled
-# gate over the exported artifacts — ignition columns + 持续点火 order (differs from
-# composite) + 点火证据 + ignition⇄composite same-source (C9, incl. stock↔board) +
-# non-empty traceable candidate board. Reads board.json + stock bundles (run `make export`
-# first), reusing export/check_breakout.check for the same-source logic (DRY).
+# gate over the exported artifacts — riser block + Risers order (differs from composite)
+# + chart-verifiable evidence + riser C9 same-source (incl. stock↔board) + non-empty
+# consistent candidate board. Reads board.json + stock bundles (run `make export` first),
+# reusing export/check_riser.check for the same-source logic (DRY).
 ac-m7:
 	@python3 compute/check_ac_m7.py
 

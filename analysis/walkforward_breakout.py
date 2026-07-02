@@ -24,7 +24,11 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from compute import breakout  # noqa: E402  (the PRODUCTION base→breakout engine)
+# base→breakout retired from the pipeline (2026-07-02 spine pivot II, PRD §10.9); the engine
+# implementation moved to analysis/breakout_engine.py so this OOS validation (part of its
+# retirement evidence) stays reproducible.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import breakout_engine as breakout  # noqa: E402
 
 CACHE = ROOT / "data" / "_precision_cache.pkl"
 BENCH = "SPY"

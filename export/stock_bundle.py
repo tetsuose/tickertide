@@ -11,13 +11,13 @@ reads ONE file for any universe ticker, not board.json's top-N shortlist. Same d
 valuation_daily / fundamentals_q as every other surface (C9): a ticker's P/S line here and
 its Ocean/Valuation P/S are the same numbers.
 
-The SECOND engine (ignition = early discovery, PRD §10.8) is carried per name too, so the
-Stock surface can show its 点火诊断 (ignition diagnostic) — the 5 raw self-relative components
-ig_* + the human-readable 点火证据 (breakout day / vol surge× / step-rate / reclaimed MA50) +
-the persistence streak — alongside the composite component stack. It is taken VERBATIM from
-derived_daily and assembled by board.py's _ignition (the canonical ignition-block builder),
-NEVER recomputed here (C9, same source as compute/run.py and board.json's Discovery cards).
-early⟷reliable does NOT touch ignition (PRD P7); the knob only re-weights composite.
+The CORE screen (steady-riser, PRD §10.8; 2026-07-02 spine pivot II) is carried per name too,
+so the Stock surface can show its riser 诊断 — the chart-verifiable metrics (net5/net10/net20,
+up-day ratio, in-window drawdown, path efficiency), the cross-sectional percentile, the STORED
+candidate flag and the on-list streak. It is taken VERBATIM from derived_daily and assembled by
+board.py's _riser (the canonical riser-block builder), NEVER recomputed here (C9, same source
+as compute/run.py and board.json's Risers cards). breakout/ignition/composite blocks are gone
+(all retired).
 """
 from __future__ import annotations
 
@@ -36,11 +36,11 @@ from compute import db  # noqa: E402
 # no parallel copy to drift). _ignition is a pure (ig, bars) -> dict; HIST_BARS just sizes the
 # window the evidence is derived from (board pulls 260; we already pull HIST_DAYS=504, both end
 # at the snapshot, and the evidence windows are the trailing 50/60 bars — identical either way).
-from export.board import _breakout  # noqa: E402
+from export.board import _riser  # noqa: E402
 
 DATA_DIR = ROOT / "web" / "public" / "data"
 STOCK_DIR = DATA_DIR / "stock"
-SCHEMA_VERSION = 2  # v2: ignition→base→breakout block (2026-06-16 spine pivot)
+SCHEMA_VERSION = 3  # v3: breakout→riser block (2026-07-02 spine pivot II); v2 = breakout
 HIST_DAYS = 504   # ~2y daily price / P/S history for the time-aligned stack (x axis)
 HIGH_WIN = 252    # 52-week high window
 
@@ -133,8 +133,8 @@ def _ps_series(con, ticker: str, snap) -> list[dict]:
 def build_bundle(con, ticker: str, snap) -> dict:
     head = con.execute(
         "SELECT u.name, u.sector, u.mktcap, d.composite, d.c_rs, d.c_high, d.c_trend, d.c_vol, d.c_accel, "
-        "d.brk_strength, d.brk_strength_pct, d.brk_drift_step, d.brk_fit_gain, d.brk_clearance, "
-        "d.brk_tau_date, d.brk_base_slope, d.brk_brk_slope, d.brk_vsurge, d.ma50 "
+        "d.rise_net5, d.rise_net10, d.rise_net20, d.rise_up10, d.rise_ddw10, "
+        "d.rise_ker10, d.rise_net10_pct, d.rise_candidate, d.rise_streak_days "
         "FROM derived_daily d LEFT JOIN universe u ON u.ticker = d.ticker "
         "WHERE d.ticker = ? AND d.date = ?",
         [ticker, snap],
@@ -150,18 +150,18 @@ def build_bundle(con, ticker: str, snap) -> dict:
 
     bars = _bars(con, ticker, snap)
 
-    # base→breakout (PRD §10.8, core engine) — verbatim from derived_daily, assembled by
-    # board.py's canonical _breakout (C9, never recomputed). Same builder + same source as the
-    # Breakouts card, so a name's base/τ/breakout 诊断 here and its Breakouts card are identical.
-    breakout = None
+    # steady-riser (PRD §10.8, core screen) — verbatim from derived_daily, assembled by
+    # board.py's canonical _riser (C9, never recomputed — candidate flag included). Same
+    # builder + same source as the Risers card, so a name's riser 诊断 here and its Risers
+    # card are identical.
+    riser_block = None
     if head is not None and head[10] is not None:
-        bk = {
-            "brk_strength": head[9], "brk_strength_pct": head[10], "brk_drift_step": head[11],
-            "brk_fit_gain": head[12], "brk_clearance": head[13], "brk_tau_date": head[14],
-            "brk_base_slope": head[15], "brk_brk_slope": head[16], "brk_vsurge": head[17],
-            "ma50": head[18],
+        rk = {
+            "rise_net5": head[9], "rise_net10": head[10], "rise_net20": head[11],
+            "rise_up10": head[12], "rise_ddw10": head[13], "rise_ker10": head[14],
+            "rise_net10_pct": head[15], "rise_candidate": head[16], "rise_streak_days": head[17],
         }
-        breakout = _breakout(bk, snap)
+        riser_block = _riser(rk)
 
     valuation = None
     if val is not None:
@@ -189,7 +189,7 @@ def build_bundle(con, ticker: str, snap) -> dict:
             "rs": _num(head[4], 4), "high": _num(head[5], 4), "trend": _num(head[6], 4),
             "vol": _num(head[7], 4), "accel": _num(head[8], 4),
         } if head else None,
-        "breakout": breakout,
+        "riser": riser_block,
         "valuation": valuation,
         "price": _price(con, ticker, snap, bars),
         "revenue_q": _revenue_q(con, ticker, snap),

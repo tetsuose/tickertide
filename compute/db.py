@@ -184,27 +184,25 @@ def clear_derived(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("DELETE FROM derived_daily")
 
 
-# base→breakout columns (PRD §10.8, 2026-06-16 spine pivot). Added to derived_daily after
-# the schema froze with only ignition/composite columns → ALTER existing DBs in place
-# (fresh DBs already get them from ingest/schema.sql). Idempotent: ADD COLUMN IF NOT EXISTS.
-_BREAKOUT_COLS = [
-    ("brk_tau_date", "VARCHAR"), ("brk_base_slope", "DOUBLE"), ("brk_brk_slope", "DOUBLE"),
-    ("brk_drift_step", "DOUBLE"), ("brk_fit_gain", "DOUBLE"), ("brk_clearance", "DOUBLE"),
-    ("brk_vcp", "DOUBLE"), ("brk_vsurge", "DOUBLE"), ("brk_strength", "DOUBLE"),
-    ("brk_strength_pct", "DOUBLE"),
-]
+# base→breakout retired by the 2026-07-02 spine pivot II (steady-riser is the core screen,
+# §10.9). Drop its columns from an existing derived_daily so run.py's positional INSERT
+# (which no longer SELECTs them) matches the table. Idempotent: DROP COLUMN IF EXISTS.
+_BREAKOUT_COLS = ["brk_tau_date", "brk_base_slope", "brk_brk_slope", "brk_drift_step",
+                  "brk_fit_gain", "brk_clearance", "brk_vcp", "brk_vsurge",
+                  "brk_strength", "brk_strength_pct"]
 
 
-def ensure_breakout_columns(con: duckdb.DuckDBPyConnection) -> None:
-    """Add the base→breakout columns to an existing derived_daily if missing (migration)."""
-    for name, typ in _BREAKOUT_COLS:
-        con.execute(f"ALTER TABLE derived_daily ADD COLUMN IF NOT EXISTS {name} {typ}")
+def drop_breakout_columns(con: duckdb.DuckDBPyConnection) -> None:
+    """Drop the retired base→breakout columns from derived_daily if present (migration)."""
+    for name in _BREAKOUT_COLS:
+        con.execute(f"ALTER TABLE derived_daily DROP COLUMN IF EXISTS {name}")
 
 
 # steady-riser columns (PRD §10.8, 2026-07-02 spine pivot II — the core screen). ALTER
 # existing DBs in place (fresh DBs get them from ingest/schema.sql). Order matters for
-# run.py's positional INSERT: rise_* sits after brk_* in both schema.sql and this ALTER
-# sequence. Idempotent: ADD COLUMN IF NOT EXISTS.
+# run.py's positional INSERT: rise_* is the tail of derived_daily in both schema.sql and
+# this ALTER sequence (brk_*/ig_* are dropped by the drop_* migrations, preserving relative
+# order of the rest). Idempotent: ADD COLUMN IF NOT EXISTS.
 _RISER_COLS = [
     ("rise_net5", "DOUBLE"), ("rise_net10", "DOUBLE"), ("rise_net20", "DOUBLE"),
     ("rise_up10", "DOUBLE"), ("rise_ddw10", "DOUBLE"), ("rise_ker10", "DOUBLE"),
