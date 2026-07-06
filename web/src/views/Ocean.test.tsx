@@ -6,6 +6,7 @@ import type { OceanData, OceanStock, OceanDrawPt, OceanDetail, ThemeTag, Scope }
 import {
   radiusFor, colorVar, makeScales, withAlpha, logTicks, fmtPsTick, lerp, lerpLog, clamp,
   interpolateOceanPoint, drawPtAt, drawOcean, nearestPoint, pointsInRect, inScope, SECTOR_VAR,
+  easeOutCubic, scrubDurationMs, SCRUB_MS_PER_DAY, SCRUB_MIN_MS, SCRUB_MAX_MS,
   OCEAN_GEOM, type CanvasLike, type Palette, type DrawnPoint, type DrawOpts,
 } from '../lib/ocean-draw'
 
@@ -214,6 +215,26 @@ describe('AC-M8: play interpolation', () => {
 
   it('neither present → not drawn', () => {
     expect(interpolateOceanPoint(null, null, 0.5)).toBeNull()
+  })
+})
+
+// scrub tween (slider drag / ◀ ▶ step): goto() glides the dots to the target date instead of
+// hard-jumping — pure timing helpers here; the rAF loop itself is browser-only.
+describe('AC-M8: scrub tween timing (pure)', () => {
+  it('easeOutCubic: anchored at 0/1, monotone, front-loaded, clamped outside [0,1]', () => {
+    expect(easeOutCubic(0)).toBe(0)
+    expect(easeOutCubic(1)).toBe(1)
+    expect(easeOutCubic(0.5)).toBeCloseTo(0.875)          // front-loaded: >0.5 at midpoint
+    expect(easeOutCubic(0.25)).toBeLessThan(easeOutCubic(0.75))
+    expect(easeOutCubic(-1)).toBe(0)                      // clamped
+    expect(easeOutCubic(2)).toBe(1)
+  })
+
+  it('scrubDurationMs: per-day rate, clamped to [min, max], symmetric in direction', () => {
+    expect(scrubDurationMs(2)).toBe(2 * SCRUB_MS_PER_DAY) // in the linear band
+    expect(scrubDurationMs(-2)).toBe(scrubDurationMs(2))  // backwards scrub = same duration
+    expect(scrubDurationMs(0.5)).toBe(SCRUB_MIN_MS)       // short step stays snappy
+    expect(scrubDurationMs(250)).toBe(SCRUB_MAX_MS)       // a far slider jump stays bounded
   })
 })
 

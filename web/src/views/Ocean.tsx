@@ -4,6 +4,7 @@ import { loadOcean, loadOceanDetail } from '../lib/data'
 import { num, pct } from '../lib/format'
 import {
   drawOcean, drawPtAt, nearestPoint, pointsInRect, resolvePalette, interpolateOceanPoint, clamp,
+  lerp, easeOutCubic, scrubDurationMs,
   OCEAN_GEOM, type ColorMode, type DrawnPoint, type Rect, type Palette,
 } from '../lib/ocean-draw'
 
@@ -13,8 +14,10 @@ import {
 // condition + top-N cut; the flag is read from the export's `cand` column, C9); x = raw
 // trailing P/S TTM on a LOG axis (NOT a valuation percentile). A date slider scrubs EOD
 // snapshots; Play tweens positions smoothly between adjacent REAL snapshots (interpolation
-// is visual only — tooltip/state read the real snapshot). Dragging the slider pauses +
-// resets the tween (phase=0); the surface opens on the latest EOD. Click→pin, lasso→set
+// is visual only — tooltip/state read the real snapshot). Scrubbing (slider drag / ◀ ▶
+// step) ALSO tweens: goto() glides the dots from the current frame to the target date
+// (eased, duration by distance) instead of hard-jumping — same interpolation machinery,
+// still visual only. The surface opens on the latest EOD. Click→pin, lasso→set
 // global scope (Ocean is the first scope writer — C10).
 const MODES: ColorMode[] = ['sector', 'theme']
 const CLICK_SLOP2 = 16   // (4px)^2 — drags shorter than this count as a click (pin)
@@ -123,6 +126,12 @@ export default function Ocean({
   const playingRef = useRef(false)
   const rafRef = useRef<number | null>(null)
   const lastTsRef = useRef<number | null>(null)
+  // scrub tween (slider drag / ◀ ▶ step): eased glide from the current continuous position
+  // (di + phase) to the target date. null target = no scrub in flight.
+  const scrubTargetRef = useRef<number | null>(null)
+  const scrubFromRef = useRef(0)
+  const scrubT0Ref = useRef<number | null>(null)
+  const scrubDurRef = useRef(1)
   // the rAF loop calls the LATEST draw closure (refreshed every render) so it sees current
   // colorBy / scope / hover / pinned without being re-created.
   const drawRef = useRef<() => void>(() => {})
@@ -174,7 +183,9 @@ export default function Ocean({
   // Effective date index: scrubbed value, else the latest snapshot.
   const di = okSchema ? dateIndex ?? data!.dates.length - 1 : 0
   useEffect(() => {
-    diRef.current = di
+    // during a scrub tween the state jumps to the TARGET immediately (responsive slider/label)
+    // while diRef keeps the animated frame — don't let the sync snap the tween to the end.
+    if (scrubTargetRef.current == null) diRef.current = di
   }, [di])
 
   // draw closure — refreshed every render (sees current state); called by the redraw effect
@@ -215,6 +226,15 @@ export default function Ocean({
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
     rafRef.current = null
     lastTsRef.current = null
+    const target = scrubTargetRef.current
+    if (target != null) {
+      // cancel a mid-flight scrub by settling ON its target (a real snapshot) so the resting
+      // frame matches the state (di already points at the target) and hit-tests are stable.
+      scrubTargetRef.current = null
+      diRef.current = target
+      phaseRef.current = 0
+      drawRef.current()
+    }
   }
 
   const tick = (ts: number) => {
@@ -244,8 +264,30 @@ export default function Ocean({
     if (playingRef.current) rafRef.current = requestAnimationFrame(tick)
   }
 
+  // scrub tween frame: ease the continuous position p (di + phase) from scrubFrom to the
+  // target date, drawing interpolated frames through every intermediate REAL snapshot pair
+  // (works backwards too). Arrival lands exactly on the target with phase 0.
+  const scrubTick = (ts: number) => {
+    const target = scrubTargetRef.current
+    if (target == null || !data) return
+    if (scrubT0Ref.current == null) scrubT0Ref.current = ts
+    const t = clamp((ts - scrubT0Ref.current) / scrubDurRef.current, 0, 1)
+    const p = lerp(scrubFromRef.current, target, easeOutCubic(t))
+    const arrived = t >= 1
+    diRef.current = arrived ? target : Math.floor(p)
+    phaseRef.current = arrived ? 0 : p - diRef.current
+    drawRef.current()
+    if (arrived) {
+      scrubTargetRef.current = null
+      rafRef.current = null
+    } else {
+      rafRef.current = requestAnimationFrame(scrubTick)
+    }
+  }
+
   const play = () => {
     if (!data) return
+    pause() // settle any in-flight scrub tween on its target before playing from there
     const last = data.dates.length - 1
     if (diRef.current >= last) {
       // at the end → replay from the oldest snapshot.
@@ -265,12 +307,33 @@ export default function Ocean({
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
   }, [])
 
+  // goto: scrub to a date with a tween instead of a hard jump. Stops Play, retargets any
+  // in-flight tween from the CURRENT frame position (slider drags re-aim mid-glide), and
+  // snaps the state (slider/label/tooltip) to the target immediately — only the dots glide.
   const goto = (i: number) => {
-    pause()
-    phaseRef.current = 0
-    const idx = data ? clamp(i, 0, data.dates.length - 1) : 0
-    diRef.current = idx
+    if (!data) {
+      setDateIndex(0)
+      return
+    }
+    const idx = clamp(i, 0, data.dates.length - 1)
+    playingRef.current = false
+    setPlaying(false)
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+    lastTsRef.current = null
     setDateIndex(idx)
+    const from = diRef.current + phaseRef.current
+    if (from === idx) {
+      scrubTargetRef.current = null
+      phaseRef.current = 0
+      diRef.current = idx
+      return
+    }
+    scrubTargetRef.current = idx
+    scrubFromRef.current = from
+    scrubT0Ref.current = null
+    scrubDurRef.current = scrubDurationMs(idx - from)
+    rafRef.current = requestAnimationFrame(scrubTick)
   }
 
   const toLogical = (e: React.MouseEvent): [number, number] => {
@@ -455,8 +518,8 @@ export default function Ocean({
         <b>连续上涨强度 × Valuation 二维相图</b>：纵轴 = rise_pct（<b>10 日净涨幅横截面百分位</b>，PRD §10.8），<b>海平面 = 90</b>
         （top decile，<b>仅视觉参考线</b>——「过去两周涨幅进全市场前 10%」）；candidate（📈 光晕 + 亮环）= Risers 榜同一道 gate + top-N，
         flag 由 compute 层单一真源写出、前端只读<b>绝不重算</b>（candidate ≠ y≥90，gate 含 up10 条件且 top-N 截断），与 Risers 候选逐票可追溯（C9）。横轴 =
-        <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}。拖<b>日期滑杆</b>切 EOD；
-        <b>▶ Play</b> 在相邻真实快照间平滑插值移动（仅视觉，tooltip/状态取真实快照，不伪造交易日）；
+        <b> 原始 trailing P/S（log 轴）</b>，不是估值百分位、无综合估值分。点大小 = √市值；颜色按 {colorBy}。拖<b>日期滑杆</b>/单步切 EOD 时圆点平滑滑到目标日；
+        <b>▶ Play</b> 在相邻真实快照间平滑插值移动（均仅视觉，tooltip/状态取真实快照，不伪造交易日）；
         <b>点击 pin</b>、<b>框选 lasso</b> → set 全局 scope（跨 tab 同步、可一键清）；<b>右键点 dot</b> → 在 Stock tab 打开该票。as_of {data.as_of_date} · {data.count} 点 ·
         P/S 域 [{data.x_domain[0]}, {data.x_domain[1]}]。
       </div>

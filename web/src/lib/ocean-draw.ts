@@ -181,7 +181,27 @@ export function withAlpha(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
 }
 
-// --- play-animation interpolation (visual only) ---
+// --- play/scrub-animation interpolation (visual only) ---
+
+// Scrub tween timing (slider drag / prev-next step): the dots glide from the current frame
+// to the target date instead of hard-jumping. Duration scales with the distance in days and
+// is clamped so a far slider jump still lands fast (the play loop keeps its own STEP_MS).
+export const SCRUB_MS_PER_DAY = 150
+export const SCRUB_MIN_MS = 180
+export const SCRUB_MAX_MS = 600
+
+/** Front-loaded ease for the scrub tween — starts fast so rapid retargets (slider drags)
+ *  never feel stalled, settles gently on the target date. */
+export function easeOutCubic(t: number): number {
+  const u = 1 - clamp(t, 0, 1)
+  return 1 - u * u * u
+}
+
+/** Tween duration for a scrub crossing `deltaDays` (fractional ok): per-day rate clamped
+ *  to [SCRUB_MIN_MS, SCRUB_MAX_MS] so 1-day steps stay snappy and far jumps stay bounded. */
+export function scrubDurationMs(deltaDays: number): number {
+  return clamp(Math.abs(deltaDays) * SCRUB_MS_PER_DAY, SCRUB_MIN_MS, SCRUB_MAX_MS)
+}
 
 /** Reconstruct a stock's DRAW snapshot at date index i from the v3 columnar bulk, or null if
  *  there's no renderable position that day (ps or rise_pct missing). The candidate flag is
