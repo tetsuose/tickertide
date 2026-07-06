@@ -15,6 +15,9 @@ describe('Stock detail (M5.4, per-name bundle)', () => {
   it('renders the per-name header with the riser headline (not composite/breakout)', () => {
     const html = renderToStaticMarkup(<Stock initial={bundle} ticker={bundle.meta.ticker} />)
     expect(html).toContain(`stk-tk">${bundle.meta.ticker}<`)
+    // company name sits right next to the ticker
+    expect(bundle.meta.name).toBeTruthy() // fixture sanity: the assertion below is meaningful
+    expect(html).toContain(`stk-name">${bundle.meta.name}<`)
     expect(html).toContain('10 日净涨幅')     // headline = steady-riser net10
     expect(html).not.toContain('BRK PCT')     // breakout headline removed
     expect(html).not.toContain('COMPOSITE')   // composite headline removed

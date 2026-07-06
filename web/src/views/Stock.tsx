@@ -115,7 +115,10 @@ export default function Stock({
 
       <div className="stk-head">
         <div className="stk-id">
-          <div className="stk-tk">{m.ticker}</div>
+          <div className="stk-tk">
+            {m.ticker}
+            {m.name && <span className="stk-name">{m.name}</span>}
+          </div>
           <div className="stk-sec">
             {m.sector ?? '—'} · {fmtMktcap(m.mktcap)}
           </div>

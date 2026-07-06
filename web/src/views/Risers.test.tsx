@@ -14,7 +14,7 @@ import type { BoardData, BoardChartDetail, Stock } from '../types'
 // the mini-chart loads lazily per card; tests inject board.chart.sample.json.
 const data = board as unknown as BoardData
 const chart = (chartFixture as unknown as BoardChartDetail).chart
-const order = (html: string) => [...html.matchAll(/ec-tk">\s*([A-Za-z0-9]+)/g)].map((m) => m[1])
+const order = (html: string) => [...html.matchAll(/ec-tk">(?:<span[^>]*>)?\s*([A-Za-z0-9]+)/g)].map((m) => m[1])
 const card = (i: number) => renderToStaticMarkup(<EvidenceCard stock={data.stocks[i]} />)
 
 // steady-riser sort key (PRD §10.8.2): candidate first, then net10 desc (recall-first).
@@ -37,6 +37,12 @@ describe('AC-M1: Risers evidence-card board', () => {
   it('renders >=18 cards', () => {
     const html = renderToStaticMarkup(<Risers initial={data} />)
     expect(order(html).length).toBeGreaterThanOrEqual(18)
+  })
+
+  it('hovering the ticker shows the company name (native title tooltip)', () => {
+    const s = data.stocks[0]
+    expect(s.name).toBeTruthy() // fixture sanity: the assertion below is meaningful
+    expect(card(0)).toContain(`<span title="${s.name}">${s.ticker}</span>`)
   })
 
   it('card carries the riser evidence fields (net 5/10/20d, up-days, drawdown, vol)', () => {

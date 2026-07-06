@@ -189,7 +189,9 @@ export default function Valuation({
                   className={'valn-row' + (fr ? ' vfr-' + fr : ' vfr-none')}
                   onClick={() => onOpen?.(r.ticker)}
                 >
-                  <td className="l valn-tk">{r.ticker}</td>
+                  <td className="l valn-tk" title={r.name ?? undefined}>
+                    {r.ticker}
+                  </td>
                   <td className="l valn-sec">{r.sector ?? '—'}</td>
                   <td className="l valn-asof" title={asofTitle(r)}>
                     <span className={'vdot ' + (fr ?? 'none')} />

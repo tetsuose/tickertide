@@ -63,7 +63,7 @@ export default function EvidenceCard({
     <div className="ecard" onClick={() => onOpen?.(stock.ticker)}>
       <div className="ec-head">
         <div className="ec-tk">
-          {stock.ticker}{' '}
+          <span title={stock.name ?? undefined}>{stock.ticker}</span>{' '}
           <span className="ec-sec">
             {stock.sector ?? '—'} · {fmtMktcap(stock.mktcap)}
           </span>
