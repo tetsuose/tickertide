@@ -10,7 +10,7 @@ import type { ValuationData, ValuationRow, Scope } from '../types'
 // builder is unit-tested separately so the duckdb sort rule is covered without the engine.
 const data = valuation as unknown as ValuationData
 const rows = data.rows as ValuationRow[]
-const order = (html: string) => [...html.matchAll(/valn-tk">([A-Z0-9]+)</g)].map((m) => m[1])
+const order = (html: string) => [...html.matchAll(/valn-tk"[^>]*>([A-Z0-9]+)</g)].map((m) => m[1])
 
 describe('buildValuationSql (duckdb sort rule)', () => {
   it('cheap-on-top multiples order ascending', () => {
@@ -30,6 +30,13 @@ describe('Valuation screener (M5.2, duckdb-wasm / injected)', () => {
   it('renders one row per universe ticker (full cross-section)', () => {
     const html = renderToStaticMarkup(<Valuation initial={rows} />)
     expect(order(html).length).toBe(rows.length)
+  })
+
+  it('hovering the ticker cell shows the company name (native title tooltip)', () => {
+    const named = rows.find((r) => r.name)
+    expect(named).toBeTruthy() // fixture sanity: the assertion below is meaningful
+    const html = renderToStaticMarkup(<Valuation initial={rows} />)
+    expect(html).toContain(`valn-tk" title="${named!.name}">`)
   })
 
   it('default sort is P/S ascending (cheap on top), nulls last', () => {
