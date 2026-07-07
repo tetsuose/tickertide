@@ -37,6 +37,12 @@ describe('Rotation overview (scope=all)', () => {
     expect(html).toContain('n1=' + data.params.n1_ema)
     expect(html).toContain('不复刻 StockCharts')
   })
+
+  it('the bucket toggle says what the buckets ARE: GICS 行业 / 热门产业 (not "Themes")', () => {
+    expect(html).toContain('GICS 行业')
+    expect(html).toContain('热门产业')
+    expect(html).not.toContain('>Themes<')
+  })
 })
 
 describe('Rotation drill (scope=sector)', () => {
