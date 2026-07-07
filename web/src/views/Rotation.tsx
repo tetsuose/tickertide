@@ -247,8 +247,8 @@ export default function Rotation({
 
   const toggle = (
     <span className="orow" role="group" aria-label="bucket type">
-      <button className={'seg' + (!isTheme ? ' on' : '')} onClick={() => setBucketType('sector')}>GICS Sectors</button>
-      <button className={'seg' + (isTheme ? ' on' : '')} onClick={() => setBucketType('theme')}>Themes</button>
+      <button className={'seg' + (!isTheme ? ' on' : '')} onClick={() => setBucketType('sector')}>GICS 行业</button>
+      <button className={'seg' + (isTheme ? ' on' : '')} onClick={() => setBucketType('theme')}>热门产业</button>
     </span>
   )
 
@@ -319,7 +319,7 @@ export default function Rotation({
   }
 
   const league = [...active.buckets].sort((a, b) => (b.level ?? 0) - (a.level ?? 0))
-  const colName = isTheme ? 'Theme' : 'Sector'
+  const colName = isTheme ? '热门产业' : '行业'
 
   return (
     <div className="rot">
@@ -358,7 +358,9 @@ export default function Rotation({
       <div className="foot">
         所有 {noun} 的 RS-Ratio（相对 SPY）叠一张图：<b>高度=level</b>（&gt;100 跑赢自身近期趋势）、<b>斜率=momentum</b>、线交叉=leadership
         换手。hover 高亮一条其余变淡、右缘按末值排序贴标签；<b>点一行/线 → 钻进该 {noun}</b>（set 全局 scope，跨 tab 粘滞、可一键清）。
-        {isTheme ? ' theme 成员取自 point-in-time membership，指数非市值加权（exposure-weighted + cap，绝不让单票主导）。' : ''}
+        {isTheme
+          ? ' 热门产业（theme）= 手工圈定的概念产业（AI、半导体、云、机器人、太空算力、光通信、核能、网安），跨 GICS 行业、一票可属多个；成员取自 point-in-time membership，指数非市值加权（exposure-weighted + cap，绝不让单票主导）。'
+          : ''}
         下表按 level 排序，<b>Δ4w=斜率</b>。as_of {active.as_of_date} · {active.count} {noun} · params n1={active.params.n1_ema}/n2=
         {active.params.n2_window}/k={active.params.k}（透明 reconstruction，不复刻 StockCharts/de Kempenaer 数值）。
       </div>

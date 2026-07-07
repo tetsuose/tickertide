@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +33,10 @@ from compute import db  # noqa: E402
 
 MAP_FILE = ROOT / "ingest" / "sector_etf_map.txt"
 BUCKET_TYPE = "sector"
+# Yahoo rate-limit recovery: only 11 ETFs, so a missed one is a whole missing sector in
+# Rotation for a day. Observed (nightly 7-03/7-04): the limit clears within ~15s.
+RETRY_PASSES = 2
+RETRY_WAIT_S = 30
 
 
 def load_map(path: Path) -> list[tuple[str, str]]:
@@ -67,22 +72,38 @@ def main(argv: list[str] | None = None) -> int:
     provider = prices.get_provider(args.provider)
     print(f"[sector-etf] provider={args.provider} sectors={len(mapping)}")
 
-    ok = skipped = total_rows = 0
-    for sector, etf in mapping:
-        try:
-            bars = provider.get_bars(etf, args.lookback_days)
-            # provider bars = (date, o, h, l, close, adj_close, volume); take date + adj_close
-            # (total-return basis, consistent with spx_daily / db.upsert_spx).
-            rows = [(b[0], b[5] if len(b) > 5 and b[5] is not None else b[4]) for b in bars]
-            if rows:
-                total_rows += db.upsert_bucket_bars(con, BUCKET_TYPE, sector, rows)
-                ok += 1
-            else:
-                skipped += 1
-                print(f"  [skip] {etf} ({sector}): no bars")
-        except Exception as e:  # provider/network flakiness expected (esp. yfinance)
-            skipped += 1
-            print(f"  [skip] {etf} ({sector}): {type(e).__name__}: {str(e)[:80]}")
+    # A missing ETF drops its whole sector from the rotation league until the next run
+    # (nightly 2026-07-03/04: XLK rate-limited by Yahoo right after the bulk universe
+    # download → Information Technology absent from the Rotation tab). The rate window
+    # clears in seconds, so retry the failures after a pause instead of skipping for a day.
+    ok = total_rows = 0
+    pending = list(mapping)
+    for attempt in range(RETRY_PASSES + 1):
+        if not pending:
+            break
+        if attempt > 0:
+            print(f"[sector-etf] retry {len(pending)} failed ETFs after {RETRY_WAIT_S}s ...", flush=True)
+            time.sleep(RETRY_WAIT_S)
+        failed: list[tuple[str, str]] = []
+        for sector, etf in pending:
+            try:
+                bars = provider.get_bars(etf, args.lookback_days)
+                # provider bars = (date, o, h, l, close, adj_close, volume); take date + adj_close
+                # (total-return basis, consistent with spx_daily / db.upsert_spx).
+                rows = [(b[0], b[5] if len(b) > 5 and b[5] is not None else b[4]) for b in bars]
+                if rows:
+                    total_rows += db.upsert_bucket_bars(con, BUCKET_TYPE, sector, rows)
+                    ok += 1
+                else:
+                    failed.append((sector, etf))
+                    print(f"  [miss] {etf} ({sector}): no bars")
+            except Exception as e:  # provider/network flakiness expected (esp. yfinance)
+                failed.append((sector, etf))
+                print(f"  [miss] {etf} ({sector}): {type(e).__name__}: {str(e)[:80]}")
+        pending = failed
+    skipped = len(pending)
+    for sector, etf in pending:
+        print(f"  [skip] {etf} ({sector}): still failing after {RETRY_PASSES} retries")
 
     n_sectors = con.execute(
         "SELECT count(DISTINCT bucket) FROM bucket_bars WHERE bucket_type = ?", [BUCKET_TYPE]
